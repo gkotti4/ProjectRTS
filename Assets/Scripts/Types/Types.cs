@@ -1,15 +1,46 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
-public enum ResourceType { Wood, Food, Gold, Stone }
+
+// Entities (ALL things)
+public enum EntityType { None, Unit, Building }
+
+// In Types.cs — replaces UnitType for upgrade targeting
+public enum EntityTag
+{
+    None = 0,
+    
+    // Unit categories
+    Villager,
+    Infantry,
+    Archer,
+    Cavalry,
+    Siege,
+    Ship,
+    
+    // Building categories
+    MilitaryBuilding,
+    EconomicBuilding,
+    DefenseBuilding,
+    
+    // Broad
+    AllUnits,
+    AllBuildings,
+    All
+    
+}
+
+
+// Units
+public enum UnitState { Idle, Moving, Attacking, Gathering }
 public enum UnitType { Villager, Soldier, Archer }
+
+// Buildings
 public enum BuildingType { TownCenter, Barracks, Farm }
 
 
-public enum UnitState { Idle, Moving, Attacking, Gathering }
-
-//public enum VillagerState { Idle, Moving, Gathering, Attacking } // Building, Attacking
-//public enum SoldierState { Idle, Moving, Attacking } // Patrol, AttackMove, etc.
-
+// Resources
+public enum ResourceType { Wood, Food, Gold, Stone }
 
 [System.Serializable]
 public struct ResourceCost
@@ -27,14 +58,44 @@ public struct ResourceCost
     }
 }
 
-[System.Serializable]
-public struct SpawnOption // Buildings will use to represent and spawn
+
+// Production
+public enum ProductionType { Unit, Upgrade }
+
+// Upgrade Production
+public enum UpgradeType { Global, Unit } // AgeUp
+public enum StatType
 {
-    public string unitName;
-    public UnitType unitType;
-    public GameObject prefab;
-    public Sprite icon;
-    public float spawnTime;
-    public ResourceCost cost;
+    Attack,
+    MeleeArmor,
+    PierceArmor,
+    AttackSpeed,
+    AttackRange,
+    LineOfSight,
+    MoveSpeed,
+    GatherSpeed,
+    GatherAmount,
+    CarryCapacity,
+    BuildSpeed,
+    MaxHealth,
+    HealRate,
+    PopulationCost,
+    ResourceGenerationRate,
+    ProductionSpeed,
+    GarrisonCapacity,
 }
+public enum ModifierType
+{
+    Flat,       // +5 attack
+    Percentage  // +10% attack
+}
+[System.Serializable]
+public struct StatModifier
+{
+    public StatType stat;
+    public float value;
+    public ModifierType modifierType; // Flat, Percentage
+}
+
+
 

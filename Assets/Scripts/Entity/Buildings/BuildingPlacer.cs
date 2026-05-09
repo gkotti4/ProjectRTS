@@ -4,7 +4,7 @@ public class BuildingPlacer : MonoBehaviour
 {
     public static BuildingPlacer Instance { get; private set; }
 
-    private BuildingSO selectedBuilding;
+    private EntityData selectedBuilding;
     private GameObject ghostObject;
     private bool isPlacing = false; // placement mode
     private Camera mainCamera;
@@ -34,7 +34,7 @@ public class BuildingPlacer : MonoBehaviour
         HandlePlacementInput();
     }
 
-    public void StartPlacing(BuildingSO buildingData) // Called by UI button or hotkey to enter placement mode
+    public void StartPlacing(EntityData buildingData) // Called by UI button or hotkey to enter placement mode
     {
         if (isPlacing) CancelPlacement();
 
@@ -46,7 +46,7 @@ public class BuildingPlacer : MonoBehaviour
         if (ghostObject == null) return;
 
         SetGhostMaterial(validMaterial);
-        Debug.Log("Placing: " + buildingData.buildingName);
+        Debug.Log("Placing: " + buildingData.entityName);
     }
     
     private void HandlePlacementInput() // Handles confirm and cancel input during placement
@@ -100,7 +100,7 @@ public class BuildingPlacer : MonoBehaviour
         // Check resource cost
         if (!GameManager.Instance.CanAfford(selectedBuilding.buildingCost))
         {
-            Debug.Log("Cannot afford: " + selectedBuilding.buildingName);
+            Debug.Log("Cannot afford: " + selectedBuilding.entityName);
             return;
         }
         
@@ -109,7 +109,7 @@ public class BuildingPlacer : MonoBehaviour
         GridManager.Instance.SetOccupied(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight);
         GameManager.Instance.SpendResources(selectedBuilding.buildingCost);
         
-        Debug.Log("Placed: " + selectedBuilding.buildingName);
+        Debug.Log("Placed: " + selectedBuilding.entityName);
         CancelPlacement();
     }
     

@@ -2,7 +2,9 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.Rendering.Universal;
 
-[RequireComponent(typeof(Health), typeof(NavMeshAgent))]
+[RequireComponent(typeof(EntityStats))]
+[RequireComponent(typeof(Health))]
+[RequireComponent(typeof(NavMeshAgent))]
 
 public class UnitController : MonoBehaviour, ISelectable, IDamageable
 {
@@ -14,7 +16,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
     public void TakeDamage(int damage){ health.TakeDamage(damage); }
 
 
-    public UnitSO unitData;
+    public EntityData unitData;
     [SerializeField] protected DecalProjector selectionDecal;
 
     protected Health health;
@@ -25,7 +27,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
 
     protected Camera mainCamera;
     protected NavMeshAgent agent;
-    protected bool isSelected;
+    protected bool isSelected = false;
     protected GameObject attackTarget;
     protected float attackTimer;
     
@@ -36,16 +38,10 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
             Debug.LogError($"No UnitSO assigned on {gameObject.name}.");
             return;
         }
-        if (selectionDecal == null)
-        {
-            Debug.LogError($"No Decal projector assigned on {gameObject.name}.");
-            return;
-        }
 
         mainCamera = Camera.main;
         health = GetComponent<Health>();
         health.Initialize(unitData.maxHealth);
-        isSelected = false;
         
         agent = GetComponent<NavMeshAgent>();
         agent.speed = unitData.moveSpeed;

@@ -1,7 +1,7 @@
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "ResourceNodeSO", menuName = "Scriptable Objects/ResourceNodeSO")]
-public class ResourceNodeSO : ScriptableObject
+[CreateAssetMenu(fileName = "ResourceNodeSO", menuName = "Scriptable Objects/ResourceNode")]
+public class ResourceNodeData : ScriptableObject
 {
     // Resource Identifiers
     public string resourceName = "Resource";

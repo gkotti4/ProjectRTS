@@ -8,9 +8,15 @@ public class ResourceUI : MonoBehaviour
     void Start()
     {
         resourceText = GetComponent<TextMeshProUGUI>();
+        GameManager.Instance.OnResourcesChanged += UpdateResourceText;
+    }
+
+    void OnDestroy()
+    {
+        GameManager.Instance.OnResourcesChanged -= UpdateResourceText;
     }
     
-    void Update()
+    void UpdateResourceText()
     {
         resourceText.text = "Wood: " + GameManager.Instance.GetCurrentResources(ResourceType.Wood) +
                             "   Food: " + GameManager.Instance.GetCurrentResources(ResourceType.Food) +

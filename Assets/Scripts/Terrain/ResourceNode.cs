@@ -8,7 +8,7 @@ public class ResourceNode : MonoBehaviour, ISelectable
     public bool IsBoxSelectable => false;
     
     
-    public ResourceNodeSO resourceNodeData;
+    public ResourceNodeData resourceNodeData;
     private int remainingResources;
     private bool isSelected;
     void Start()

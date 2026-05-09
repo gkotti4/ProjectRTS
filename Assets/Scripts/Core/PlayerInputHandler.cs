@@ -9,7 +9,7 @@ using UnityEngine;
 public class PlayerInputHandler : MonoBehaviour
 {
 
-    [SerializeField] private BuildingSO townCenterData;
+    [SerializeField] private EntityData townCenterData;
     
     
     void Start()

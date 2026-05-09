@@ -98,7 +98,7 @@ public class SelectionManager : MonoBehaviour
         {
             if (hit.collider.TryGetComponent(out ISelectable selectable)) // Selected object
             {
-                Debug.Log(hit.collider.name);
+                // Debug.Log(hit.collider.name);
                 if (Input.GetKey(KeyCode.LeftShift))
                 {
                     // Shift click selection - append this object in current selection
