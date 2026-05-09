@@ -1,0 +1,88 @@
+using UnityEngine;
+
+public class CameraController : MonoBehaviour
+{
+    [SerializeField] private float panSpeed = 20f;
+    [SerializeField] private float dragSpeed = 15f;
+    [SerializeField] private float zoomSpeed = 40f;
+    [SerializeField] private float minZoom = 5f;
+    [SerializeField] private float maxZoom = 150f;
+    
+    // TODO - scale Speed's with current zoom
+    
+    [SerializeField] private Vector3 startPosition = new Vector3(30, 10, 20);
+
+    private Camera cam;
+    
+    private Vector3 lastMousePosition;
+    
+    void Start()
+    {
+        cam = Camera.main;
+        if (cam == null) Debug.LogError("No camera found!");
+        cam.transform.position = startPosition;
+        cam.transform.rotation = Quaternion.Euler(40, -45, 0);
+    }
+
+    void Update()
+    {
+        HandlePan();
+        HandleZoom();
+        HandleMiddleMousePan();
+    }
+
+    void HandlePan()
+    {
+        float x = Input.GetAxisRaw("Horizontal");
+        float z = Input.GetAxisRaw("Vertical");
+
+        // Get camera's flat forward and right, ignore Y tilt
+        Vector3 forward = cam.transform.forward;
+        Vector3 right = cam.transform.right;
+        forward.y = 0f;
+        right.y = 0f;
+        forward.Normalize();
+        right.Normalize();
+
+        Vector3 move = (forward * z + right * x) * (panSpeed * Time.deltaTime);
+        transform.position += move;
+    }
+
+    void HandleZoom()
+    {
+        float scroll = Input.GetAxis("Mouse ScrollWheel");
+        Vector3 zoom = transform.forward * (scroll * zoomSpeed);
+        transform.position += zoom;
+
+        transform.position = new Vector3(
+            transform.position.x,
+            Mathf.Clamp(transform.position.y, minZoom, maxZoom),
+            transform.position.z
+        );
+    }
+    
+    void HandleMiddleMousePan()
+    {
+        if (Input.GetMouseButtonDown(2))
+            lastMousePosition = Input.mousePosition;
+
+        if (Input.GetMouseButton(2))
+        {
+            Vector3 delta = Input.mousePosition - lastMousePosition;
+            
+            // Convert screen delta to world movement
+            Vector3 right = cam.transform.right;
+            Vector3 up = cam.transform.forward;
+            right.y = 0f;
+            up.y = 0f;
+            right.Normalize();
+            up.Normalize();
+
+            Vector3 move = (-right * delta.x + -up * delta.y) * (dragSpeed * Time.deltaTime);
+
+            transform.position += move;
+            lastMousePosition = Input.mousePosition;
+        }
+    }
+    
+}

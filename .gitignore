@@ -1,0 +1,14 @@
+# Ignore everything
+*
+
+# Except Assets/Scripts
+!Assets/
+!Assets/Scripts/
+!Assets/Scripts/**
+
+# Except ProjectSettings
+!ProjectSettings/
+!ProjectSettings/**
+
+# Except this gitignore
+!.gitignore
