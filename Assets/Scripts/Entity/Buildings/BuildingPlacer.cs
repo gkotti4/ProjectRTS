@@ -1,12 +1,17 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class BuildingPlacer : MonoBehaviour
 {
     public static BuildingPlacer Instance { get; private set; }
 
+    public event Action<bool> OnPlacingModeChanged;
+    
     private EntityData selectedBuilding;
     private GameObject ghostObject;
     private bool isPlacing = false; // placement mode
+    public bool IsPlacing => isPlacing;
     private Camera mainCamera;
 
     [SerializeField] private Material validMaterial;
@@ -37,16 +42,26 @@ public class BuildingPlacer : MonoBehaviour
     public void StartPlacing(EntityData buildingData) // Called by UI button or hotkey to enter placement mode
     {
         if (isPlacing) CancelPlacement();
-
+        
+        // Check resource cost
+        else if (!GameManager.Instance.CanAfford(buildingData.buildingCost))
+        {
+            Debug.Log("Can't afford building");
+            CancelPlacement();
+            return;
+        }
+        
+        // Enter Placement Mode
         selectedBuilding = buildingData;
         isPlacing = true;
+        OnPlacingModeChanged?.Invoke(isPlacing);
         
         // Spawn ghost preview
         ghostObject = Instantiate(selectedBuilding.prefab);
         if (ghostObject == null) return;
 
         SetGhostMaterial(validMaterial);
-        Debug.Log("Placing: " + buildingData.entityName);
+        //Debug.Log("Placing: " + buildingData.entityName);
     }
     
     private void HandlePlacementInput() // Handles confirm and cancel input during placement
@@ -101,6 +116,7 @@ public class BuildingPlacer : MonoBehaviour
         if (!GameManager.Instance.CanAfford(selectedBuilding.buildingCost))
         {
             Debug.Log("Cannot afford: " + selectedBuilding.entityName);
+            CancelPlacement();
             return;
         }
         
@@ -109,14 +125,15 @@ public class BuildingPlacer : MonoBehaviour
         GridManager.Instance.SetOccupied(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight);
         GameManager.Instance.SpendResources(selectedBuilding.buildingCost);
         
-        Debug.Log("Placed: " + selectedBuilding.entityName);
+        //Debug.Log("Placed: " + selectedBuilding.entityName);
         CancelPlacement();
     }
     
-    private void CancelPlacement() // Cancels placement mode and destorys ghost
+    private void CancelPlacement() // Exits placement mode and destorys ghost
     {
         isPlacing = false;
         selectedBuilding = null;
+        OnPlacingModeChanged?.Invoke(isPlacing);
 
         if (ghostObject != null)
         {

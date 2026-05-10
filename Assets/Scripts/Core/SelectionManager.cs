@@ -21,6 +21,8 @@ public class SelectionManager : MonoBehaviour
     [SerializeField] private float dragThreshold = 2f;
 
     private List<ISelectable> allSelectables = new List<ISelectable>(); // used in DragSelect
+
+    private bool isPlacingBuilding = false;
     
     public void Register(ISelectable selectable) // used in DragSelect
     {
@@ -49,7 +51,9 @@ public class SelectionManager : MonoBehaviour
     void Start()
     {
         mainCamera = Camera.main;
+        BuildingPlacer.Instance.OnPlacingModeChanged += (isPlacing) => isPlacingBuilding = isPlacing; // don't need OnDestroy ..
     }
+    
 
     void Update()
     {
@@ -68,6 +72,8 @@ public class SelectionManager : MonoBehaviour
 
     void HandleSelectionInput()
     {
+        if (isPlacingBuilding) return;
+        
         if (Input.GetMouseButtonDown(0))
         {
             // Don't process selection if clicking on UI
@@ -78,6 +84,9 @@ public class SelectionManager : MonoBehaviour
 
         if (Input.GetMouseButton(0))
         {
+            // Don't process selection if clicking on UI
+            if (EventSystem.current.IsPointerOverGameObject()) return; 
+            
             // Check if drag has exceeded threshold
             if (Vector2.Distance(dragStart, Input.mousePosition) > dragThreshold)
                 isDragging = true;

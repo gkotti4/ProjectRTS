@@ -11,7 +11,10 @@ public enum EntityTag
     None = 0,
     
     // Unit categories
+    // Economic
     Villager,
+    
+    // Military
     Infantry,
     Archer,
     Cavalry,
@@ -32,7 +35,7 @@ public enum EntityTag
 
 
 // Units
-public enum UnitState { Idle, Moving, Attacking, Gathering }
+public enum UnitState { Idle, Moving, Attacking, Gathering, Building, Patrolling }
 public enum UnitType { Villager, Soldier, Archer }
 
 // Buildings
@@ -99,3 +102,19 @@ public struct StatModifier
 
 
 
+// Command Context - Hotkeys - What is selected
+public enum CommandContext
+{
+    Default,
+    EconomicUnitSelected,
+    MilitaryUnitSelected,
+    BuildingSelected,
+    // Multiple Units?
+}
+
+public enum HotkeySlot
+{
+    Q, W, E, R, T,
+    A, S, D, F, G,
+    Z, X, C, V, B
+}

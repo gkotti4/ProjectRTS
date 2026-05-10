@@ -20,4 +20,7 @@ public class ProductionOptionData : ScriptableObject
     // Upgrade Production
     [Header("Upgrade Production")]
     public UpgradeData upgradeData;
+    
+    [Header("Hotkey")]
+    public HotkeySlot hotkeySlot;
 }

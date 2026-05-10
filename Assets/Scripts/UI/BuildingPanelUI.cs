@@ -4,7 +4,7 @@ using UnityEngine;
 public class BuildingPanelUI : MonoBehaviour
 {
     [SerializeField] private GameObject productionButtonPrefab;
-    [SerializeField] private int maxButtons = 9;
+    [SerializeField] private int maxButtons = 15; // hotkey rows - q w e r t, a s d f g, z x c v b 
     
     private List<ProductionButton> buttons = new List<ProductionButton>();
     

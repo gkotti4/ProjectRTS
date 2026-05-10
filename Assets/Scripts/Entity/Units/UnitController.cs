@@ -15,6 +15,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
     public void TakeDamage(int damage) { health.TakeDamage(damage); }
 
     protected EntityStats stats;
+    public EntityStats Stats => stats;
     protected Health health;
     protected UnitState state = UnitState.Idle;
 
