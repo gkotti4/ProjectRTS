@@ -1,14 +1,15 @@
+using System;
 using System.Collections.Generic;
-using Unity.VisualScripting;
-using System.Linq;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 public class SelectionManager : MonoBehaviour
 {
     public static SelectionManager Instance { get; private set; }
 
-    [SerializeField] private LayerMask selectableLayers;
+    public event Action OnSelectionChanged;
     
+    [SerializeField] private LayerMask selectableLayers;
     private List<ISelectable> selectedObjects = new List<ISelectable>();
     private Camera mainCamera;
     
@@ -17,7 +18,7 @@ public class SelectionManager : MonoBehaviour
     private bool isDragging = false;
     private Texture2D boxTexture;
 
-    [SerializeField] private float dragThreshold = 1f;
+    [SerializeField] private float dragThreshold = 2f;
 
     private List<ISelectable> allSelectables = new List<ISelectable>(); // used in DragSelect
     
@@ -39,15 +40,15 @@ public class SelectionManager : MonoBehaviour
             return;
         }
         Instance = this;
+        
+        boxTexture = new Texture2D(1, 1);
+        boxTexture.SetPixel(0, 0, new Color(0.6f, 0.8f, 1f, 0.25f));
+        boxTexture.Apply();
     }
     
     void Start()
     {
         mainCamera = Camera.main;
-        
-        boxTexture = new Texture2D(1, 1);
-        boxTexture.SetPixel(0, 0, new Color(0.6f, 0.8f, 1f, 0.25f)); //Color.white);
-        boxTexture.Apply();
     }
 
     void Update()
@@ -69,6 +70,9 @@ public class SelectionManager : MonoBehaviour
     {
         if (Input.GetMouseButtonDown(0))
         {
+            // Don't process selection if clicking on UI
+            if (EventSystem.current.IsPointerOverGameObject()) return; 
+            
             dragStart = Input.mousePosition;
         }
 
@@ -81,6 +85,9 @@ public class SelectionManager : MonoBehaviour
 
         if (Input.GetMouseButtonUp(0))
         {
+            // Don't process selection if clicking on UI
+            if (EventSystem.current.IsPointerOverGameObject()) return; 
+            
             if (isDragging)
                 HandleDragSelect();
             else
@@ -153,6 +160,7 @@ public class SelectionManager : MonoBehaviour
         if (selectedObjects.Contains(selectable)) return;
         selectedObjects.Add(selectable);
         selectable.OnSelect();
+        OnSelectionChanged?.Invoke();
     }
 
     // Removes object from selection and notifies it
@@ -160,6 +168,7 @@ public class SelectionManager : MonoBehaviour
     {
         selectedObjects.Remove(selectable);
         selectable.OnDeselect();
+        OnSelectionChanged?.Invoke();
     }
 
     // Clears all selected objects
@@ -168,20 +177,8 @@ public class SelectionManager : MonoBehaviour
         foreach (ISelectable selectable in selectedObjects)
             selectable.OnDeselect();
         selectedObjects.Clear();
+        OnSelectionChanged?.Invoke();
     }
-
-    // Converts two screen points into a Rect, handles drag in any direction
-    // Rect GetScreenRect(Vector2 start, Vector2 end)
-    // {
-    //     start.y = Screen.height - start.y;
-    //     end.y = Screen.height - end.y;
-    //     return Rect.MinMaxRect(
-    //         Mathf.Min(start.x, end.x),
-    //         Mathf.Min(start.y, end.y),
-    //         Mathf.Max(start.x, end.x),
-    //         Mathf.Max(start.y, end.y)
-    //     );
-    // }
     
     // Raw screen rect for contains check — no Y flip
     Rect GetScreenRectRaw(Vector2 start, Vector2 end)
@@ -194,7 +191,7 @@ public class SelectionManager : MonoBehaviour
         );
     }
 
-// Flipped Y rect for GUI drawing only
+    // Flipped Y rect for GUI drawing only
     Rect GetScreenRectGUI(Vector2 start, Vector2 end)
     {
         Vector2 s = new Vector2(start.x, Screen.height - start.y);

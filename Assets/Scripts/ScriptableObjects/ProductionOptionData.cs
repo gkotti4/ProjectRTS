@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
 
-[CreateAssetMenu(fileName = "ProductionOptionSO", menuName = "Scriptable Objects/ProductionOptionSO")]
+[CreateAssetMenu(fileName = "ProductionOptionData", menuName = "Scriptable Objects/ProductionOption")]
 public class ProductionOptionData : ScriptableObject
 {
     public string productionName = "Production";
@@ -13,9 +13,11 @@ public class ProductionOptionData : ScriptableObject
     public ProductionType productionType; // Unit or Upgrade 
     
     // Unit Production
+    [Header("Unit Production")]
     public GameObject prefab;
-    public UnitType unitType;
+    //public UnitType unitType;
     
     // Upgrade Production
+    [Header("Upgrade Production")]
     public UpgradeData upgradeData;
 }

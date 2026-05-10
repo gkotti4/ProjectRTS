@@ -6,17 +6,17 @@ public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    // * Resources
+    // Resources
     public event Action OnResourcesChanged;
-    [SerializeField] private int startingResources = 0;
+    [SerializeField] private int startingResources = 50;
     private Dictionary<ResourceType, int> resources = new Dictionary<ResourceType, int>();
 
-    // * Population
+    // Population
     public event Action OnPopulationChanged;
     [SerializeField] private int currentPopulation = 0;
     [SerializeField] private int populationCap = 10;
 
-    // * Upgrades
+    // Upgrades
     private HashSet<UpgradeData> appliedUpgrades = new HashSet<UpgradeData>();
     private List<EntityStats> allEntities = new List<EntityStats>();
 
@@ -33,11 +33,14 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
+        // Starting resources
         foreach (ResourceType type in System.Enum.GetValues(typeof(ResourceType)))
             resources[type] = startingResources;
+        OnResourcesChanged?.Invoke();
+        Debug.Log(GetCurrentResources(ResourceType.Food));
     }
 
-    // ** Resources
+    // Resources
     public int GetCurrentResources(ResourceType type) => resources[type];
 
     public void AddResources(ResourceType type, int amount)
@@ -72,7 +75,7 @@ public class GameManager : MonoBehaviour
                resources[ResourceType.Stone] >= cost.stone;
     }
 
-    // ** Population
+    // Population
     public bool CanSpawn() => currentPopulation < populationCap;
     public int GetCurrentPopulation() => currentPopulation;
     public int GetPopulationCap() => populationCap;
@@ -89,7 +92,7 @@ public class GameManager : MonoBehaviour
         OnPopulationChanged?.Invoke();
     }
 
-    // ** Entities
+    // Entities
     // Called by EntityAttributes on Start to register with GameManager
     public void RegisterEntity(EntityStats entity)
     {
@@ -107,7 +110,7 @@ public class GameManager : MonoBehaviour
     }
 
     
-    // ** Upgrades
+    // Upgrades
     public bool IsUpgradeApplied(UpgradeData upgrade) => appliedUpgrades.Contains(upgrade);
     public IEnumerable<UpgradeData> GetAppliedUpgrades() => appliedUpgrades;
     

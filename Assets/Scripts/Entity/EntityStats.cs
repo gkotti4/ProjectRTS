@@ -1,12 +1,17 @@
 using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.Rendering.Universal;
 
 public class EntityStats : MonoBehaviour
 {
     [SerializeField] public EntityData baseData;
+    [SerializeField] public DecalProjector selectionDecal;
 
+    
+    [Header("SET FROM BASE DATA (DO NOT CHANGE IN EDITOR)")]
     // Identity
     public EntityTag entityTag;
-
+    
     // Anything that can be changed - define outside of baseData
     // Shared
     public int maxHealth;
@@ -30,9 +35,14 @@ public class EntityStats : MonoBehaviour
     public float productionSpeed;
     public int garrisonCapacity;
 
-    void Start()
+    
+    void Awake()
     {
         InitializeFromBaseData();
+    }
+    
+    void Start()
+    {
         GameManager.Instance.RegisterEntity(this);
     }
 
@@ -42,8 +52,19 @@ public class EntityStats : MonoBehaviour
     }
 
     // Copies base values from EntityData into runtime fields
-    void InitializeFromBaseData()
+    public void InitializeFromBaseData()
     {
+        if (baseData == null)
+        {
+            Debug.LogError("baseData is null - set in editor");
+            return;
+        }
+
+        if (selectionDecal == null)
+        {
+            Debug.Log("SelectionDecal is null - set in editor");
+        }
+        
         entityTag = baseData.entityTag;
 
         maxHealth = baseData.maxHealth;

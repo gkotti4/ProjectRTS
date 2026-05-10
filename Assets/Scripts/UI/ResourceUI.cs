@@ -5,9 +5,14 @@ public class ResourceUI : MonoBehaviour
 {
     private TextMeshProUGUI resourceText;
 
-    void Start()
+
+    void Awake()
     {
         resourceText = GetComponent<TextMeshProUGUI>();
+    }
+    
+    void Start()
+    {
         GameManager.Instance.OnResourcesChanged += UpdateResourceText;
     }
 

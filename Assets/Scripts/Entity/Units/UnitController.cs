@@ -8,59 +8,51 @@ using UnityEngine.Rendering.Universal;
 
 public class UnitController : MonoBehaviour, ISelectable, IDamageable
 {
-    public virtual void OnSelect() { isSelected = true; if (selectionDecal) selectionDecal.enabled = true; }
-    public virtual void OnDeselect() { isSelected = false; if (selectionDecal) selectionDecal.enabled = false; }
+    public virtual void OnSelect() { isSelected = true; if (stats.selectionDecal != null) stats.selectionDecal.enabled = true; }
+    public virtual void OnDeselect() { isSelected = false; if (stats.selectionDecal != null) stats.selectionDecal.enabled = false; }
     public GameObject GetGameObject() => gameObject;
     public bool IsBoxSelectable => true;
-    
-    public void TakeDamage(int damage){ health.TakeDamage(damage); }
+    public void TakeDamage(int damage) { health.TakeDamage(damage); }
 
-
-    public EntityData unitData;
-    [SerializeField] protected DecalProjector selectionDecal;
-
+    protected EntityStats stats;
     protected Health health;
     protected UnitState state = UnitState.Idle;
-    protected float attackRange;
-    protected float attackInterval;
-    protected int attackDamage;
 
     protected Camera mainCamera;
     protected NavMeshAgent agent;
     protected bool isSelected = false;
     protected GameObject attackTarget;
     protected float attackTimer;
-    
-    protected virtual void Start() // Must be called in child
+
+    protected virtual void Awake()
     {
-        if (unitData == null)
-        {
-            Debug.LogError($"No UnitSO assigned on {gameObject.name}.");
-            return;
-        }
+        stats = GetComponent<EntityStats>();
+        health = GetComponent<Health>();
+        agent = GetComponent<NavMeshAgent>();
+    }
+
+    protected virtual void Start()
+    {
+        // EntityStats.Start() runs before this and initializes stats
+        health.Initialize(stats.maxHealth);
+
+        agent.speed = stats.moveSpeed;
+        agent.baseOffset = 1f;
+
+        attackTimer = stats.attackInterval;
+
+        if (stats.selectionDecal != null)
+            stats.selectionDecal.enabled = false;
 
         mainCamera = Camera.main;
-        health = GetComponent<Health>();
-        health.Initialize(unitData.maxHealth);
-        
-        agent = GetComponent<NavMeshAgent>();
-        agent.speed = unitData.moveSpeed;
-        agent.baseOffset = 1f; // MIGHT CHANGE IN THE FUTURE DOUBLE CHECK
-        
-        attackRange = unitData.attackRange;
-        attackDamage = unitData.attackDamage;
-        attackInterval = unitData.attackInterval;
-        attackTimer = attackInterval;
-        
         SelectionManager.Instance.Register(this);
-        selectionDecal.enabled = false;
     }
 
     protected virtual void Update()
     {
         HandleState();
     }
-    
+
     protected virtual void OnDestroy()
     {
         SelectionManager.Instance.Unregister(this);
@@ -80,17 +72,16 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
                 break;
         }
     }
-    
+
     protected virtual void HandleMovingState()
     {
-        if (attackTarget is not null)
+        if (attackTarget != null)
         {
             float distance = Vector3.Distance(transform.position, attackTarget.transform.position);
-            if (distance <= attackRange)
+            if (distance <= stats.attackRange)
                 state = UnitState.Attacking;
         }
-        
-        else if (!agent.pathPending && agent.remainingDistance < 0.1f) // Reached target destination
+        else if (!agent.pathPending && agent.remainingDistance < 0.1f)
         {
             state = UnitState.Idle;
         }
@@ -104,7 +95,6 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
             return;
         }
 
-        // Check if target died mid combat
         if (!attackTarget.TryGetComponent(out IDamageable damageable))
         {
             attackTarget = null;
@@ -112,9 +102,8 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
             return;
         }
 
-        // Chase target if it moves out of range
         float distance = Vector3.Distance(transform.position, attackTarget.transform.position);
-        if (distance > attackRange)
+        if (distance > stats.attackRange)
         {
             agent.SetDestination(attackTarget.transform.position);
             state = UnitState.Moving;
@@ -124,13 +113,10 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable
         attackTimer -= Time.deltaTime;
         if (attackTimer <= 0f)
         {
-            damageable.TakeDamage(attackDamage);
-            attackTimer = attackInterval;
+            damageable.TakeDamage(stats.attackDamage);
+            attackTimer = stats.attackInterval;
         }
     }
-    
-    public virtual void SetMoveTarget() { } // subclasses override
-    
-    
-    
+
+    public virtual void SetMoveTarget() { }
 }

@@ -4,10 +4,15 @@ using UnityEngine;
 public class PopulationUI : MonoBehaviour
 {
     private TextMeshProUGUI populationText;
+
+
+    void Awake()
+    {
+        populationText = GetComponent<TextMeshProUGUI>();
+    }
     
     void Start()
     {
-        populationText = GetComponent<TextMeshProUGUI>();
         GameManager.Instance.OnPopulationChanged += UpdatePopulationText;
     }
 

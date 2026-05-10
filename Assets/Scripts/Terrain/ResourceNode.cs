@@ -11,10 +11,17 @@ public class ResourceNode : MonoBehaviour, ISelectable
     public ResourceNodeData resourceNodeData;
     private int remainingResources;
     private bool isSelected;
-    void Start()
+
+
+    void Awake()
     {
         remainingResources = resourceNodeData.totalResources;
         isSelected = false;
+    }
+    
+    void Start()
+    {
+
     }
     
     public bool HasResources()

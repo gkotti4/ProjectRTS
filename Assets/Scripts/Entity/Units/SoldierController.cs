@@ -7,6 +7,11 @@ using UnityEngine.AI;
 public class SoldierController : UnitController
 {
     
+    protected override void Awake()
+    {
+        base.Awake();
+    }
+    
     protected override void Start()
     {
         base.Start();
@@ -44,7 +49,7 @@ public class SoldierController : UnitController
         if (hit.collider.CompareTag("Enemy"))
         {
             attackTarget = hit.collider.gameObject;
-            agent.stoppingDistance = attackRange;
+            agent.stoppingDistance = stats.attackDamage;
             agent.SetDestination(attackTarget.transform.position);
             state = UnitState.Moving;
         }

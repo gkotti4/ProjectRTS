@@ -11,6 +11,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
     [SerializeField] private Transform spawnPoint;
 
     protected EntityStats stats;
+    public EntityStats Stats => stats;
     protected Health health;
     protected bool isSelected = false;
     
@@ -28,17 +29,21 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
     
     // IDamageable
     public void TakeDamage(int damage){ health.TakeDamage(damage); }
-    
-    
-    protected virtual void Start()
+
+
+    protected virtual void Awake()
     {
         gameObject.transform.rotation = Quaternion.Euler(0, 90, 0); // rotate 90 degrees so its facing our camera view better - possibly REMOVE
         
         stats = GetComponent<EntityStats>();
         health = GetComponent<Health>();
         health.Initialize(stats.maxHealth);
-        
         if (selectionDecal) selectionDecal.enabled = false;
+    }
+    
+    protected virtual void Start()
+    {
+        
     }
 
     protected virtual void Update()
@@ -61,6 +66,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
         if (option.productionType == ProductionType.Upgrade)
         {
             if (!GameManager.Instance.IsUpgradeApplied(option.upgradeData)) return;
+            // Todo: upgrade path 
         }
         
         if (!GameManager.Instance.CanAfford(option.cost)) return;
@@ -113,7 +119,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
         isProducing = true;
     }
 
-    void SpawnUnit(ProductionOptionData option)
+    private void SpawnUnit(ProductionOptionData option)
     {
         if (!GameManager.Instance.CanSpawn()) return;
         if (option.prefab == null) return;

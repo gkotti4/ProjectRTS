@@ -11,13 +11,19 @@ public class VillagerController : UnitController
     private float gatherInterval;
     private float gatherTimer;
     private ResourceNode targetNode;
+
+
+    protected override void Awake()
+    {
+        base.Awake();
+        gatherAmount = stats.gatherAmount;
+        gatherRange = stats.gatherRange;
+        gatherInterval = stats.gatherInterval;
+    }
     
     protected override void Start()
     {
         base.Start();
-        gatherAmount = unitData.gatherAmount;
-        gatherRange = unitData.gatherRange;
-        gatherInterval = unitData.gatherInterval;
     }
 
     protected override void Update()
@@ -119,7 +125,7 @@ public class VillagerController : UnitController
         else if (hit.collider != null && hit.collider.CompareTag("Enemy"))
         {
             attackTarget = hit.collider.gameObject;
-            agent.stoppingDistance = attackRange;
+            agent.stoppingDistance = stats.attackRange;
             agent.SetDestination(attackTarget.transform.position);
             state = UnitState.Moving;
 
