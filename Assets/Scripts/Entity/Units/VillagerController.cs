@@ -105,41 +105,41 @@ public class VillagerController : UnitController
         }
     }
     
-    public override void SetMoveTarget()
-    {
-        if (!isSelected) return;
-        
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-        Physics.Raycast(ray, out RaycastHit hit);
-        
-        if (hit.collider != null && hit.collider.TryGetComponent(out ResourceNode node))
-        {
-            // Clicked a resource node — assign and move toward it
-            targetNode = node;
-            agent.stoppingDistance = gatherRange;
-            agent.SetDestination(targetNode.transform.position);
-            state = UnitState.Moving;
-
-            attackTarget = null;
-        }
-        else if (hit.collider != null && hit.collider.CompareTag("Enemy"))
-        {
-            attackTarget = hit.collider.gameObject;
-            agent.stoppingDistance = stats.attackRange;
-            agent.SetDestination(attackTarget.transform.position);
-            state = UnitState.Moving;
-
-            targetNode = null;
-        }
-        else
-        {
-            // Clicked ground — normal move, clear harvest target
-            targetNode = null;
-            attackTarget = null;
-            agent.stoppingDistance = 0.1f;
-            agent.SetDestination(hit.point);
-            state = UnitState.Moving;
-        }
-    }
+    // public override void SetMoveTarget()
+    // {
+    //     if (!isSelected) return;
+    //     
+    //     Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+    //     Physics.Raycast(ray, out RaycastHit hit);
+    //     
+    //     if (hit.collider != null && hit.collider.TryGetComponent(out ResourceNode node))
+    //     {
+    //         // Clicked a resource node — assign and move toward it
+    //         targetNode = node;
+    //         agent.stoppingDistance = gatherRange;
+    //         agent.SetDestination(targetNode.transform.position);
+    //         state = UnitState.Moving;
+    //
+    //         attackTarget = null;
+    //     }
+    //     else if (hit.collider != null && hit.collider.CompareTag("Enemy"))
+    //     {
+    //         attackTarget = hit.collider.gameObject;
+    //         agent.stoppingDistance = stats.attackRange;
+    //         agent.SetDestination(attackTarget.transform.position);
+    //         state = UnitState.Moving;
+    //
+    //         targetNode = null;
+    //     }
+    //     else
+    //     {
+    //         // Clicked ground — normal move, clear harvest target
+    //         targetNode = null;
+    //         attackTarget = null;
+    //         agent.stoppingDistance = 0.1f;
+    //         agent.SetDestination(hit.point);
+    //         state = UnitState.Moving;
+    //     }
+    // }
 
 }

@@ -103,7 +103,7 @@ public class UIManager : MonoBehaviour
 
 
 
-    IEnumerator SetDefaultCursorAfterDelay(float delay=0.33f)
+    IEnumerator SetDefaultCursorAfterDelay(float delay=0.225f)
     {
         yield return new WaitForSeconds(delay);
         SetCursor(defaultCursor);

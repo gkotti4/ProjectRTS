@@ -39,27 +39,27 @@ public class SoldierController : UnitController
     }
     
     
-    public override void SetMoveTarget()
-    {
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-        Physics.Raycast(ray, out RaycastHit hit);
-
-        if (hit.collider == null) return;
-
-        if (hit.collider.CompareTag("Enemy"))
-        {
-            attackTarget = hit.collider.gameObject;
-            agent.stoppingDistance = stats.attackDamage;
-            agent.SetDestination(attackTarget.transform.position);
-            state = UnitState.Moving;
-        }
-        else
-        {
-            attackTarget = null;
-            agent.stoppingDistance = 0.1f;
-            agent.SetDestination(hit.point); 
-            state = UnitState.Moving;
-        }
-    }
+    // public override void SetMoveTarget()
+    // {
+    //     Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+    //     Physics.Raycast(ray, out RaycastHit hit);
+    //
+    //     if (hit.collider == null) return;
+    //
+    //     if (hit.collider.CompareTag("Enemy"))
+    //     {
+    //         attackTarget = hit.collider.gameObject;
+    //         agent.stoppingDistance = stats.attackDamage;
+    //         agent.SetDestination(attackTarget.transform.position);
+    //         state = UnitState.Moving;
+    //     }
+    //     else
+    //     {
+    //         attackTarget = null;
+    //         agent.stoppingDistance = 0.1f;
+    //         agent.SetDestination(hit.point); 
+    //         state = UnitState.Moving;
+    //     }
+    // }
 }
 

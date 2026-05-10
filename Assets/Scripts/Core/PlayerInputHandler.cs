@@ -59,6 +59,7 @@ public class PlayerInputHandler : MonoBehaviour
             return;
         }
         HandleHotkeys();
+        HandleRightClick();
     }
 
     void HandleSelectionChanged()
@@ -96,6 +97,50 @@ public class PlayerInputHandler : MonoBehaviour
         currentContext = CommandContext.Default;
     }
 
+    void HandleRightClick() // CHECK
+    {
+        if (!Input.GetMouseButtonDown(1)) return;
+        
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
+        
+        List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
+
+        if (selected.Count > 1) // Multiple units selected
+        {
+            List<UnitController> units = new List<UnitController>();
+            foreach (ISelectable s in selected)
+                if (s.GetGameObject().TryGetComponent(out UnitController unit))
+                    units.Add(unit);
+
+            HandleGroupMove(units, hit.point);
+            return;
+        }
+        
+        // Single unit or building
+        foreach (ISelectable s in selected)
+            if(s.GetGameObject().TryGetComponent(out UnitController unit))
+                unit.SetMoveTarget(hit);
+
+    }
+
+    private void HandleGroupMove(List<UnitController> units, Vector3 destination) // CHECK DRUKN
+    {
+        int columns = Mathf.CeilToInt(Mathf.Sqrt(units.Count));
+        float spacing = 2f;
+
+        for (int i = 0; i < units.Count; i++)
+        {
+            int row = i / columns;
+            int col = i % columns;
+
+            float offsetX = (col - (columns - 1) / 2f) * spacing;
+            float offsetZ = -row * spacing;
+
+            Vector3 unitDestination = destination + new Vector3(offsetX, 0f, offsetZ);
+            units[i].MoveTo(unitDestination);
+        }
+    }
 
     void HandleHotkeys()
     {

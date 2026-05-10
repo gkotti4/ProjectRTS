@@ -58,15 +58,6 @@ public class SelectionManager : MonoBehaviour
     void Update()
     {
         HandleSelectionInput();
-        if (Input.GetMouseButtonDown(1))
-        {
-            foreach (ISelectable selectable in selectedObjects)
-            {
-                if (selectable is UnitController unit)
-                    unit.SetMoveTarget();
-            }
-        }
-        
         // Future Idea: Update the box selected units as box being drawn in update; con: performance
     }
 
