@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public class UIManager : MonoBehaviour
 {
@@ -9,12 +10,12 @@ public class UIManager : MonoBehaviour
     // Cursor
     [Header("Cursor")]
     [SerializeField] private Texture2D defaultCursor;
-    [SerializeField] private Texture2D buildCursor;
-    [SerializeField] private Texture2D orderCursor;
+    //[SerializeField] private Texture2D buildCursor;
     
     // Panels
     [Header("Panels")]
-    [SerializeField] private BuildingPanelUI buildingPanel;
+    [SerializeField] private ActionPanelUI actionPanelUI;
+    [SerializeField] private QueuePanelUI queuePanelUI;
     
     void Awake()
     {
@@ -32,41 +33,30 @@ public class UIManager : MonoBehaviour
         SelectionManager.Instance.OnSelectionChanged += HandleSelectionChanged;
         BuildingPlacer.Instance.OnPlacingModeChanged += HandleIsPlacingBuildingChanged;
     }
-
     
     void OnDestroy()
     {
         SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
     }
     
-    void Update()
-    {
-        if (Input.GetMouseButtonDown(1)) // Check if we this here
-        {
-            SetCursor(orderCursor);
-            StartCoroutine(SetDefaultCursorAfterDelay());
-        }
-    }
-
-
+    
     // Cursor
     public void SetCursor(Texture2D cursor, Vector2 hotspot = default(Vector2))
     {
         Cursor.SetCursor(cursor, hotspot, CursorMode.Auto);
     }
     public void SetDefaultCursor() => SetCursor(defaultCursor);
-    public void SetBuildCursor() => SetCursor(buildCursor);
-    public void SetOrderCursor() => SetCursor(orderCursor);
 
     private void HandleIsPlacingBuildingChanged(bool isPlacing)
     {
         if (isPlacing)
         {
-            SetCursor(buildCursor);
+            Cursor.visible = false;
         }
         else
         {
-            SetCursor(defaultCursor);
+            SetDefaultCursor();
+            Cursor.visible = true;
         }
     }
     
@@ -82,31 +72,36 @@ public class UIManager : MonoBehaviour
             return;
         }
         
+        // ACTION PANEL
         // Single building selected
         if (selected.Count == 1 && selected[0] is BuildingController building)
         {
             HideAllPanels();
-            buildingPanel.ShowBuildingButtons(building);
+            actionPanelUI.ShowPanel(building);
+            queuePanelUI.ShowPanel(building);
             return;
         }
+        else if (selected.Count == 1 && selected[0] is UnitController unit)
+        {
+            // TODO
+            
+        }
         
-        // TODO - single unit, multi unit, resource node panels
+        // INFO PANEL
+        // TODO - Info Panel - units, buildings, resource nodes 
         HideAllPanels();
     }
     
 
     void HideAllPanels()
     {
-        //buildingPanel.gameObject.SetActive(false);
-        buildingPanel.HideAll();
+        actionPanelUI.HidePanel();
+        queuePanelUI.HidePanel();
     }
 
-
-
-    IEnumerator SetDefaultCursorAfterDelay(float delay=0.225f)
+    public void RefreshQueuePanel()
     {
-        yield return new WaitForSeconds(delay);
-        SetCursor(defaultCursor);
+        queuePanelUI.Refresh();
     }
     
 }

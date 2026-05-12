@@ -9,6 +9,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
 {
     [SerializeField] private DecalProjector selectionDecal;
     [SerializeField] private Transform spawnPoint;
+    [SerializeField] private Transform pivotPoint; // local point (0, 0, 0) (bottom center of prefab)
 
     protected EntityStats stats;
     public EntityStats Stats => stats;
@@ -17,6 +18,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
     
     // Production
     private List<ProductionOptionData> productionQueue = new List<ProductionOptionData>();
+    public List<ProductionOptionData> ProductionQueue => productionQueue;
     private float productionTimer = 0f;
     private bool isProducing = false;
     
@@ -36,6 +38,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
         gameObject.transform.rotation = Quaternion.Euler(0, 90, 0); // rotate 90 degrees so its facing our camera view better - possibly REMOVE
         
         stats = GetComponent<EntityStats>();
+        if (stats) stats.InitializeFromBaseData();
         health = GetComponent<Health>();
         health.Initialize(stats.maxHealth);
         if (selectionDecal) selectionDecal.enabled = false;
@@ -51,6 +54,8 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
         HandleProduction();
     }
 
+    
+    // PRODUCTION
     public void EnqueueProduction(ProductionOptionData option) // Addds a production option to the queue if under cap
     {
         const int cap = 10;
@@ -65,7 +70,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
         // Upgrade checks
         if (option.productionType == ProductionType.Upgrade)
         {
-            if (!GameManager.Instance.IsUpgradeApplied(option.upgradeData)) return;
+            if (GameManager.Instance.IsUpgradeApplied(option.upgradeData)) return; // CHANGED from !IsUpgradeApplied
             // Todo: upgrade path 
         }
         
@@ -76,6 +81,8 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
 
         if (!isProducing)
             StartNextProduction();
+
+        UIManager.Instance.RefreshQueuePanel();
     }
 
     public void CancelProduction(int index)
@@ -86,6 +93,18 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
         GameManager.Instance.AddResources(productionQueue[index].cost);
 
         productionQueue.RemoveAt(index);
+        
+        // If cancelled the active item, reset production
+        if (index == 0)
+        {
+            isProducing = false;
+            productionTimer = 0f;
+
+            if (productionQueue.Count > 0)
+                StartNextProduction();
+        }
+
+        UIManager.Instance.RefreshQueuePanel();
     }
     
     private void HandleProduction()
@@ -107,6 +126,11 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
             SpawnUnit(completed);
         else if (completed.productionType == ProductionType.Upgrade)
             ApplyUpgrade(completed);
+        
+        if (productionQueue.Count > 0)
+            StartNextProduction();
+        
+        UIManager.Instance.RefreshQueuePanel();
     }
 
 
@@ -117,8 +141,10 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
         ProductionOptionData next = productionQueue[0];
         productionTimer = next.productionTime / stats.productionSpeed;
         isProducing = true;
+        
+        UIManager.Instance.RefreshQueuePanel();
     }
-
+    
     private void SpawnUnit(ProductionOptionData option)
     {
         if (!GameManager.Instance.CanSpawn()) return;
@@ -147,5 +173,12 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
             return Vector3.zero;
         }
         return GridManager.Instance.SnapToGrid(spawnPoint.position);
+    }
+
+
+    public float GetProductionProgress()
+    {
+        if (!isProducing || productionQueue.Count == 0) return 0f;
+        return 1f - (productionTimer / productionQueue[0].productionTime);
     }
 }

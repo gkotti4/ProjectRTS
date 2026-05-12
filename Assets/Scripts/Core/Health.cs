@@ -25,9 +25,25 @@ public class Health : MonoBehaviour
 
     void Die()
     {
+        if (TryGetComponent(out UnitAnimator unitAnimator))
+            unitAnimator.TriggerDeath();
+
+        if (TryGetComponent(out UnitController unitController))
+        {
+            unitController.Agent.enabled = false;
+            if (TryGetComponent(out Rigidbody rb))
+            {
+                rb.isKinematic = false;
+            }
+        }
+        
         Debug.Log(gameObject.name + " died");
-        Destroy(gameObject);
-        //gameObject.SetActive(false);
+        
+        GameManager.Instance.RegisterDespawn();
+        Destroy(gameObject, 2f);
+        
+        //gameObject.SetActive(false); 
+        // Spawn dead body / blood here?
     }
 
     public bool IsAlive() => currentHealth > 0;

@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class BuildingPanelUI : MonoBehaviour
+public class ActionPanelUI : MonoBehaviour
 {
     [SerializeField] private GameObject productionButtonPrefab;
     [SerializeField] private int maxButtons = 15; // hotkey rows - q w e r t, a s d f g, z x c v b 
     
-    private List<ProductionButton> buttons = new List<ProductionButton>();
+    private List<ActionButtonUI> buttons = new List<ActionButtonUI>();
     
     void Start()
     {
@@ -14,14 +14,14 @@ public class BuildingPanelUI : MonoBehaviour
         for (int i = 0; i < maxButtons; i++)
         {
             GameObject btn = Instantiate(productionButtonPrefab, transform);
-            buttons.Add(btn.GetComponent<ProductionButton>());
+            buttons.Add(btn.GetComponent<ActionButtonUI>());
             btn.SetActive(false);
         }
     }
 
-    public void ShowBuildingButtons(BuildingController building)
+    public void ShowPanel(BuildingController building)
     {
-        HideAll();
+        HidePanel();
         if (building.Stats.baseData.productionOptions == null) return;
 
         for (int i = 0; i < building.Stats.baseData.productionOptions.Count && i < maxButtons; i++)
@@ -31,9 +31,9 @@ public class BuildingPanelUI : MonoBehaviour
         }
     }
     
-    public void HideAll()
+    public void HidePanel()
     {
-        foreach (ProductionButton btn in buttons)
+        foreach (ActionButtonUI btn in buttons)
             btn.gameObject.SetActive(false);
     }
 }

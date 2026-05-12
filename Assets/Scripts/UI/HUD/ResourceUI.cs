@@ -14,6 +14,7 @@ public class ResourceUI : MonoBehaviour
     void Start()
     {
         GameManager.Instance.OnResourcesChanged += UpdateResourceText;
+        UpdateResourceText();
     }
 
     void OnDestroy()

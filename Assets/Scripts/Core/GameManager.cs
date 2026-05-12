@@ -29,14 +29,19 @@ public class GameManager : MonoBehaviour
         }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        
+        foreach (ResourceType type in System.Enum.GetValues(typeof(ResourceType)))
+            resources[type] = 0;
     }
 
     void Start()
     {
         // Starting resources
         foreach (ResourceType type in System.Enum.GetValues(typeof(ResourceType)))
-            resources[type] = startingResources;
-        OnResourcesChanged?.Invoke();
+        {
+            AddResources(type, startingResources);
+        }
+        
         Debug.Log(GetCurrentResources(ResourceType.Food));
     }
 
@@ -82,12 +87,14 @@ public class GameManager : MonoBehaviour
 
     public void RegisterSpawn()
     {
+        // TODO - Differentiate between Player and Enemy tagged units
         currentPopulation++;
         OnPopulationChanged?.Invoke();
     }
 
     public void RegisterDespawn()
     {
+        // TODO - Differentiate between Player and Enemy tagged units
         currentPopulation--;
         OnPopulationChanged?.Invoke();
     }

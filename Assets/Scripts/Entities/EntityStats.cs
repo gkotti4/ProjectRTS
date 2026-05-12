@@ -2,11 +2,9 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.Rendering.Universal;
 
-public class EntityStats : MonoBehaviour
+public class EntityStats : MonoBehaviour // Pure data class
 {
     [SerializeField] public EntityData baseData;
-    [SerializeField] public DecalProjector selectionDecal;
-
     
     [Header("SET FROM BASE DATA (DO NOT CHANGE IN EDITOR)")]
     // Identity
@@ -58,11 +56,6 @@ public class EntityStats : MonoBehaviour
         {
             Debug.LogError("baseData is null - set in editor");
             return;
-        }
-
-        if (selectionDecal == null)
-        {
-            Debug.Log("SelectionDecal is null - set in editor");
         }
         
         entityTag = baseData.entityTag;

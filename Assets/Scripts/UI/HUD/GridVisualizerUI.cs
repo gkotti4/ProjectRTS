@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class GridVisualizer : MonoBehaviour
+public class GridVisualizerUI : MonoBehaviour
 {
     [SerializeField] private bool showGrid = true;
     [SerializeField] private Color gridColor = new Color(1f, 1f, 1f, 0.2f);

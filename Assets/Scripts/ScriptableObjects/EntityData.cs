@@ -9,8 +9,6 @@ public class EntityData : ScriptableObject
     public int entityID = 0;
     public EntityTag entityTag = EntityTag.None;
     public EntityType entityType; // Unit, Building
-    public UnitType unitType;     // Infantry, Villager, None (if building)
-    public BuildingType buildingType; // None (if unit)
     public GameObject prefab;
 
     // Shared Stats
@@ -27,6 +25,7 @@ public class EntityData : ScriptableObject
 
     // Movement (units only)
     [Header("Units Only")]
+    public UnitType unitType;  
     public float moveSpeed = 0f;
 
     // Gathering (villager only)
@@ -37,7 +36,8 @@ public class EntityData : ScriptableObject
 
     // Building only
     [Header("Building Only")]
-    public ResourceCost buildingCost;
+    public BuildingType buildingType; 
+    public ResourceCost buildingCost = new ResourceCost();
     public int gridWidth = 1;
     public int gridHeight = 1;
     

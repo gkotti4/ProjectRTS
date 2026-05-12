@@ -5,7 +5,7 @@ using TMPro;
 
 [RequireComponent(typeof(Button))]
 
-public class ProductionButton : MonoBehaviour
+public class ActionButtonUI : MonoBehaviour
 {
     private ProductionOptionData optionData;
     private BuildingController targetBuilding;
@@ -56,7 +56,7 @@ public class ProductionButton : MonoBehaviour
     {
         if (optionData == null || !gameObject.activeSelf) return;
         canAfford = GameManager.Instance.CanAfford(optionData.cost);
-        button.image.color = canAfford ? Color.white : Color.red;
+        button.image.color = canAfford ? affordableColor : unaffordableColor;
     }
     
 }

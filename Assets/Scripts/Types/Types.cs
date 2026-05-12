@@ -36,7 +36,7 @@ public enum EntityTag
 
 // Units
 public enum UnitState { Idle, Moving, Attacking, Gathering, Building, Patrolling }
-public enum UnitType { Villager, Soldier, Archer }
+public enum UnitType { Villager, Infantry, Ranged }
 
 // Buildings
 public enum BuildingType { TownCenter, Barracks, Farm }

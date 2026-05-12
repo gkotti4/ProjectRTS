@@ -80,6 +80,7 @@ public class BuildingPlacer : MonoBehaviour
             if (Physics.Raycast(ray, out RaycastHit hit))
             {
                 Vector3 snappedPos = GridManager.Instance.SnapToGrid(hit.point);
+                //snappedPos.y = 0; 
                 Vector2Int cell = GridManager.Instance.WorldToCell(snappedPos);
 
                 if (GridManager.Instance.IsFree(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight))
@@ -97,7 +98,7 @@ public class BuildingPlacer : MonoBehaviour
         if (Physics.Raycast(ray, out RaycastHit hit))
         {
             Vector3 snappedPos = GridManager.Instance.SnapToGrid(hit.point);
-            snappedPos.y = 0f;
+            //snappedPos.y = 0; 
             ghostObject.transform.position = snappedPos;
             
             Vector2Int cell = GridManager.Instance.WorldToCell(snappedPos);
@@ -120,10 +121,12 @@ public class BuildingPlacer : MonoBehaviour
             return;
         }
         
-        // Place building
+        // Place building (Todo: Building construction)
         Instantiate(selectedBuilding.prefab, position, Quaternion.identity);
         GridManager.Instance.SetOccupied(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight);
         GameManager.Instance.SpendResources(selectedBuilding.buildingCost);
+        
+        // Note: we could just place the ghost building but somewhat cleaner to just instantiate a new one fresh.
         
         //Debug.Log("Placed: " + selectedBuilding.entityName);
         CancelPlacement();
@@ -154,4 +157,6 @@ public class BuildingPlacer : MonoBehaviour
             r.materials = mats;
         }
     }
+    
+    
 }
