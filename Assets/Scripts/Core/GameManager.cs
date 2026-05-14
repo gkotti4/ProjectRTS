@@ -7,12 +7,10 @@ public class GameManager : MonoBehaviour
     public static GameManager Instance { get; private set; }
 
     // Resources
-    public event Action OnResourcesChanged;
     [SerializeField] private int startingResources = 50;
     private Dictionary<ResourceType, int> resources = new Dictionary<ResourceType, int>();
 
     // Population
-    public event Action OnPopulationChanged;
     [SerializeField] private int currentPopulation = 0;
     [SerializeField] private int populationCap = 10;
 
@@ -51,16 +49,18 @@ public class GameManager : MonoBehaviour
     public void AddResources(ResourceType type, int amount)
     {
         resources[type] += amount;
-        OnResourcesChanged?.Invoke();
+        //OnResourcesChanged?.Invoke();
+        GameEvents.ResourcesChanged();
     }
 
     public void AddResources(ResourceCost amount)
     {
-        resources[ResourceType.Wood] -= amount.wood;
-        resources[ResourceType.Food] -= amount.food;
-        resources[ResourceType.Gold] -= amount.gold;
-        resources[ResourceType.Stone] -= amount.stone;
-        OnResourcesChanged?.Invoke();
+        resources[ResourceType.Wood] += amount.wood;
+        resources[ResourceType.Food] += amount.food;
+        resources[ResourceType.Gold] += amount.gold;
+        resources[ResourceType.Stone] += amount.stone;
+        //OnResourcesChanged?.Invoke();
+        GameEvents.ResourcesChanged();
     }
 
     public void SpendResources(ResourceCost cost)
@@ -69,7 +69,8 @@ public class GameManager : MonoBehaviour
         resources[ResourceType.Food] -= cost.food;
         resources[ResourceType.Gold] -= cost.gold;
         resources[ResourceType.Stone] -= cost.stone;
-        OnResourcesChanged?.Invoke();
+        //OnResourcesChanged?.Invoke();
+        GameEvents.ResourcesChanged();
     }
 
     public bool CanAfford(ResourceCost cost)
@@ -89,14 +90,16 @@ public class GameManager : MonoBehaviour
     {
         // TODO - Differentiate between Player and Enemy tagged units
         currentPopulation++;
-        OnPopulationChanged?.Invoke();
+        //OnPopulationChanged?.Invoke();
+        GameEvents.PopulationChanged();
     }
 
     public void RegisterDespawn()
     {
         // TODO - Differentiate between Player and Enemy tagged units
         currentPopulation--;
-        OnPopulationChanged?.Invoke();
+        //OnPopulationChanged?.Invoke();
+        GameEvents.PopulationChanged();
     }
 
     // Entities

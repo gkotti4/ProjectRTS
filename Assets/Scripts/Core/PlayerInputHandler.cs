@@ -41,14 +41,19 @@ public class PlayerInputHandler : MonoBehaviour
     }
     void Start()
     {
-        SelectionManager.Instance.OnSelectionChanged += HandleSelectionChanged;
-        BuildingPlacer.Instance.OnPlacingModeChanged += (isPlacing) => isPlacingBuilding = isPlacing;
+        //SelectionManager.Instance.OnSelectionChanged += HandleSelectionChanged;
+        GameEvents.OnSelectionChanged += HandleSelectionChanged;
+        //BuildingPlacer.Instance.OnPlacingModeChanged += (isPlacing) => isPlacingBuilding = isPlacing;
+        GameEvents.OnPlacementModeChanged += (isPlacing) => isPlacingBuilding = isPlacing;
+        GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
 
     }
 
     void OnDestroy()
     {
-        SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
+        //SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
+        GameEvents.OnSelectionChanged -= HandleSelectionChanged;
+        GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
     }
 
     void Update()
@@ -120,7 +125,7 @@ public class PlayerInputHandler : MonoBehaviour
         // Single unit or building
         foreach (ISelectable s in selected)
             if(s.GetGameObject().TryGetComponent(out UnitController unit))
-                unit.SetMoveTarget(hit);
+                unit.MoveToTarget(hit);
 
     }
 
@@ -205,5 +210,10 @@ public class PlayerInputHandler : MonoBehaviour
             }
         }
     }
-    
+
+
+    void HandlePlacementModeChanged(bool isPlacing)
+    {
+        isPlacingBuilding = isPlacing;
+    }
 }

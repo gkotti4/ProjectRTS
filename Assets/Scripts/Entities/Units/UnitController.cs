@@ -34,7 +34,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
     protected float attackTimer;
 
     // Gathering
-    protected ResourceNode targetNode;
+    protected ResourceNode nodeTarget;
     protected float gatherTimer;
 
     
@@ -65,9 +65,10 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
         stats = GetComponent<EntityStats>();
         health = GetComponent<Health>();
         agent = GetComponent<NavMeshAgent>();
-        agent.angularSpeed = 2000f;
-        agent.acceleration = 75f;
-        agent.autoBraking = true;
+        agent.angularSpeed = 99999f;
+        agent.acceleration = 99999f; // 100f
+        agent.autoBraking = false;
+        agent.updateRotation = false;
         rb = GetComponent<Rigidbody>();
         rb.isKinematic = true;
         unitAnimator = GetComponentInChildren<UnitAnimator>();
@@ -97,6 +98,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
     protected virtual void Update()
     {
         HandleState();
+        HandleRotation();
     }
 
     protected virtual void OnDestroy()
@@ -128,7 +130,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
     {
         if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
-            if (targetNode != null)
+            if (nodeTarget != null)
                 state = UnitState.Gathering;
             else if (attackTarget != null)
                 state = UnitState.Attacking;
@@ -186,53 +188,73 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
     // Ticks gather timer and pulls resources from node
     protected virtual void HandleGatheringState()
     {
-        if (targetNode == null || !targetNode.HasResources())
+        if (nodeTarget == null || !nodeTarget.HasResources())
         {
             state = UnitState.Idle;
-            targetNode = null;
+            nodeTarget = null;
             return;
         }
 
         gatherTimer -= Time.deltaTime;
         if (gatherTimer <= 0f)
         {
-            int harvested = targetNode.Harvest(stats.gatherAmount);
-            GameManager.Instance.AddResources(targetNode.resourceNodeData.resourceType, harvested);
+            int harvested = nodeTarget.Harvest(stats.gatherAmount);
+            GameManager.Instance.AddResources(nodeTarget.resourceNodeData.resourceType, harvested);
             gatherTimer = stats.gatherInterval;
         }
     }
 
     // Routes right click command based on what was clicked
-    public virtual void SetMoveTarget(RaycastHit hit)
+    public virtual void MoveToTarget(RaycastHit hit)
     {
         if (hit.collider == null) return;
 
         if (hit.collider.TryGetComponent(out ResourceNode node) && stats.gatherAmount > 0)
         {
             // Clicked resource node and this unit can gather
-            targetNode = node;
+            nodeTarget = node;
             attackTarget = null;
             agent.stoppingDistance = stats.gatherRange;
-            agent.SetDestination(targetNode.transform.position);
+            agent.SetDestination(nodeTarget.transform.position);
             state = UnitState.Moving;
+            
+            
+            Vector3 toPos = nodeTarget.transform.position;
+            Vector3 pos = transform.position;
+            float sqrDist = (toPos - pos).sqrMagnitude;
+            if (sqrDist < stats.gatherRange * stats.gatherRange) // If inside range snap to target
+            {
+                Vector3 dir = (toPos - pos).normalized;
+                transform.rotation = SnapToXDirections(dir);
+            }
         }
         else if (hit.collider.CompareTag("Enemy"))
         {
             // Clicked enemy
             attackTarget = hit.collider.gameObject;
-            targetNode = null;
+            nodeTarget = null;
             agent.stoppingDistance = stats.attackRange;
             agent.SetDestination(attackTarget.transform.position);
             state = UnitState.Moving;
+            
+            Vector3 toPos = attackTarget.transform.position;
+            Vector3 pos = transform.position;
+            float sqrDist = (toPos - pos).sqrMagnitude;
+            if (sqrDist < stats.gatherRange * stats.gatherRange) // If inside range snap to target
+            {
+                Vector3 dir = (toPos - pos).normalized;
+                transform.rotation = SnapToXDirections(dir);
+            }
         }
         else
         {
             // Clicked ground — normal move
-            targetNode = null;
-            attackTarget = null;
-            agent.stoppingDistance = 0.1f;
-            agent.SetDestination(hit.point);
-            state = UnitState.Moving;
+            // targetNode = null;
+            // attackTarget = null;
+            // agent.stoppingDistance = 0.1f;
+            // agent.SetDestination(hit.point);
+            // state = UnitState.Moving;
+            MoveTo(hit.point);
         }
     }
 
@@ -240,10 +262,72 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
     public void MoveTo(Vector3 destination)
     {
         attackTarget = null;
-        targetNode = null;
+        nodeTarget = null;
         agent.stoppingDistance = 0.1f;
         agent.SetDestination(destination);
         state = UnitState.Moving;
     }
+    
+    
+    void HandleRotation()
+    {
+        switch (state)
+        {
+            case UnitState.Moving:
+                RotateTowardVelocity();
+                break;
+            case UnitState.Attacking:
+                RotateToward(attackTarget?.transform.position);
+                break;
+            case UnitState.Gathering:
+                RotateTowardIfNeeded(nodeTarget?.transform.position);
+                break;
+            case UnitState.Idle:
+                break;
+        }
+    }
+
+// Smoothly rotates toward movement direction snapped to 8 dirs - note: maybe just use Snap
+    void RotateTowardVelocity()
+    {
+        if (agent.velocity.sqrMagnitude < 0.1f) return;
+        transform.rotation = Quaternion.RotateTowards(
+            transform.rotation,
+            SnapToXDirections(agent.velocity),
+            900f * Time.deltaTime);
+    }
+
+// Instantly snaps to face a position
+    void RotateToward(Vector3? targetPos)
+    {
+        if (targetPos == null) return;
+        Vector3 dir = targetPos.Value - transform.position;
+        dir.y = 0f;
+        if (dir == Vector3.zero) return;
+        transform.rotation = SnapToXDirections(dir);
+    }
+
+// Only rotates if significantly misaligned — snap once, stay put
+    void RotateTowardIfNeeded(Vector3? targetPos, float threshold = 22.5f)
+    {
+        if (targetPos == null) return;
+        Vector3 dir = targetPos.Value - transform.position;
+        dir.y = 0f;
+        if (dir == Vector3.zero) return;
+        if (Vector3.Angle(transform.forward, dir) > threshold)
+            transform.rotation = SnapToXDirections(dir);
+    }
+
+// Snaps direction to nearest of X angles
+    Quaternion SnapToXDirections(Vector3 direction)
+    {
+        float angleDiv = 22.5f;
+        direction.y = 0f;
+        if (direction == Vector3.zero) return transform.rotation;
+        float angle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
+        float snapped = Mathf.Round(angle / angleDiv) * angleDiv;
+        return Quaternion.Euler(0f, snapped, 0f);
+    }
+    
     
 }

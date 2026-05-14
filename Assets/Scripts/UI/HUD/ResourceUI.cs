@@ -13,13 +13,15 @@ public class ResourceUI : MonoBehaviour
     
     void Start()
     {
-        GameManager.Instance.OnResourcesChanged += UpdateResourceText;
+        //GameManager.Instance.OnResourcesChanged += UpdateResourceText;
+        GameEvents.OnResourcesChanged += UpdateResourceText;
         UpdateResourceText();
     }
 
     void OnDestroy()
     {
-        GameManager.Instance.OnResourcesChanged -= UpdateResourceText;
+        //GameManager.Instance.OnResourcesChanged -= UpdateResourceText;
+        GameEvents.OnResourcesChanged -= UpdateResourceText;
     }
     
     void UpdateResourceText()

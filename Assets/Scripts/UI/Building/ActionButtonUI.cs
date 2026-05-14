@@ -24,12 +24,14 @@ public class ActionButtonUI : MonoBehaviour
     
     void Start()
     {
-        GameManager.Instance.OnResourcesChanged += UpdateAffordability;
+        //GameManager.Instance.OnResourcesChanged += UpdateAffordability;
+        GameEvents.OnResourcesChanged += UpdateAffordability;
     }
 
     private void OnDestroy()
     {
-        GameManager.Instance.OnResourcesChanged -= UpdateAffordability;
+        //GameManager.Instance.OnResourcesChanged -= UpdateAffordability;
+        GameEvents.OnResourcesChanged -= UpdateAffordability;
     }
 
     public void Initialize(ProductionOptionData data, BuildingController building)

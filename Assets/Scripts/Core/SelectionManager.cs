@@ -7,7 +7,7 @@ public class SelectionManager : MonoBehaviour
 {
     public static SelectionManager Instance { get; private set; }
 
-    public event Action OnSelectionChanged;
+    //public event Action OnSelectionChanged;
     
     [SerializeField] private LayerMask selectableLayers;
     private List<ISelectable> selectedObjects = new List<ISelectable>();
@@ -51,10 +51,15 @@ public class SelectionManager : MonoBehaviour
     void Start()
     {
         mainCamera = Camera.main;
-        BuildingPlacer.Instance.OnPlacingModeChanged += (isPlacing) => isPlacingBuilding = isPlacing; // don't need OnDestroy ..
+        //BuildingPlacer.Instance.OnPlacingModeChanged += (isPlacing) => isPlacingBuilding = isPlacing; // don't need OnDestroy ..
+        GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
+    }
+
+    void OnDestroy()
+    {
+        GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
     }
     
-
     void Update()
     {
         HandleSelectionInput();
@@ -85,12 +90,9 @@ public class SelectionManager : MonoBehaviour
 
         if (Input.GetMouseButtonUp(0))
         {
-            // Don't process selection if clicking on UI
-            if (EventSystem.current.IsPointerOverGameObject()) return; 
-            
-            if (isDragging)
+            if (isDragging) // Drag select
                 HandleDragSelect();
-            else
+            else if (!EventSystem.current.IsPointerOverGameObject()) // Click select
                 HandleClickSelect();
 
             isDragging = false;
@@ -160,7 +162,13 @@ public class SelectionManager : MonoBehaviour
         if (selectedObjects.Contains(selectable)) return;
         selectedObjects.Add(selectable);
         selectable.OnSelect();
-        OnSelectionChanged?.Invoke();
+
+        // Fire typed selection events
+        if (selectable is BuildingController b) GameEvents.BuildingSelected(b);
+        else if (selectable is UnitController u) GameEvents.UnitSelected(u);
+
+        //OnSelectionChanged?.Invoke();
+        GameEvents.SelectionChanged();
     }
 
     // Removes object from selection and notifies it
@@ -168,7 +176,8 @@ public class SelectionManager : MonoBehaviour
     {
         selectedObjects.Remove(selectable);
         selectable.OnDeselect();
-        OnSelectionChanged?.Invoke();
+        //OnSelectionChanged?.Invoke();
+        GameEvents.SelectionChanged();
     }
 
     // Clears all selected objects
@@ -177,7 +186,9 @@ public class SelectionManager : MonoBehaviour
         foreach (ISelectable selectable in selectedObjects)
             selectable.OnDeselect();
         selectedObjects.Clear();
-        OnSelectionChanged?.Invoke();
+        GameEvents.Deselected();
+        //OnSelectionChanged?.Invoke();
+        GameEvents.SelectionChanged();
     }
     
     // Raw screen rect for contains check — no Y flip
@@ -216,5 +227,10 @@ public class SelectionManager : MonoBehaviour
     public List<ISelectable> GetSelectedObjects()
     {
         return selectedObjects;
+    }
+
+    void HandlePlacementModeChanged(bool isPlacing)
+    {
+        this.isPlacingBuilding = isPlacing;
     }
 }

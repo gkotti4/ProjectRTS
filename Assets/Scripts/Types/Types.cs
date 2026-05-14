@@ -1,6 +1,24 @@
 using UnityEngine;
 using UnityEngine.Serialization;
 
+// Commands (Units)
+public enum CommandType
+{
+    // Context (right click)
+    Move,
+    Attack,
+    Gather,
+
+    // Explicit (button/hotkey)
+    Stop,
+    AttackMove,
+    Patrol,
+    Build,
+    Garrison,
+
+    // Special abilities (component based)
+    Ability
+}
 
 // Entities (ALL things)
 public enum EntityType { None, Unit, Building }

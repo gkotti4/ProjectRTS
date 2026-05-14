@@ -1,79 +1,63 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 public class UIManager : MonoBehaviour
 {
     public static UIManager Instance { get; private set; }
-    
-    // Cursor
+
     [Header("Cursor")]
     [SerializeField] private Texture2D defaultCursor;
-    //[SerializeField] private Texture2D buildCursor;
-    
-    // Panels
+
     [Header("Panels")]
     [SerializeField] private ActionPanelUI actionPanelUI;
     [SerializeField] private QueuePanelUI queuePanelUI;
-    
+
     void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(this.gameObject);
-            return;
-        }
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
     }
-    
+
     void Start()
     {
         SetCursor(defaultCursor);
-        SelectionManager.Instance.OnSelectionChanged += HandleSelectionChanged;
-        BuildingPlacer.Instance.OnPlacingModeChanged += HandleIsPlacingBuildingChanged;
+
+        // Subscribe to GameEvents — no direct calls from game logic needed
+        //SelectionManager.Instance.OnSelectionChanged += HandleSelectionChanged;
+        GameEvents.OnSelectionChanged += HandleSelectionChanged;
+        //BuildingPlacer.Instance.OnPlacingModeChanged += HandlePlacingModeChanged;
+        GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
+        GameEvents.OnProductionQueueChanged += HandleProductionQueueChanged;
     }
-    
+
     void OnDestroy()
     {
-        SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
+        //SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
+        GameEvents.OnSelectionChanged -= HandleSelectionChanged;
+        GameEvents.OnProductionQueueChanged -= HandleProductionQueueChanged;
     }
-    
-    
+
     // Cursor
-    public void SetCursor(Texture2D cursor, Vector2 hotspot = default(Vector2))
+    public void SetCursor(Texture2D cursor, Vector2 hotspot = default)
     {
         Cursor.SetCursor(cursor, hotspot, CursorMode.Auto);
     }
+
     public void SetDefaultCursor() => SetCursor(defaultCursor);
 
-    private void HandleIsPlacingBuildingChanged(bool isPlacing)
+    void HandlePlacementModeChanged(bool isPlacing)
     {
-        if (isPlacing)
-        {
-            Cursor.visible = false;
-        }
-        else
-        {
-            SetDefaultCursor();
-            Cursor.visible = true;
-        }
+        Cursor.visible = !isPlacing;
+        if (!isPlacing) SetDefaultCursor();
     }
-    
-    
-    // Panels
+
+    // Selection routing
     void HandleSelectionChanged()
     {
         List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
 
-        if (selected.Count == 0)
-        {
-            HideAllPanels();
-            return;
-        }
-        
-        // ACTION PANEL
-        // Single building selected
+        if (selected.Count == 0) { HideAllPanels(); return; }
+
         if (selected.Count == 1 && selected[0] is BuildingController building)
         {
             HideAllPanels();
@@ -81,27 +65,32 @@ public class UIManager : MonoBehaviour
             queuePanelUI.ShowPanel(building);
             return;
         }
-        else if (selected.Count == 1 && selected[0] is UnitController unit)
+
+        if (selected.Count == 1 && selected[0] is UnitController unit)
         {
-            // TODO
-            
+            HideAllPanels();
+            // TODO — unit info panel
+            return;
         }
-        
-        // INFO PANEL
-        // TODO - Info Panel - units, buildings, resource nodes 
+
         HideAllPanels();
     }
-    
+
+    // Listens to production changes — no longer called directly by BuildingController
+    void HandleProductionQueueChanged(BuildingController building)
+    {
+        // Only refresh if this building is currently selected
+        List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
+        if (selected.Count == 1 && selected[0] is BuildingController selectedBuilding
+            && selectedBuilding == building)
+        {
+            queuePanelUI.Refresh();
+        }
+    }
 
     void HideAllPanels()
     {
         actionPanelUI.HidePanel();
         queuePanelUI.HidePanel();
     }
-
-    public void RefreshQueuePanel()
-    {
-        queuePanelUI.Refresh();
-    }
-    
 }

@@ -13,13 +13,15 @@ public class PopulationUI : MonoBehaviour
     
     void Start()
     {
-        GameManager.Instance.OnPopulationChanged += UpdatePopulationText;
+        //GameManager.Instance.OnPopulationChanged += UpdatePopulationText;
+        GameEvents.OnPopulationChanged += UpdatePopulationText;
         UpdatePopulationText();
     }
 
     void OnDestroy()
     {
-        GameManager.Instance.OnPopulationChanged -= UpdatePopulationText;
+        //GameManager.Instance.OnPopulationChanged -= UpdatePopulationText;
+        GameEvents.OnPopulationChanged -= UpdatePopulationText;
     }
 
     void UpdatePopulationText()

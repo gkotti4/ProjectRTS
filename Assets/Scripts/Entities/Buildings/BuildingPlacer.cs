@@ -6,7 +6,7 @@ public class BuildingPlacer : MonoBehaviour
 {
     public static BuildingPlacer Instance { get; private set; }
 
-    public event Action<bool> OnPlacingModeChanged;
+    //public event Action<bool> OnPlacingModeChanged;
     
     private EntityData selectedBuilding;
     private GameObject ghostObject;
@@ -54,7 +54,8 @@ public class BuildingPlacer : MonoBehaviour
         // Enter Placement Mode
         selectedBuilding = buildingData;
         isPlacing = true;
-        OnPlacingModeChanged?.Invoke(isPlacing);
+        // OnPlacingModeChanged?.Invoke(isPlacing);
+        GameEvents.PlacementModeChanged(isPlacing);
         
         // Spawn ghost preview
         ghostObject = Instantiate(selectedBuilding.prefab);
@@ -136,8 +137,9 @@ public class BuildingPlacer : MonoBehaviour
     {
         isPlacing = false;
         selectedBuilding = null;
-        OnPlacingModeChanged?.Invoke(isPlacing);
-
+        // OnPlacingModeChanged?.Invoke(isPlacing);
+        GameEvents.PlacementModeChanged(isPlacing);
+        
         if (ghostObject != null)
         {
             Destroy(ghostObject);
