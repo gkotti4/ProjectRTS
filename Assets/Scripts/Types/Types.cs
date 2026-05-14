@@ -132,7 +132,36 @@ public enum CommandContext
 
 public enum HotkeySlot
 {
+    None,
     Q, W, E, R, T,
     A, S, D, F, G,
     Z, X, C, V, B
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

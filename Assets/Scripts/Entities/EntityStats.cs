@@ -5,6 +5,7 @@ using UnityEngine.Rendering.Universal;
 public class EntityStats : MonoBehaviour // Pure data class
 {
     [SerializeField] public EntityData baseData;
+    [SerializeField] public FactionData factionData;
     
     [Header("SET FROM BASE DATA (DO NOT CHANGE IN EDITOR)")]
     // Identity
@@ -156,5 +157,14 @@ public class EntityStats : MonoBehaviour // Pure data class
         return modifier.modifierType == ModifierType.Flat
             ? baseValue + (int)modifier.value
             : Mathf.RoundToInt(baseValue * (1f + modifier.value / 100f));
+    }
+    
+    
+    // Faction Section
+    public bool IsEnemy(EntityStats other)
+    {
+        if (other.factionData == null || factionData == null) return false;
+        if (other.factionData.teamId == 0 || factionData.teamId == 0) return false; // neutral
+        return other.factionData.teamId != factionData.teamId;
     }
 }

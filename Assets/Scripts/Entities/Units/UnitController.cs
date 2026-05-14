@@ -71,6 +71,8 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
         agent.updateRotation = false;
         rb = GetComponent<Rigidbody>();
         rb.isKinematic = true;
+        rb.freezeRotation = true; // need with Kinematic?
+        rb.useGravity = false; // need with Kinematic?
         unitAnimator = GetComponentInChildren<UnitAnimator>();
         if(unitAnimator == null) Debug.LogWarning("No unit animator attached to " + gameObject.name);
     }
@@ -173,15 +175,15 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
             attackTimer = stats.attackInterval;
         }
 
-        // Rotate to current attack target - new check
-        toTarget.y = 0f;
-        if (toTarget != Vector3.zero)
-        {
-            transform.rotation = Quaternion.RotateTowards(
-                transform.rotation, 
-                Quaternion.LookRotation(toTarget), 
-                360f * Time.deltaTime);
-        }
+        // Rotate to current attack target - handled in Handle rotation?
+        // toTarget.y = 0f;
+        // if (toTarget != Vector3.zero)
+        // {
+        //     transform.rotation = Quaternion.RotateTowards(
+        //         transform.rotation, 
+        //         Quaternion.LookRotation(toTarget), 
+        //         360f * Time.deltaTime);
+        // }
 
     }
 
@@ -205,7 +207,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
     }
 
     // Routes right click command based on what was clicked
-    public virtual void MoveToTarget(RaycastHit hit)
+    public virtual void SetMoveTarget(RaycastHit hit)
     {
         if (hit.collider == null) return;
 
@@ -240,7 +242,7 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
             Vector3 toPos = attackTarget.transform.position;
             Vector3 pos = transform.position;
             float sqrDist = (toPos - pos).sqrMagnitude;
-            if (sqrDist < stats.gatherRange * stats.gatherRange) // If inside range snap to target
+            if (sqrDist < stats.attackRange * stats.attackRange) // If inside range snap to target
             {
                 Vector3 dir = (toPos - pos).normalized;
                 transform.rotation = SnapToXDirections(dir);

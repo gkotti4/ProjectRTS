@@ -46,6 +46,14 @@ public class ActionButtonUI : MonoBehaviour
         button.image.color = canAfford ? affordableColor : unaffordableColor;
         //iconImage.color
     }
+    
+    public void InitializeFromCommand(Sprite icon, string name, HotkeySlot hotkey) // NEW
+    {
+        optionData = null;
+        targetBuilding = null;
+        if (icon != null) iconImage.sprite = icon;
+        // hotkey tooltip later
+    }
 
     void OnClick()
     {
@@ -60,5 +68,7 @@ public class ActionButtonUI : MonoBehaviour
         canAfford = GameManager.Instance.CanAfford(optionData.cost);
         button.image.color = canAfford ? affordableColor : unaffordableColor;
     }
+    
+    
     
 }

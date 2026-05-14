@@ -4,9 +4,8 @@ using UnityEngine;
 /// <summary>
 /// Handles player input commands and routes them to the appropriate game systems.
 /// Owns intentional player actions (building placement, hotkeys, game commands).
-/// Does not own state - only reads input and calls other systems - unlike Managers.
+/// Does not own state - only reads input and calls other systems.
 /// </summary>
-
 public class PlayerInputHandler : MonoBehaviour
 {
     [SerializeField] private EntityData townCenterData;
@@ -16,7 +15,7 @@ public class PlayerInputHandler : MonoBehaviour
     private bool isPlacingBuilding = false;
     private List<ISelectable> currentSelections = new List<ISelectable>();
 
-    private Dictionary<HotkeySlot, KeyCode> slotToKey = new Dictionary<HotkeySlot, KeyCode>() // quick access bar - left panel
+    private Dictionary<HotkeySlot, KeyCode> slotToKey = new Dictionary<HotkeySlot, KeyCode>()
     {
         { HotkeySlot.Q, KeyCode.Q },
         { HotkeySlot.W, KeyCode.W },
@@ -34,24 +33,15 @@ public class PlayerInputHandler : MonoBehaviour
         { HotkeySlot.V, KeyCode.V },
         { HotkeySlot.B, KeyCode.B },
     };
-    
-    void Awake()
-    {
-        
-    }
+
     void Start()
     {
-        //SelectionManager.Instance.OnSelectionChanged += HandleSelectionChanged;
         GameEvents.OnSelectionChanged += HandleSelectionChanged;
-        //BuildingPlacer.Instance.OnPlacingModeChanged += (isPlacing) => isPlacingBuilding = isPlacing;
-        GameEvents.OnPlacementModeChanged += (isPlacing) => isPlacingBuilding = isPlacing;
         GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
-
     }
 
     void OnDestroy()
     {
-        //SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
         GameEvents.OnSelectionChanged -= HandleSelectionChanged;
         GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
     }
@@ -60,40 +50,38 @@ public class PlayerInputHandler : MonoBehaviour
     {
         if (isPlacingBuilding)
         {
-            HandleEconomicUnitHotkeys(); // double check - reasoning: since vils start buildings
+            HandleBuildPlacementHotkeys();
             return;
         }
         HandleHotkeys();
         HandleRightClick();
     }
 
+    // Updates current selection and context when selection changes
     void HandleSelectionChanged()
     {
         currentSelections = SelectionManager.Instance.GetSelectedObjects();
         UpdateContext();
     }
-    
+
+    // Determines command context from current selection
     void UpdateContext()
     {
-        // Default
         if (currentSelections.Count == 0)
         {
             currentContext = CommandContext.Default;
             return;
         }
-        
-        // Building Context
+
         if (currentSelections[0] is BuildingController)
         {
             currentContext = CommandContext.BuildingSelected;
             return;
         }
 
-        // Unit Context
         if (currentSelections[0].GetGameObject().TryGetComponent(out UnitController unit))
         {
-            // Economic (Villager currently) | Military (Infantry, Range, Cav, Siege later)
-            currentContext = unit is VillagerController
+            currentContext = unit.Stats.entityTag == EntityTag.Villager
                 ? CommandContext.EconomicUnitSelected
                 : CommandContext.MilitaryUnitSelected;
             return;
@@ -102,34 +90,35 @@ public class PlayerInputHandler : MonoBehaviour
         currentContext = CommandContext.Default;
     }
 
-    void HandleRightClick() // CHECK
+    // Routes right click through CommandController on selected units
+    void HandleRightClick()
     {
         if (!Input.GetMouseButtonDown(1)) return;
-        
+
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
         if (!Physics.Raycast(ray, out RaycastHit hit)) return;
-        
+
         List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
 
-        if (selected.Count > 1) // Multiple units selected
+        // Group move — multiple units selected
+        if (selected.Count > 1)
         {
             List<UnitController> units = new List<UnitController>();
             foreach (ISelectable s in selected)
-                if (s.GetGameObject().TryGetComponent(out UnitController unit))
-                    units.Add(unit);
-
+                if (s.GetGameObject().TryGetComponent(out UnitController u))
+                    units.Add(u);
             HandleGroupMove(units, hit.point);
             return;
         }
-        
-        // Single unit or building
-        foreach (ISelectable s in selected)
-            if(s.GetGameObject().TryGetComponent(out UnitController unit))
-                unit.MoveToTarget(hit);
 
+        // Single unit — route through CommandController
+        foreach (ISelectable s in selected)
+            if (s.GetGameObject().TryGetComponent(out CommandController commandController))
+                commandController.ExecuteContextCommand(hit);
     }
 
-    private void HandleGroupMove(List<UnitController> units, Vector3 destination) // CHECK DRUKN
+    // Sends units to formation positions centered around destination
+    void HandleGroupMove(List<UnitController> units, Vector3 destination)
     {
         int columns = Mathf.CeilToInt(Mathf.Sqrt(units.Count));
         float spacing = 2f;
@@ -147,17 +136,19 @@ public class PlayerInputHandler : MonoBehaviour
         }
     }
 
+    // Routes hotkeys based on current context
     void HandleHotkeys()
     {
         switch (currentContext)
-        {            
+        {
             case CommandContext.Default:
                 HandleDefaultHotkeys();
                 break;
             case CommandContext.EconomicUnitSelected:
-                HandleEconomicUnitHotkeys();
+                HandleUnitHotkeys();
                 break;
             case CommandContext.MilitaryUnitSelected:
+                HandleUnitHotkeys();
                 break;
             case CommandContext.BuildingSelected:
                 HandleBuildingHotkeys();
@@ -165,42 +156,42 @@ public class PlayerInputHandler : MonoBehaviour
         }
     }
 
-
+    // Default hotkeys — building placement when nothing selected
     void HandleDefaultHotkeys()
     {
-        if (currentSelections.Count == 1) return; // check
-        
         if (Input.GetKeyDown(KeyCode.T))
-        {
             BuildingPlacer.Instance.StartPlacing(townCenterData);
-        }
         else if (Input.GetKeyDown(KeyCode.B))
-        {
             BuildingPlacer.Instance.StartPlacing(barracksData);
-        }
     }
-    
-    void HandleEconomicUnitHotkeys()
+
+    // Routes unit hotkeys through CommandController
+    void HandleUnitHotkeys()
     {
-        if (currentSelections.Count != 1) return;
-        if (currentSelections[0] is not UnitController unit) return;
-        
-        foreach (ProductionOptionData option in unit.Stats.baseData.productionOptions)
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        Physics.Raycast(ray, out RaycastHit hit);
+
+        foreach (ISelectable s in currentSelections)
         {
-            // if (Input.GetKeyDown(slotToKey[option.hotkeySlot]))
-            // {
-            //     //unit.EnqueueProduction(option);
-            //     return;
-            // }
+            if (!s.GetGameObject().TryGetComponent(out CommandController commandController)) continue;
+
+            foreach (KeyValuePair<HotkeySlot, KeyCode> kvp in slotToKey)
+            {
+                if (Input.GetKeyDown(kvp.Value))
+                {
+                    commandController.ExecuteHotkeyCommand(kvp.Key, hit);
+                    return;
+                }
+            }
         }
     }
 
-    
+    // Routes building hotkeys to production queue
     void HandleBuildingHotkeys()
     {
         if (currentSelections.Count != 1) return;
         if (currentSelections[0] is not BuildingController building) return;
-        
+
         foreach (ProductionOptionData option in building.Stats.baseData.productionOptions)
         {
             if (Input.GetKeyDown(slotToKey[option.hotkeySlot]))
@@ -211,7 +202,24 @@ public class PlayerInputHandler : MonoBehaviour
         }
     }
 
+    // Handles villager build hotkeys while in placement mode
+    void HandleBuildPlacementHotkeys()
+    {
+        if (currentSelections.Count != 1) return;
+        if (currentSelections[0] is not UnitController unit) return;
+        if (unit.Stats.entityTag != EntityTag.Villager) return;
 
+        foreach (BuildingOptionData option in unit.Stats.baseData.buildOptions) // New
+        {
+            if (Input.GetKeyDown(slotToKey[option.hotkeySlot]))
+            {
+                BuildingPlacer.Instance.StartPlacing(option.buildingData);
+                return;
+            }
+        }
+    }
+
+    // Handles placement mode change
     void HandlePlacementModeChanged(bool isPlacing)
     {
         isPlacingBuilding = isPlacing;

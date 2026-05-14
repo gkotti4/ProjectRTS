@@ -35,6 +35,7 @@ public class UIManager : MonoBehaviour
         //SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
         GameEvents.OnSelectionChanged -= HandleSelectionChanged;
         GameEvents.OnProductionQueueChanged -= HandleProductionQueueChanged;
+        GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
     }
 
     // Cursor
@@ -69,7 +70,7 @@ public class UIManager : MonoBehaviour
         if (selected.Count == 1 && selected[0] is UnitController unit)
         {
             HideAllPanels();
-            // TODO — unit info panel
+            actionPanelUI.ShowUnitButtons(unit); // New!
             return;
         }
 

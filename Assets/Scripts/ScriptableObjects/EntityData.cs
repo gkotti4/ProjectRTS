@@ -28,11 +28,12 @@ public class EntityData : ScriptableObject
     public UnitType unitType;  
     public float moveSpeed = 0f;
 
-    // Gathering (villager only)
+    // Villager Only
     [Header("Villager Only")]
     public int gatherAmount = 0;
     public float gatherRange = 0f;
     public float gatherInterval = 0f;
+    public List<BuildingOptionData> buildOptions;
 
     // Building only
     [Header("Building Only")]
@@ -50,4 +51,7 @@ public class EntityData : ScriptableObject
     public float productionSpeed = 1f; // 1 = normal, 2 = double
     
 
+    // Unit Commands
+    [Header("Unit Commands Only")] 
+    public List<CommandData> baseCommands;
 }
