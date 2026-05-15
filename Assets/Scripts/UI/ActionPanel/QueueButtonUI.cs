@@ -1,4 +1,5 @@
 using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,6 +8,7 @@ public class QueueButtonUI : MonoBehaviour
 {
     [SerializeField] private Image progressFill;
     [SerializeField] private Image iconImage;
+    [SerializeField] private TextMeshProUGUI label;
     private Button button;
 
     private ProductionOptionData optionData;
@@ -37,6 +39,10 @@ public class QueueButtonUI : MonoBehaviour
         if (progressFill != null && index == 0)
             progressFill.fillAmount = 0f;
 
+        // Text Label
+        if (label != null)
+            label.text = data.productionName;
+        
         this.onCancelled = onCancelled;
     }
 

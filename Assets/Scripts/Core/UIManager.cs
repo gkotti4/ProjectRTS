@@ -21,18 +21,13 @@ public class UIManager : MonoBehaviour
     void Start()
     {
         SetCursor(defaultCursor);
-
-        // Subscribe to GameEvents — no direct calls from game logic needed
-        //SelectionManager.Instance.OnSelectionChanged += HandleSelectionChanged;
         GameEvents.OnSelectionChanged += HandleSelectionChanged;
-        //BuildingPlacer.Instance.OnPlacingModeChanged += HandlePlacingModeChanged;
         GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
         GameEvents.OnProductionQueueChanged += HandleProductionQueueChanged;
     }
 
     void OnDestroy()
     {
-        //SelectionManager.Instance.OnSelectionChanged -= HandleSelectionChanged;
         GameEvents.OnSelectionChanged -= HandleSelectionChanged;
         GameEvents.OnProductionQueueChanged -= HandleProductionQueueChanged;
         GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
@@ -49,7 +44,12 @@ public class UIManager : MonoBehaviour
     void HandlePlacementModeChanged(bool isPlacing)
     {
         Cursor.visible = !isPlacing;
-        if (!isPlacing) SetDefaultCursor();
+        if (!isPlacing)
+        {
+            SetDefaultCursor();
+            // Exit build submenu when placement ends — cancel or confirm
+            ExitBuildSubmenu();
+        }
     }
 
     // Selection routing
@@ -70,17 +70,16 @@ public class UIManager : MonoBehaviour
         if (selected.Count == 1 && selected[0] is UnitController unit)
         {
             HideAllPanels();
-            actionPanelUI.ShowUnitButtons(unit); // New!
+            actionPanelUI.ShowUnitButtons(unit);
             return;
         }
 
         HideAllPanels();
     }
 
-    // Listens to production changes — no longer called directly by BuildingController
+    // Listens to production changes — only refreshes if firing building is selected
     void HandleProductionQueueChanged(BuildingController building)
     {
-        // Only refresh if this building is currently selected
         List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
         if (selected.Count == 1 && selected[0] is BuildingController selectedBuilding
             && selectedBuilding == building)
@@ -93,5 +92,18 @@ public class UIManager : MonoBehaviour
     {
         actionPanelUI.HidePanel();
         queuePanelUI.HidePanel();
+    }
+
+    // Build submenu
+    public void ShowActionPanelBuildSubmenu(UnitController unit) // Could replace with event if methods get hacky 
+    {
+        actionPanelUI.ShowBuildSubmenu(unit);
+        PlayerInputHandler.Instance.SetBuildSubmenuActive(true);
+    }
+
+    public void ExitBuildSubmenu()
+    {
+        actionPanelUI.ExitBuildSubmenu();
+        PlayerInputHandler.Instance.SetBuildSubmenuActive(false);
     }
 }

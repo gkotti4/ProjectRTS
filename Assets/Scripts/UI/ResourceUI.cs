@@ -5,32 +5,30 @@ public class ResourceUI : MonoBehaviour
 {
     private TextMeshProUGUI resourceText;
 
-
     void Awake()
     {
         resourceText = GetComponent<TextMeshProUGUI>();
     }
-    
+
     void Start()
     {
-        //GameManager.Instance.OnResourcesChanged += UpdateResourceText;
         GameEvents.OnResourcesChanged += UpdateResourceText;
-        UpdateResourceText();
+        UpdateResourceText(GameManager.Instance.PlayerFaction);
     }
 
     void OnDestroy()
     {
-        //GameManager.Instance.OnResourcesChanged -= UpdateResourceText;
         GameEvents.OnResourcesChanged -= UpdateResourceText;
     }
-    
-    void UpdateResourceText()
+
+    void UpdateResourceText(FactionInstance f)
     {
-        resourceText.text = "Wood: " + GameManager.Instance.GetCurrentResources(ResourceType.Wood) +
-                            "   Food: " + GameManager.Instance.GetCurrentResources(ResourceType.Food) +
-                            "   Gold: " + GameManager.Instance.GetCurrentResources(ResourceType.Gold) +
-                            "   Stone: " + GameManager.Instance.GetCurrentResources(ResourceType.Stone);
-        
-        // Create event system for this later. Not in Update.
+        // FactionInstance f = GameManager.Instance.PlayerFaction; OLD
+        if (f != GameManager.Instance.PlayerFaction) return;
+        resourceText.text =
+            "Wood: " + f.GetResources(ResourceType.Wood) +
+            "   Food: " + f.GetResources(ResourceType.Food) +
+            "   Gold: " + f.GetResources(ResourceType.Gold) +
+            "   Stone: " + f.GetResources(ResourceType.Stone);
     }
 }

@@ -1,129 +1,76 @@
-using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.Rendering.Universal;
 
-[RequireComponent(typeof(EntityStats))]
-[RequireComponent(typeof(Health))]
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(Rigidbody))]
-
-public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, MERGED VIL AND SOLDIER LATE NIGHT
+public class UnitController : EntityController
 {
-    [SerializeField] private DecalProjector selectionDecal;
-
-    // Components
-    protected EntityStats stats;
-    public EntityStats Stats => stats;
-    protected Health health;
     protected NavMeshAgent agent;
     public NavMeshAgent Agent => agent;
     protected Camera mainCamera;
     protected Rigidbody rb;
-    
     protected UnitAnimator unitAnimator;
+    public UnitAnimator UnitAnimator => unitAnimator;
 
     // State
     protected UnitState state = UnitState.Idle;
     public UnitState State => state;
-    protected bool isSelected = false;
 
     // Combat
-    protected GameObject attackTarget;
-    public GameObject AttackTarget => attackTarget;
+    protected EntityController attackTarget;
+    public EntityController AttackTarget => attackTarget;
     protected float attackTimer;
 
     // Gathering
     protected ResourceNode nodeTarget;
     protected float gatherTimer;
 
-    
-    // ISelectable
-    public bool IsBoxSelectable => true;
-    public GameObject GetGameObject() => gameObject;
+    public override bool IsDragSelectable => true;
 
-    public virtual void OnSelect()
+    protected override void Awake()
     {
-        isSelected = true;
-        if (selectionDecal != null)
-            selectionDecal.enabled = true;
-    }
-
-    public virtual void OnDeselect()
-    {
-        isSelected = false;
-        if (selectionDecal != null)
-            selectionDecal.enabled = false;
-    }
-
-    // IDamageable
-    public void TakeDamage(int damage) { health.TakeDamage(damage); }
-    
-    
-    protected virtual void Awake()
-    {
-        stats = GetComponent<EntityStats>();
-        health = GetComponent<Health>();
+        base.Awake();
         agent = GetComponent<NavMeshAgent>();
         agent.angularSpeed = 99999f;
-        agent.acceleration = 99999f; // 100f
+        agent.acceleration = 99999f;
         agent.autoBraking = false;
         agent.updateRotation = false;
         rb = GetComponent<Rigidbody>();
         rb.isKinematic = true;
-        rb.freezeRotation = true; // need with Kinematic?
-        rb.useGravity = false; // need with Kinematic?
+        rb.freezeRotation = true;
+        rb.useGravity = false;
         unitAnimator = GetComponentInChildren<UnitAnimator>();
-        if(unitAnimator == null) Debug.LogWarning("No unit animator attached to " + gameObject.name);
+        if (unitAnimator == null) Debug.LogWarning("No UnitAnimator on " + gameObject.name);
     }
 
-    protected virtual void Start()
+    protected override void Start()
     {
-        // EntityStats.Start() initializes stats before this runs
-        health.Initialize(stats.maxHealth);
-
+        base.Start();
         agent.speed = stats.moveSpeed;
-
         attackTimer = stats.attackInterval;
         gatherTimer = stats.gatherInterval;
-
         mainCamera = Camera.main;
-
-        if (selectionDecal != null)
-            selectionDecal.enabled = false;
-
-        SelectionManager.Instance.Register(this);
-        
-        // Randomly enable pouch/accessory on character prefab
+        if (selectionDecal != null) selectionDecal.enabled = false;
     }
 
     protected virtual void Update()
     {
         HandleState();
         HandleRotation();
+        if(attackTimer > 0f) 
+            attackTimer -= Time.deltaTime;
     }
-
-    protected virtual void OnDestroy()
-    {
-        SelectionManager.Instance.Unregister(this);
-    }
+    
 
     // Routes to correct state handler each frame
     protected virtual void HandleState()
     {
         switch (state)
         {
-            case UnitState.Idle:
-                break;
-            case UnitState.Moving:
-                HandleMovingState();
-                break;
-            case UnitState.Attacking:
-                HandleAttackingState();
-                break;
-            case UnitState.Gathering:
-                HandleGatheringState();
-                break;
+            case UnitState.Idle: break;
+            case UnitState.Moving: HandleMovingState(); break;
+            case UnitState.Attacking: HandleAttackingState(); break;
+            case UnitState.Gathering: HandleGatheringState(); break;
         }
     }
 
@@ -132,12 +79,9 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
     {
         if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
-            if (nodeTarget != null)
-                state = UnitState.Gathering;
-            else if (attackTarget != null)
-                state = UnitState.Attacking;
-            else
-                state = UnitState.Idle;
+            if (nodeTarget != null) state = UnitState.Gathering;
+            else if (attackTarget != null) state = UnitState.Attacking;
+            else state = UnitState.Idle;
         }
     }
 
@@ -149,17 +93,11 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
             state = UnitState.Idle;
             return;
         }
-        if (!attackTarget.TryGetComponent(out IDamageable damageable))
-        {
-            attackTarget = null;
-            state = UnitState.Idle;
-            return;
-        }
 
-        // Check if out of range (also check agent settings - stop distance is set to attack range too)
-        Vector3 toTarget = attackTarget.transform.position - transform.position; 
-        float sqrDistance = toTarget.sqrMagnitude; // Vector3.Distance() ray - switching saves performance (save more by locking by number of frames %)
+        Vector3 toTarget = attackTarget.transform.position - transform.position;
+        float sqrDistance = toTarget.sqrMagnitude;
         float sqrAttackRange = stats.attackRange * stats.attackRange;
+
         if (sqrDistance > sqrAttackRange)
         {
             agent.SetDestination(attackTarget.transform.position);
@@ -167,24 +105,18 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
             return;
         }
 
-        // Attack the Target
-        attackTimer -= Time.deltaTime;
         if (attackTimer <= 0f)
         {
-            unitAnimator.TriggerAttack(); // Damage triggered here from anim event
+            unitAnimator.TriggerAttack();
             attackTimer = stats.attackInterval;
         }
+    }
 
-        // Rotate to current attack target - handled in Handle rotation?
-        // toTarget.y = 0f;
-        // if (toTarget != Vector3.zero)
-        // {
-        //     transform.rotation = Quaternion.RotateTowards(
-        //         transform.rotation, 
-        //         Quaternion.LookRotation(toTarget), 
-        //         360f * Time.deltaTime);
-        // }
-
+    // Called by animation event — deals damage to current attack target
+    public void DealAttackDamage()
+    {
+        if (attackTarget == null) return;
+        attackTarget.TakeDamage(stats.attackDamage);
     }
 
     // Ticks gather timer and pulls resources from node
@@ -201,67 +133,45 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
         if (gatherTimer <= 0f)
         {
             int harvested = nodeTarget.Harvest(stats.gatherAmount);
-            GameManager.Instance.AddResources(nodeTarget.resourceNodeData.resourceType, harvested);
+            GameManager.Instance.AddResources(nodeTarget.resourceNodeData.resourceType, harvested, stats.faction);
             gatherTimer = stats.gatherInterval;
         }
     }
 
-    // Routes right click command based on what was clicked
-    public virtual void SetMoveTarget(RaycastHit hit)
+    // Orders unit to attack a target
+    public void OrderAttack(EntityController target)
     {
-        if (hit.collider == null) return;
+        if (target == null) return;
+        attackTarget = target;
+        nodeTarget = null;
+        agent.stoppingDistance = stats.attackRange;
+        agent.SetDestination(attackTarget.transform.position);
+        state = UnitState.Moving;
 
-        if (hit.collider.TryGetComponent(out ResourceNode node) && stats.gatherAmount > 0)
-        {
-            // Clicked resource node and this unit can gather
-            nodeTarget = node;
-            attackTarget = null;
-            agent.stoppingDistance = stats.gatherRange;
-            agent.SetDestination(nodeTarget.transform.position);
-            state = UnitState.Moving;
-            
-            
-            Vector3 toPos = nodeTarget.transform.position;
-            Vector3 pos = transform.position;
-            float sqrDist = (toPos - pos).sqrMagnitude;
-            if (sqrDist < stats.gatherRange * stats.gatherRange) // If inside range snap to target
-            {
-                Vector3 dir = (toPos - pos).normalized;
-                transform.rotation = SnapToXDirections(dir);
-            }
-        }
-        else if (hit.collider.CompareTag("Enemy"))
-        {
-            // Clicked enemy
-            attackTarget = hit.collider.gameObject;
-            nodeTarget = null;
-            agent.stoppingDistance = stats.attackRange;
-            agent.SetDestination(attackTarget.transform.position);
-            state = UnitState.Moving;
-            
-            Vector3 toPos = attackTarget.transform.position;
-            Vector3 pos = transform.position;
-            float sqrDist = (toPos - pos).sqrMagnitude;
-            if (sqrDist < stats.attackRange * stats.attackRange) // If inside range snap to target
-            {
-                Vector3 dir = (toPos - pos).normalized;
-                transform.rotation = SnapToXDirections(dir);
-            }
-        }
-        else
-        {
-            // Clicked ground — normal move
-            // targetNode = null;
-            // attackTarget = null;
-            // agent.stoppingDistance = 0.1f;
-            // agent.SetDestination(hit.point);
-            // state = UnitState.Moving;
-            MoveTo(hit.point);
-        }
+        // Snap rotation if already in range
+        Vector3 dir = (target.transform.position - transform.position);
+        if (dir.sqrMagnitude < stats.attackRange * stats.attackRange)
+            transform.rotation = SnapToXDirections(dir);
     }
 
-    // Public move command for group movement from PlayerInputHandler
-    public void MoveTo(Vector3 destination)
+    // Orders unit to gather from a resource node
+    public void OrderGather(ResourceNode node)
+    {
+        if (node == null || stats.gatherAmount <= 0) return;
+        nodeTarget = node;
+        attackTarget = null;
+        agent.stoppingDistance = stats.gatherRange;
+        agent.SetDestination(nodeTarget.transform.position);
+        state = UnitState.Moving;
+
+        // Snap rotation if already in range
+        Vector3 dir = (node.transform.position - transform.position);
+        if (dir.sqrMagnitude < stats.gatherRange * stats.gatherRange)
+            transform.rotation = SnapToXDirections(dir);
+    }
+
+    // Orders unit to move to a position
+    public void OrderMove(Vector3 destination)
     {
         attackTarget = null;
         nodeTarget = null;
@@ -269,27 +179,27 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
         agent.SetDestination(destination);
         state = UnitState.Moving;
     }
-    
-    
+
+    // Orders unit to stop immediately
+    public void OrderStop()
+    {
+        attackTarget = null;
+        nodeTarget = null;
+        agent.ResetPath();
+        state = UnitState.Idle;
+    }
+
     void HandleRotation()
     {
         switch (state)
         {
-            case UnitState.Moving:
-                RotateTowardVelocity();
-                break;
-            case UnitState.Attacking:
-                RotateToward(attackTarget?.transform.position);
-                break;
-            case UnitState.Gathering:
-                RotateTowardIfNeeded(nodeTarget?.transform.position);
-                break;
-            case UnitState.Idle:
-                break;
+            case UnitState.Moving: RotateTowardVelocity(); break;
+            case UnitState.Attacking: RotateToward(attackTarget?.transform.position); break;
+            case UnitState.Gathering: RotateTowardIfNeeded(nodeTarget?.transform.position); break;
+            case UnitState.Idle: break;
         }
     }
 
-// Smoothly rotates toward movement direction snapped to 8 dirs - note: maybe just use Snap
     void RotateTowardVelocity()
     {
         if (agent.velocity.sqrMagnitude < 0.1f) return;
@@ -299,7 +209,6 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
             900f * Time.deltaTime);
     }
 
-// Instantly snaps to face a position
     void RotateToward(Vector3? targetPos)
     {
         if (targetPos == null) return;
@@ -309,7 +218,6 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
         transform.rotation = SnapToXDirections(dir);
     }
 
-// Only rotates if significantly misaligned — snap once, stay put
     void RotateTowardIfNeeded(Vector3? targetPos, float threshold = 22.5f)
     {
         if (targetPos == null) return;
@@ -320,7 +228,6 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
             transform.rotation = SnapToXDirections(dir);
     }
 
-// Snaps direction to nearest of X angles
     Quaternion SnapToXDirections(Vector3 direction)
     {
         float angleDiv = 22.5f;
@@ -330,6 +237,4 @@ public class UnitController : MonoBehaviour, ISelectable, IDamageable // CHECK, 
         float snapped = Mathf.Round(angle / angleDiv) * angleDiv;
         return Quaternion.Euler(0f, snapped, 0f);
     }
-    
-    
 }

@@ -5,7 +5,7 @@ public class ResourceNode : MonoBehaviour, ISelectable
     public void OnSelect() { isSelected = true; }
     public void OnDeselect() { isSelected = false; }
     public GameObject GetGameObject() { return gameObject; }
-    public bool IsBoxSelectable => false;
+    public bool IsDragSelectable => false;
     
     
     public ResourceNodeData resourceNodeData;

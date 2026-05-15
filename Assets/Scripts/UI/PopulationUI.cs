@@ -5,29 +5,27 @@ public class PopulationUI : MonoBehaviour
 {
     private TextMeshProUGUI populationText;
 
-
     void Awake()
     {
         populationText = GetComponent<TextMeshProUGUI>();
     }
-    
+
     void Start()
     {
-        //GameManager.Instance.OnPopulationChanged += UpdatePopulationText;
         GameEvents.OnPopulationChanged += UpdatePopulationText;
-        UpdatePopulationText();
+        //UpdatePopulationText(GameManager.Instance.PlayerFaction);
     }
 
     void OnDestroy()
     {
-        //GameManager.Instance.OnPopulationChanged -= UpdatePopulationText;
         GameEvents.OnPopulationChanged -= UpdatePopulationText;
     }
 
-    void UpdatePopulationText()
+    void UpdatePopulationText(FactionInstance f)
     {
-        populationText.text = "Pop: " + GameManager.Instance.GetCurrentPopulation() + 
-                              "  /  " + GameManager.Instance.GetPopulationCap();
+        // FactionInstance f = GameManager.Instance.PlayerFaction; OLD
+        // Updated:
+        if (f != GameManager.Instance.PlayerFaction) return;
+        populationText.text = "Pop: " + f.currentPopulation + " / " + f.populationCap;
     }
-    
 }

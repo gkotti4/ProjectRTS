@@ -2,73 +2,163 @@ using System;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using UnityEngine.Serialization;
 
 [RequireComponent(typeof(Button))]
 
+
+/*
+ * Action Panel:
+ *  - Handles bottom left panel of screen when selecting either a Unit or Building (Entity)
+ * 
+ *  - For Units:
+ *   - Show Commands
+ * 
+ *  - For Buildings:
+ *   - Show ProductionOptions
+ */
+
 public class ActionButtonUI : MonoBehaviour
 {
-    private ProductionOptionData optionData;
+    // Data
+    private ProductionOptionData productionOption; // Building
+    private CommandData commandData; // Unit
+    private BuildingOptionData buildOption; // Villager
     private BuildingController targetBuilding;
+    private UnitController targetUnit;
+
+    // UI refs
     private Button button;
     [SerializeField] private Image iconImage;
-    [SerializeField] private Color affordableColor = Color.darkGray;
-    [SerializeField] private Color unaffordableColor = Color.red;
+    [SerializeField] private TextMeshProUGUI label;
+    [SerializeField] private TextMeshProUGUI hotkeyLabel;
+    
+    [SerializeField] private Color affordableColor = Color.lightBlue; // Production button
+    [SerializeField] private Color unaffordableColor = Color.red; // Production button
 
     private bool canAfford = false;
+    private enum ButtonMode { Production, Command, Build } // Based on selection, Action panel can contain one of these types of buttons
+    private ButtonMode mode;
 
     void Awake()
     {
-        button = GetComponent<Button>();         
+        button = GetComponent<Button>();
         button.onClick.AddListener(OnClick);
     }
-    
+
     void Start()
     {
-        //GameManager.Instance.OnResourcesChanged += UpdateAffordability;
         GameEvents.OnResourcesChanged += UpdateAffordability;
     }
 
-    private void OnDestroy()
+    void OnDestroy()
     {
-        //GameManager.Instance.OnResourcesChanged -= UpdateAffordability;
         GameEvents.OnResourcesChanged -= UpdateAffordability;
     }
 
-    public void Initialize(ProductionOptionData data, BuildingController building)
+    // Initialize for building production option
+    public void InitializeFromProductionOption(ProductionOptionData option, BuildingController building)
     {
-        this.optionData = data;
-        this.targetBuilding = building;
+        mode = ButtonMode.Production;
+        productionOption = option;
+        commandData = null;
+        buildOption = null;
+        targetBuilding = building;
+        targetUnit = null;
+
+        if (iconImage != null)
+            iconImage.sprite = option.icon != null ? option.icon : null;
+
+        if (label != null)
+            label.text = option.productionName;
         
-        if (data.icon != null)
-            iconImage.sprite = data.icon;
-        
-        canAfford = GameManager.Instance.CanAfford(optionData.cost);
+        if (hotkeyLabel != null)
+            hotkeyLabel.text = option.hotkey.ToString();
+
+        canAfford = GameManager.Instance.CanAfford(productionOption.cost, GameManager.Instance.PlayerFaction);
         button.image.color = canAfford ? affordableColor : unaffordableColor;
-        //iconImage.color
     }
-    
-    public void InitializeFromCommand(Sprite icon, string name, HotkeySlot hotkey) // NEW
+
+    // Initialize for unit command
+    public void InitializeFromCommand(CommandData cmd, UnitController unit)
     {
-        optionData = null;
+        if (cmd == null) return;
+        mode = ButtonMode.Command;
+        commandData = cmd;
+        productionOption = null;
+        buildOption = null;
+        targetUnit = unit;
         targetBuilding = null;
-        if (icon != null) iconImage.sprite = icon;
-        // hotkey tooltip later
+
+        if (iconImage != null && cmd.icon != null)
+            iconImage.sprite = cmd.icon;
+
+        if (label != null)
+            label.text = cmd.commandName;
+        
+        if (hotkeyLabel != null)
+            hotkeyLabel.text = cmd.hotkey.ToString();
+
+        button.image.color = affordableColor;
+    }
+
+    public void InitializeFromBuildOption(BuildingOptionData option, UnitController unit)
+    {
+        if (option == null) return;
+        mode = ButtonMode.Build;
+        buildOption = option;
+        productionOption = null;
+        commandData = null;
+        targetUnit = unit;
+        targetBuilding = null;
+        
+        if (iconImage != null && option.icon != null)
+            iconImage.sprite = option.icon;
+
+        if (label != null)
+            label.text = option.buildingName;
+        
+        if (hotkeyLabel != null)
+            hotkeyLabel.text = option.hotkey.ToString();
+        
+        button.image.color = affordableColor;
+
     }
 
     void OnClick()
     {
-        if (targetBuilding == null || optionData == null) return;
-        if (canAfford)
-            targetBuilding.EnqueueProduction(optionData);
+        if (mode == ButtonMode.Production)
+        {
+            if (targetBuilding == null || productionOption == null) return;
+            if (canAfford)
+                targetBuilding.EnqueueProduction(productionOption);
+        }
+        else if (mode == ButtonMode.Command)
+        {
+            if (targetUnit == null || commandData == null) return;
+            if (commandData.commandType == CommandType.Build) // Build command - access build submenu
+            {
+                //GetComponentInParent<ActionPanelUI>().ShowBuildSubmenu(targetUnit); // make sure ActionButton is always child of this
+                //FindObjectOfType<ActionPanelUI>().ShowBuildSubmenu(targetUnit);
+                UIManager.Instance.ShowActionPanelBuildSubmenu(targetUnit);
+            }
+            else if (targetUnit.TryGetComponent(out CommandController cc)) // Execute regular command
+                cc.ExecuteCommand(commandData.commandType);
+        }
+        else if (mode == ButtonMode.Build)
+        {
+            if (buildOption == null) return;
+            BuildingPlacer.Instance.StartPlacing(buildOption.buildingData);
+        }
     }
 
-    void UpdateAffordability()
+    void UpdateAffordability(FactionInstance f)
     {
-        if (optionData == null || !gameObject.activeSelf) return;
-        canAfford = GameManager.Instance.CanAfford(optionData.cost);
+        if (f != GameManager.Instance.PlayerFaction) return;
+        if (mode != ButtonMode.Production || productionOption == null || !gameObject.activeSelf) return;
+        canAfford = GameManager.Instance.CanAfford(productionOption.cost, GameManager.Instance.PlayerFaction);
         button.image.color = canAfford ? affordableColor : unaffordableColor;
     }
-    
     
     
 }

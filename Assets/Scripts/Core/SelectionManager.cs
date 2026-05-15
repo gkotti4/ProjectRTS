@@ -24,12 +24,12 @@ public class SelectionManager : MonoBehaviour
 
     private bool isPlacingBuilding = false;
     
-    public void Register(ISelectable selectable) // used in DragSelect
+    public void RegisterSelectable(ISelectable selectable) // used in DragSelect
     {
         allSelectables.Add(selectable);
     }
 
-    public void Unregister(ISelectable selectable)
+    public void UnregisterSelectable(ISelectable selectable)
     {
         allSelectables.Remove(selectable);
     }
@@ -51,7 +51,6 @@ public class SelectionManager : MonoBehaviour
     void Start()
     {
         mainCamera = Camera.main;
-        //BuildingPlacer.Instance.OnPlacingModeChanged += (isPlacing) => isPlacingBuilding = isPlacing; // don't need OnDestroy ..
         GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
     }
 
@@ -69,6 +68,12 @@ public class SelectionManager : MonoBehaviour
     void HandleSelectionInput()
     {
         if (isPlacingBuilding) return;
+
+        if (Input.GetKeyDown(KeyCode.Escape)) // New
+        {
+            DeselectAll();
+            return;
+        }
         
         if (Input.GetMouseButtonDown(0))
         {
@@ -151,7 +156,7 @@ public class SelectionManager : MonoBehaviour
             if (selectable == null || selectable.GetGameObject() == null) continue;
 
             Vector3 screenPos = mainCamera.WorldToScreenPoint(selectable.GetGameObject().transform.position);
-            if (screenPos.z > 0 && selectionRect.Contains(screenPos, true) && selectable.IsBoxSelectable)
+            if (screenPos.z > 0 && selectionRect.Contains(screenPos, true) && selectable.IsDragSelectable)
                 Select(selectable);
         }
     }
@@ -231,6 +236,11 @@ public class SelectionManager : MonoBehaviour
 
     void HandlePlacementModeChanged(bool isPlacing)
     {
-        this.isPlacingBuilding = isPlacing;
+        isPlacingBuilding = isPlacing;
+        if (!isPlacingBuilding)
+        {
+            isDragging = false;
+            dragStart = Input.mousePosition; // reset drag position
+        }
     }
 }

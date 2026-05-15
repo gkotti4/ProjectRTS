@@ -12,19 +12,20 @@ public class EntityData : ScriptableObject
     public GameObject prefab;
 
     // Shared Stats
-    [Header("Shared")]
+    [Space(10)]
+    [Header("___Shared___")]
     public int maxHealth = 100;
     public int armor = 0;
     public int lineOfSight = 5;
 
+    [Space(10)]
+    [Header("___Units Only___")]
     // Combat
-    [Header("Combat")]
     public int attackDamage = 0;
     public float attackRange = 0f;
     public float attackInterval = 1f;
-
+    
     // Movement (units only)
-    [Header("Units Only")]
     public UnitType unitType;  
     public float moveSpeed = 0f;
 
@@ -34,24 +35,30 @@ public class EntityData : ScriptableObject
     public float gatherRange = 0f;
     public float gatherInterval = 0f;
     public List<BuildingOptionData> buildOptions;
+    
+    //public float buildSpeed? = buildInterval = 0f; -> Instantly place buildings now
 
+    // Unit Commands
+    [Header("Unit Commands")] 
+    public List<CommandData> baseCommands;
+    
     // Building only
-    [Header("Building Only")]
+    [Space(10)]
+    [Header("___Building Only___")]
     public BuildingType buildingType; 
     public ResourceCost buildingCost = new ResourceCost();
     public int gridWidth = 1;
     public int gridHeight = 1;
     
     // Garrison
+    [Header("Garrison")]
     public int garrisonCapacity = 0;
     
     // Production (buildings only)
-    [Header("Production Only")]
+    [Header("Production")]
     public List<ProductionOptionData> productionOptions;
     public float productionSpeed = 1f; // 1 = normal, 2 = double
     
 
-    // Unit Commands
-    [Header("Unit Commands Only")] 
-    public List<CommandData> baseCommands;
+
 }

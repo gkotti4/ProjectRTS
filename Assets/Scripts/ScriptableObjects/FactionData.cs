@@ -5,14 +5,11 @@ public class FactionData : ScriptableObject
 {
     [Header("Identity")]
     public string factionName = "Faction";
-    [Tooltip("Unique faction identity. 0 = Neutral/Gaia. 1+ = named factions.")]
-    public int factionId = 0;
-    [Tooltip("0 = Neutral. 1+ = Teams. Units on the same team are allies.")]
-    public int teamId = 0;
-    public Color factionColor = Color.white;
-    public bool isPlayerControlled = true;
+    public int factionId = 0; // Factions start at 1,
 
     [Header("Visuals (not used currently)")] 
+    public Color factionColor = Color.white;
+    
     public Material unitMaterial;
     public Material buildingMaterial;
 }

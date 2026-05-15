@@ -31,10 +31,21 @@ public class CameraController : MonoBehaviour
         HandleMiddleMousePan();
     }
 
-    void HandlePan()
+    void HandlePan() // Possibly move to PlayerInputHandler - not really needed atm
     {
-        float x = Input.GetAxisRaw("Horizontal");
-        float z = Input.GetAxisRaw("Vertical");
+        // Default Unity input system (WASD, Up Down Left Right)
+        //float x = Input.GetAxisRaw("Horizontal");
+        //float z = Input.GetAxisRaw("Vertical");
+        
+        // Only Arrow Keys
+        float x = 0f;
+        float z = 0f;
+
+        if (Input.GetKey(KeyCode.RightArrow)) x = 1f;
+        else if (Input.GetKey(KeyCode.LeftArrow)) x = -1f;
+
+        if (Input.GetKey(KeyCode.UpArrow)) z = 1f;
+        else if (Input.GetKey(KeyCode.DownArrow)) z = -1f;
 
         // Get camera's flat forward and right, ignore Y tilt
         Vector3 forward = cam.transform.forward;

@@ -1,13 +1,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Handles player input commands and routes them to the appropriate game systems.
-/// Owns intentional player actions (building placement, hotkeys, game commands).
-/// Does not own state - only reads input and calls other systems.
-/// </summary>
 public class PlayerInputHandler : MonoBehaviour
 {
+    public static PlayerInputHandler Instance { get; private set; }
+    
     [SerializeField] private EntityData townCenterData;
     [SerializeField] private EntityData barracksData;
 
@@ -17,25 +14,35 @@ public class PlayerInputHandler : MonoBehaviour
 
     private Dictionary<HotkeySlot, KeyCode> slotToKey = new Dictionary<HotkeySlot, KeyCode>()
     {
-        { HotkeySlot.Q, KeyCode.Q },
-        { HotkeySlot.W, KeyCode.W },
-        { HotkeySlot.E, KeyCode.E },
-        { HotkeySlot.R, KeyCode.R },
-        { HotkeySlot.T, KeyCode.T },
-        { HotkeySlot.A, KeyCode.A },
-        { HotkeySlot.S, KeyCode.S },
-        { HotkeySlot.D, KeyCode.D },
-        { HotkeySlot.F, KeyCode.F },
-        { HotkeySlot.G, KeyCode.G },
-        { HotkeySlot.Z, KeyCode.Z },
-        { HotkeySlot.X, KeyCode.X },
-        { HotkeySlot.C, KeyCode.C },
-        { HotkeySlot.V, KeyCode.V },
-        { HotkeySlot.B, KeyCode.B },
+        { HotkeySlot.Q, KeyCode.Q }, { HotkeySlot.W, KeyCode.W }, { HotkeySlot.E, KeyCode.E },
+        { HotkeySlot.R, KeyCode.R }, { HotkeySlot.T, KeyCode.T }, { HotkeySlot.A, KeyCode.A },
+        { HotkeySlot.S, KeyCode.S }, { HotkeySlot.D, KeyCode.D }, { HotkeySlot.F, KeyCode.F },
+        { HotkeySlot.G, KeyCode.G }, { HotkeySlot.Z, KeyCode.Z }, { HotkeySlot.X, KeyCode.X },
+        { HotkeySlot.C, KeyCode.C }, { HotkeySlot.V, KeyCode.V }, { HotkeySlot.B, KeyCode.B },
     };
 
+    
+    // TODO: Replace with GameEvents.OnBuildSubmenuChanged(bool) when more systems need to react
+    private bool inBuildSubmenu = false;
+    public void SetBuildSubmenuActive(bool b) => inBuildSubmenu = b;
+    
+
+    private Camera mainCamera;
+
+
+    void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(this.gameObject);
+            return;
+        }
+        Instance = this;
+    }
+    
     void Start()
     {
+        mainCamera = Camera.main;
         GameEvents.OnSelectionChanged += HandleSelectionChanged;
         GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
     }
@@ -48,9 +55,9 @@ public class PlayerInputHandler : MonoBehaviour
 
     void Update()
     {
-        if (isPlacingBuilding)
+        if (inBuildSubmenu || isPlacingBuilding)
         {
-            HandleBuildPlacementHotkeys();
+            HandleBuildSubmenuHotkeys();
             return;
         }
         HandleHotkeys();
@@ -67,17 +74,9 @@ public class PlayerInputHandler : MonoBehaviour
     // Determines command context from current selection
     void UpdateContext()
     {
-        if (currentSelections.Count == 0)
-        {
-            currentContext = CommandContext.Default;
-            return;
-        }
+        if (currentSelections.Count == 0) { currentContext = CommandContext.Default; return; }
 
-        if (currentSelections[0] is BuildingController)
-        {
-            currentContext = CommandContext.BuildingSelected;
-            return;
-        }
+        if (currentSelections[0] is BuildingController) { currentContext = CommandContext.BuildingSelected; return; }
 
         if (currentSelections[0].GetGameObject().TryGetComponent(out UnitController unit))
         {
@@ -90,31 +89,44 @@ public class PlayerInputHandler : MonoBehaviour
         currentContext = CommandContext.Default;
     }
 
-    // Routes right click through CommandController on selected units
+    // Handles right click — resolves hit context and issues orders directly to units
     void HandleRightClick()
     {
         if (!Input.GetMouseButtonDown(1)) return;
 
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
         if (!Physics.Raycast(ray, out RaycastHit hit)) return;
 
-        List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
+        List<UnitController> units = new List<UnitController>();
+        foreach (ISelectable s in currentSelections)
+            if (s.GetGameObject().TryGetComponent(out UnitController u))
+                units.Add(u);
 
-        // Group move — multiple units selected
-        if (selected.Count > 1)
+        if (units.Count == 0) return;
+
+        // Resolve what was hit once — shared across all units
+        bool hitEnemy = hit.collider.TryGetComponent(out EntityController hitEntity) &&
+                        hitEntity.Stats.IsEnemy(units[0].Stats);
+        bool hitNode = hit.collider.TryGetComponent(out ResourceNode node);
+        bool isGroundClick = !hitEnemy && !hitNode;
+
+        // Ground click with multiple units — formation move
+        if (isGroundClick && units.Count > 1)
         {
-            List<UnitController> units = new List<UnitController>();
-            foreach (ISelectable s in selected)
-                if (s.GetGameObject().TryGetComponent(out UnitController u))
-                    units.Add(u);
             HandleGroupMove(units, hit.point);
             return;
         }
 
-        // Single unit — route through CommandController
-        foreach (ISelectable s in selected)
-            if (s.GetGameObject().TryGetComponent(out CommandController commandController))
-                commandController.ExecuteContextCommand(hit);
+        // Issue orders to each unit
+        foreach (UnitController unit in units)
+        {
+            if (hitEnemy)
+                unit.OrderAttack(hitEntity);
+            else if (hitNode && unit.Stats.gatherAmount > 0)
+                unit.OrderGather(node);
+            else
+                unit.OrderMove(hit.point);
+        }
     }
 
     // Sends units to formation positions centered around destination
@@ -127,12 +139,9 @@ public class PlayerInputHandler : MonoBehaviour
         {
             int row = i / columns;
             int col = i % columns;
-
             float offsetX = (col - (columns - 1) / 2f) * spacing;
             float offsetZ = -row * spacing;
-
-            Vector3 unitDestination = destination + new Vector3(offsetX, 0f, offsetZ);
-            units[i].MoveTo(unitDestination);
+            units[i].OrderMove(destination + new Vector3(offsetX, 0f, offsetZ));
         }
     }
 
@@ -145,13 +154,11 @@ public class PlayerInputHandler : MonoBehaviour
                 HandleDefaultHotkeys();
                 break;
             case CommandContext.EconomicUnitSelected:
-                HandleUnitHotkeys();
-                break;
             case CommandContext.MilitaryUnitSelected:
                 HandleUnitHotkeys();
                 break;
             case CommandContext.BuildingSelected:
-                HandleBuildingHotkeys();
+                HandleProductionBuildingHotkeys();
                 break;
         }
     }
@@ -165,53 +172,64 @@ public class PlayerInputHandler : MonoBehaviour
             BuildingPlacer.Instance.StartPlacing(barracksData);
     }
 
-    // Routes unit hotkeys through CommandController
+    // Routes unit hotkeys through CommandController — explicit commands only
     void HandleUnitHotkeys()
     {
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
         Physics.Raycast(ray, out RaycastHit hit);
 
         foreach (ISelectable s in currentSelections)
         {
-            if (!s.GetGameObject().TryGetComponent(out CommandController commandController)) continue;
+            if (!s.GetGameObject().TryGetComponent(out CommandController cc)) continue;
+            if (!s.GetGameObject().TryGetComponent(out UnitController unit)) continue;
 
             foreach (KeyValuePair<HotkeySlot, KeyCode> kvp in slotToKey)
             {
-                if (Input.GetKeyDown(kvp.Value))
+                if (!Input.GetKeyDown(kvp.Value)) continue;
+
+                // Check if this hotkey matches the Build command
+                CommandData matchingCmd = unit.Stats.baseData.baseCommands.Find(c => c.hotkey == kvp.Key);
+                if (matchingCmd != null && matchingCmd.commandType == CommandType.Build)
                 {
-                    commandController.ExecuteHotkeyCommand(kvp.Key, hit);
+                    UIManager.Instance.ShowActionPanelBuildSubmenu(unit);
                     return;
                 }
+
+                // Otherwise route through CommandController
+                cc.ExecuteHotkeyCommand(kvp.Key, hit);
+                return;
             }
         }
     }
 
     // Routes building hotkeys to production queue
-    void HandleBuildingHotkeys()
+    void HandleProductionBuildingHotkeys()
     {
         if (currentSelections.Count != 1) return;
         if (currentSelections[0] is not BuildingController building) return;
 
         foreach (ProductionOptionData option in building.Stats.baseData.productionOptions)
         {
-            if (Input.GetKeyDown(slotToKey[option.hotkeySlot]))
+            if (option.hotkey == HotkeySlot.None) continue;
+            if (Input.GetKeyDown(slotToKey[option.hotkey]))
             {
                 building.EnqueueProduction(option);
                 return;
             }
         }
     }
-
-    // Handles villager build hotkeys while in placement mode
-    void HandleBuildPlacementHotkeys()
+    
+    
+    void HandleBuildSubmenuHotkeys() // Villager Only
     {
-        if (currentSelections.Count != 1) return;
+        // Handles villager build hotkeys while in placement mode
+        if (currentSelections.Count == 0) return; // Could be != 1
         if (currentSelections[0] is not UnitController unit) return;
-        if (unit.Stats.entityTag != EntityTag.Villager) return;
+        if (unit.Stats.baseData.unitType != UnitType.Villager) return;
 
-        foreach (BuildingOptionData option in unit.Stats.baseData.buildOptions) // New
+        foreach (BuildingOptionData option in unit.Stats.baseData.buildOptions)
         {
-            if (Input.GetKeyDown(slotToKey[option.hotkeySlot]))
+            if (Input.GetKeyDown(slotToKey[option.hotkey]))
             {
                 BuildingPlacer.Instance.StartPlacing(option.buildingData);
                 return;
@@ -219,9 +237,5 @@ public class PlayerInputHandler : MonoBehaviour
         }
     }
 
-    // Handles placement mode change
-    void HandlePlacementModeChanged(bool isPlacing)
-    {
-        isPlacingBuilding = isPlacing;
-    }
+    void HandlePlacementModeChanged(bool isPlacing) => isPlacingBuilding = isPlacing;
 }

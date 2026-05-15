@@ -35,7 +35,7 @@ public class QueuePanelUI : MonoBehaviour
 
     public void ShowPanel(BuildingController building) // Called by UIManager when a building is selected // was ShowQueue()
     {
-        Debug.Log("Showing queue");
+        //Debug.Log("Showing queue");
         currentBuilding = building;
         Refresh();
     }
@@ -47,7 +47,7 @@ public class QueuePanelUI : MonoBehaviour
         {
             slot.gameObject.SetActive(false);
         }
-        Debug.Log("Hiding queue");
+        //Debug.Log("Hiding queue");
     }
     
     public void Refresh() // Refreshes all queue slots from current building queue

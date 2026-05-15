@@ -1,19 +1,10 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering.Universal;
 
-[RequireComponent(typeof(Health))]
-[RequireComponent(typeof(EntityStats))]
-public class BuildingController : MonoBehaviour, ISelectable, IDamageable
+public class BuildingController : EntityController
 {
-    [SerializeField] private DecalProjector selectionDecal;
     [SerializeField] private Transform spawnPoint;
     [SerializeField] private Transform pivotPoint;
-
-    protected EntityStats stats;
-    public EntityStats Stats => stats;
-    protected Health health;
-    protected bool isSelected = false;
 
     // Production
     private List<ProductionOptionData> productionQueue = new List<ProductionOptionData>();
@@ -21,58 +12,40 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
     private float productionTimer = 0f;
     private bool isProducing = false;
 
-    // ISelectable
-    public virtual void OnSelect()
+    public override bool IsDragSelectable => false;
+    
+
+    protected override void Awake()
     {
-        isSelected = true;
-        if (selectionDecal) selectionDecal.enabled = true;
+        gameObject.transform.rotation = Quaternion.Euler(0, 90, 0); // TEMP
+        base.Awake();
     }
 
-    public virtual void OnDeselect()
+    protected override void Start()
     {
-        isSelected = false;
-        if (selectionDecal) selectionDecal.enabled = false;
+        base.Start();
     }
-
-    public GameObject GetGameObject() => gameObject;
-    public bool IsBoxSelectable => false;
-
-    // IDamageable
-    public void TakeDamage(int damage) { health.TakeDamage(damage); }
-
-    protected virtual void Awake()
-    {
-        gameObject.transform.rotation = Quaternion.Euler(0, 90, 0);
-
-        stats = GetComponent<EntityStats>();
-        if (stats) stats.InitializeFromBaseData();
-        health = GetComponent<Health>();
-        health.Initialize(stats.maxHealth);
-        if (selectionDecal) selectionDecal.enabled = false;
-    }
-
-    protected virtual void Start() { }
 
     protected virtual void Update()
     {
         HandleProduction();
     }
 
-    // PRODUCTION
+    // Production Section
     public void EnqueueProduction(ProductionOptionData option)
     {
         const int cap = 10;
         if (productionQueue.Count >= cap) return;
 
         if (option.productionType == ProductionType.Unit)
-            if (!GameManager.Instance.CanSpawn()) return;
+            if (!GameManager.Instance.CanSpawn(stats.faction)) return;
 
         if (option.productionType == ProductionType.Upgrade)
-            if (GameManager.Instance.IsUpgradeApplied(option.upgradeData)) return;
+            if (GameManager.Instance.IsUpgradeApplied(option.upgradeData, stats.faction)) return;
 
-        if (!GameManager.Instance.CanAfford(option.cost)) return;
+        if (!GameManager.Instance.CanAfford(option.cost, stats.faction)) return;
 
-        GameManager.Instance.SpendResources(option.cost);
+        GameManager.Instance.SpendResources(option.cost, stats.faction);
         productionQueue.Add(option);
 
         if (!isProducing)
@@ -85,7 +58,7 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
     {
         if (index < 0 || index >= productionQueue.Count) return;
 
-        GameManager.Instance.AddResources(productionQueue[index].cost);
+        GameManager.Instance.AddResources(productionQueue[index].cost, stats.faction);
         productionQueue.RemoveAt(index);
 
         if (index == 0)
@@ -134,27 +107,22 @@ public class BuildingController : MonoBehaviour, ISelectable, IDamageable
 
     private void SpawnUnit(ProductionOptionData option)
     {
-        if (!GameManager.Instance.CanSpawn() || option.prefab == null) return;
-        Instantiate(option.prefab, GetSpawnPosition(), Quaternion.identity);
-        GameManager.Instance.RegisterSpawn();
+        if (!GameManager.Instance.CanSpawn(stats.faction) || option.prefab == null) return;
+        EntityFactory.Spawn(option.prefab, GetSpawnPosition(), Quaternion.identity, stats.faction);
     }
 
     private void ApplyUpgrade(ProductionOptionData option)
     {
         if (option.upgradeData == null) return;
-        GameManager.Instance.RegisterUpgrade(option.upgradeData);
+        GameManager.Instance.RegisterUpgrade(option.upgradeData, stats.faction);
     }
 
-    private Vector3 GetSpawnPosition(bool randomize=true, float randomOffset=2f)
+    private Vector3 GetSpawnPosition(bool randomize = true, float randomOffset = 2f)
     {
         if (spawnPoint == null) { Debug.LogWarning("No Spawn Point"); return Vector3.zero; }
-
         if (randomize)
-        {
-            return GridManager.Instance.SnapToGrid(spawnPoint.position) + 
-                   new Vector3(Random.Range(-randomOffset,randomOffset), 0f, Random.Range(-randomOffset,randomOffset));
-
-        }
+            return GridManager.Instance.SnapToGrid(spawnPoint.position) +
+                   new Vector3(Random.Range(-randomOffset, randomOffset), 0f, Random.Range(-randomOffset, randomOffset));
         return GridManager.Instance.SnapToGrid(spawnPoint.position);
     }
 

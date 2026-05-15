@@ -22,5 +22,5 @@ public class ProductionOptionData : ScriptableObject
     public UpgradeData upgradeData;
     
     [Header("Hotkey")]
-    public HotkeySlot hotkeySlot;
+    public HotkeySlot hotkey;
 }

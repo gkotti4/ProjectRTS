@@ -6,7 +6,7 @@ using UnityEngine;
  * Start from bottom left to top right
  */
 
-public class GridManager : MonoBehaviour
+public class GridManager : MonoBehaviour // Used by all factions
 {
     public static GridManager Instance { get; private set; }
     

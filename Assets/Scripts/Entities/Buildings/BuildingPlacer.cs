@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class BuildingPlacer : MonoBehaviour
 {
     public static BuildingPlacer Instance { get; private set; }
 
-    //public event Action<bool> OnPlacingModeChanged;
+    [SerializeField] private LayerMask placementBlockingLayers;
     
     private EntityData selectedBuilding;
     private GameObject ghostObject;
@@ -44,7 +45,7 @@ public class BuildingPlacer : MonoBehaviour
         if (isPlacing) CancelPlacement();
         
         // Check resource cost
-        else if (!GameManager.Instance.CanAfford(buildingData.buildingCost))
+        else if (!GameManager.Instance.CanAfford(buildingData.buildingCost, GameManager.Instance.PlayerFaction))
         {
             Debug.Log("Can't afford building");
             CancelPlacement();
@@ -54,18 +55,28 @@ public class BuildingPlacer : MonoBehaviour
         // Enter Placement Mode
         selectedBuilding = buildingData;
         isPlacing = true;
-        // OnPlacingModeChanged?.Invoke(isPlacing);
         GameEvents.PlacementModeChanged(isPlacing);
         
         // Spawn ghost preview
-        ghostObject = Instantiate(selectedBuilding.prefab);
-        if (ghostObject == null) return;
+        ghostObject = Instantiate(selectedBuilding.prefab); 
+        if (ghostObject == null) { Debug.LogWarning("Ghost Object is null in BuildingPlacer."); return; }
+
+        // Disable all colliders on ghost and children so it doesn't interact with physics
+        foreach (Collider col in ghostObject.GetComponentsInChildren<Collider>()) // Note: Might be a little overboard
+            col.enabled = false;
+        
+        // Disable NavMesh Obstacle
+        if (ghostObject.TryGetComponent(out NavMeshObstacle navObstacle))
+            navObstacle.enabled = false;
 
         SetGhostMaterial(validMaterial);
         //Debug.Log("Placing: " + buildingData.entityName);
+        
+        // Spend Resources
+        GameManager.Instance.SpendResources(selectedBuilding.buildingCost, GameManager.Instance.PlayerFaction);
     }
     
-    private void HandlePlacementInput() // Handles confirm and cancel input during placement
+    private void HandlePlacementInput() // Placement mode // Handles confirm and cancel input during placement
     {
         // Cancel on right-click or escape
         if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
@@ -84,8 +95,13 @@ public class BuildingPlacer : MonoBehaviour
                 //snappedPos.y = 0; 
                 Vector2Int cell = GridManager.Instance.WorldToCell(snappedPos);
 
-                if (GridManager.Instance.IsFree(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight))
-                    ConfirmPlacement(snappedPos, cell);
+                if (!GameManager.Instance.CanAfford(selectedBuilding.buildingCost, GameManager.Instance.PlayerFaction))
+                {
+                    GameManager.Instance.AddResources(selectedBuilding.buildingCost, GameManager.Instance.PlayerFaction); // Refund resources
+                }
+                
+                if (CanPlace(snappedPos, cell))
+                    PlaceBuilding(snappedPos, cell);
             }
         }
         
@@ -103,48 +119,40 @@ public class BuildingPlacer : MonoBehaviour
             ghostObject.transform.position = snappedPos;
             
             Vector2Int cell = GridManager.Instance.WorldToCell(snappedPos);
-            bool canPlace = GridManager.Instance.IsFree(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight);
+            //bool canPlace = GridManager.Instance.IsFree(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight);
+            bool canPlace = CanPlace(snappedPos, cell);
             
             SetGhostMaterial(canPlace ? validMaterial : invalidMaterial);
         }
     }
 
 
-    private void ConfirmPlacement(Vector3 position, Vector2Int cell) // Places the real building and makrs grid cells
+    private void PlaceBuilding(Vector3 position, Vector2Int cell) // SPAWN building and marks grid cells
     {
         if (selectedBuilding.prefab == null) return;
         
-        // Check resource cost
-        if (!GameManager.Instance.CanAfford(selectedBuilding.buildingCost))
-        {
-            Debug.Log("Cannot afford: " + selectedBuilding.entityName);
-            CancelPlacement();
-            return;
-        }
-        
         // Place building (Todo: Building construction)
-        Instantiate(selectedBuilding.prefab, position, Quaternion.identity);
+        EntityFactory.Spawn(selectedBuilding.prefab, position, Quaternion.identity, GameManager.Instance.PlayerFaction);
+        
         GridManager.Instance.SetOccupied(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight);
-        GameManager.Instance.SpendResources(selectedBuilding.buildingCost);
+        //GameManager.Instance.SpendResources(selectedBuilding.buildingCost, GameManager.Instance.PlayerFaction); // spent at start 
         
-        // Note: we could just place the ghost building but somewhat cleaner to just instantiate a new one fresh.
-        
-        //Debug.Log("Placed: " + selectedBuilding.entityName);
-        CancelPlacement();
+        ExitPlacementMode(); // No refund, resources stay spent
     }
     
-    private void CancelPlacement() // Exits placement mode and destorys ghost
+    private void CancelPlacement() // cancel = refund
+    {
+        if (selectedBuilding != null)
+            GameManager.Instance.AddResources(selectedBuilding.buildingCost, GameManager.Instance.PlayerFaction);
+        ExitPlacementMode();
+    }
+
+    private void ExitPlacementMode() // shared cleanup
     {
         isPlacing = false;
         selectedBuilding = null;
-        // OnPlacingModeChanged?.Invoke(isPlacing);
         GameEvents.PlacementModeChanged(isPlacing);
-        
-        if (ghostObject != null)
-        {
-            Destroy(ghostObject);
-            ghostObject = null;
-        }
+        if (ghostObject != null) { Destroy(ghostObject); ghostObject = null; }
     }
     
     private void SetGhostMaterial(Material mat)
@@ -159,6 +167,39 @@ public class BuildingPlacer : MonoBehaviour
             r.materials = mats;
         }
     }
+
+
+
+    private bool CanPlace(Vector3 position, Vector2Int cell)
+    {
+        // Is grid space free?
+        // Is building placement over object?
+        
+        return GridManager.Instance.IsFree(cell, selectedBuilding.gridWidth, selectedBuilding.gridHeight) &&
+               !IsPlacementBlockedByObject(position);
+        // Add cost check?
+    }
     
+    
+    private readonly Collider[] overlapResults = new Collider[16];
+    private bool IsPlacementBlockedByObject(Vector3 position)
+    {
+        Vector3 halfExtents = new Vector3(
+            selectedBuilding.gridWidth * GridManager.Instance.GetCellSize() / 2f,
+            1f,
+            selectedBuilding.gridHeight * GridManager.Instance.GetCellSize() / 2f
+        );
+
+        int hitCount = Physics.OverlapBoxNonAlloc(position, halfExtents, overlapResults, Quaternion.identity, placementBlockingLayers);
+    
+        for (int i = 0; i < hitCount; i++)
+        {
+            if (overlapResults[i].gameObject == ghostObject) continue;
+            if (overlapResults[i].TryGetComponent(out UnitController _)) return true;
+            if (overlapResults[i].TryGetComponent(out BuildingController _)) return true;
+            if (overlapResults[i].TryGetComponent(out ResourceNode _)) return true;
+        }
+        return false;
+    }
     
 }

@@ -13,7 +13,7 @@ public enum CommandType
     Stop,
     AttackMove,
     Patrol,
-    Build,
+    Build, //BuildMode?
     Garrison,
 
     // Special abilities (component based)
@@ -34,14 +34,14 @@ public enum EntityTag
     
     // Military
     Infantry,
-    Archer,
+    Ranged,
     Cavalry,
     Siege,
-    Ship,
     
     // Building categories
     MilitaryBuilding,
-    EconomicBuilding,
+    ResourceBuilding,
+    ProductionBuilding,
     DefenseBuilding,
     
     // Broad
@@ -54,10 +54,10 @@ public enum EntityTag
 
 // Units
 public enum UnitState { Idle, Moving, Attacking, Gathering, Building, Patrolling }
-public enum UnitType { Villager, Infantry, Ranged }
+public enum UnitType { None, Villager, Infantry, Ranged }
 
 // Buildings
-public enum BuildingType { TownCenter, Barracks, Farm }
+public enum BuildingType { None, TownCenter, Barracks, Farm }
 
 
 // Resources

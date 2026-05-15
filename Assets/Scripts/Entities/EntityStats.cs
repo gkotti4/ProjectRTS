@@ -2,16 +2,23 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.Rendering.Universal;
 
-public class EntityStats : MonoBehaviour // Pure data class
+// TODO: pass stats.faction directly, remove GameManager wrappers
+
+public class EntityStats : MonoBehaviour
 {
     [SerializeField] public EntityData baseData;
-    [SerializeField] public FactionData factionData;
+    
+    // Runtime faction instance — set at spawn by spawner
+    [HideInInspector] public FactionInstance faction;
+
     
     [Header("SET FROM BASE DATA (DO NOT CHANGE IN EDITOR)")]
     // Identity
     public EntityTag entityTag;
-    
-    // Anything that can be changed - define outside of baseData
+
+    // Health
+    private int currentHealth;
+
     // Shared
     public int maxHealth;
     public int armor;
@@ -33,7 +40,7 @@ public class EntityStats : MonoBehaviour // Pure data class
     // Production
     public float productionSpeed;
     public int garrisonCapacity;
-
+    
     
     void Awake()
     {
@@ -42,11 +49,21 @@ public class EntityStats : MonoBehaviour // Pure data class
     
     void Start()
     {
+        if (faction == null) // check
+        {
+            Debug.LogWarning(gameObject.name + " spawned with no faction — check spawner");
+            return;
+        }
         GameManager.Instance.RegisterEntity(this);
     }
 
     void OnDestroy()
     {
+        if (faction == null)
+        {
+            Debug.LogWarning(gameObject.name + " destroyed with no faction"); // Check
+            return;
+        }
         GameManager.Instance.UnregisterEntity(this);
     }
 
@@ -61,6 +78,8 @@ public class EntityStats : MonoBehaviour // Pure data class
         
         entityTag = baseData.entityTag;
 
+        currentHealth = baseData.maxHealth;
+        
         maxHealth = baseData.maxHealth;
         armor = baseData.armor;
         lineOfSight = baseData.lineOfSight;
@@ -78,9 +97,48 @@ public class EntityStats : MonoBehaviour // Pure data class
         productionSpeed = baseData.productionSpeed;
         garrisonCapacity = baseData.garrisonCapacity;
     }
+    
+    // Health x IDamageable
+    public bool IsAlive => currentHealth > 0;
+    public int CurrentHealth => currentHealth;
+    public void TakeDamage(int rawDamage)
+    {
+        int reducedDamage = Mathf.Max(1, rawDamage - armor); // armor reduces damage
+        currentHealth -= reducedDamage;
+        if (currentHealth <= 0)
+            Die();
+    }
 
-    // Called by GameManager when an upgrade is registered
-    public void ApplyUpgrade(UpgradeData upgrade)
+    public void Heal(int amount)
+    {
+        currentHealth += amount;
+        if (currentHealth > maxHealth) currentHealth = maxHealth; // Clamp
+    }
+    
+    void Die()
+    {
+        // if (TryGetComponent(out UnitAnimator unitAnimator))
+        //     unitAnimator.TriggerDeath();
+
+        if (TryGetComponent(out UnitController unitController))
+        {
+            unitController.Agent.enabled = false;
+            if (TryGetComponent(out Rigidbody rb))
+                rb.isKinematic = false;
+            unitController.UnitAnimator.TriggerDeath();
+        }
+
+        // Get faction from EntityStats and unregister directly
+        if (faction != null)
+            faction.UnregisterEntity(this);
+        // GameEvents.PopulationChanged(stats.faction); moved to FactionInstance
+
+        GameEvents.EntityDied(gameObject);
+        Destroy(gameObject, 2f);
+    }
+
+    // Called by GameManager (FACTION INSTANCE) when an upgrade is registered
+    public void ApplyUpgrade(UpgradeData upgrade) // Check when upgrades are added
     {
         if (upgrade.upgradeType == UpgradeType.Global)
         {
@@ -159,12 +217,15 @@ public class EntityStats : MonoBehaviour // Pure data class
             : Mathf.RoundToInt(baseValue * (1f + modifier.value / 100f));
     }
     
-    
     // Faction Section
     public bool IsEnemy(EntityStats other)
     {
-        if (other.factionData == null || factionData == null) return false;
-        if (other.factionData.teamId == 0 || factionData.teamId == 0) return false; // neutral
-        return other.factionData.teamId != factionData.teamId;
+        if (other.faction == null || faction == null) return false;
+        if (other.faction.teamId == 0 || faction.teamId == 0) return false;
+        return other.faction.teamId != faction.teamId;
     }
+    
+    
+    
+    
 }
