@@ -3,6 +3,7 @@ using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(Rigidbody))]
+
 public class UnitController : EntityController
 {
     protected NavMeshAgent agent;
@@ -13,17 +14,18 @@ public class UnitController : EntityController
     public UnitAnimator UnitAnimator => unitAnimator;
 
     // State
+    protected ControlState controlState = ControlState.AIControlled;
+
     protected UnitState state = UnitState.Idle;
     public UnitState State => state;
+
+    // Movement
+    protected Vector3 homePosition;
 
     // Combat
     protected EntityController attackTarget;
     public EntityController AttackTarget => attackTarget;
     protected float attackTimer;
-
-    // Gathering
-    protected ResourceNode nodeTarget;
-    protected float gatherTimer;
 
     public override bool IsDragSelectable => true;
 
@@ -48,187 +50,176 @@ public class UnitController : EntityController
         base.Start();
         agent.speed = stats.moveSpeed;
         attackTimer = stats.attackInterval;
-        gatherTimer = stats.gatherInterval;
         mainCamera = Camera.main;
+        homePosition = transform.position;
         if (selectionDecal != null) selectionDecal.enabled = false;
     }
 
     protected virtual void Update()
     {
         HandleState();
-        HandleRotation();
-        if(attackTimer > 0f) 
-            attackTimer -= Time.deltaTime;
+        UpdateRotation();
     }
-    
 
-    // Routes to correct state handler each frame
+    
+    #region Handle State
     protected virtual void HandleState()
     {
+        if (attackTimer > 0f) attackTimer -= Time.deltaTime;
+        
         switch (state)
         {
             case UnitState.Idle: break;
             case UnitState.Moving: HandleMovingState(); break;
             case UnitState.Attacking: HandleAttackingState(); break;
-            case UnitState.Gathering: HandleGatheringState(); break;
         }
     }
 
-    // Checks NavMesh arrival and transitions to next state
     protected virtual void HandleMovingState()
     {
         if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
-            if (nodeTarget != null) state = UnitState.Gathering;
-            else if (attackTarget != null) state = UnitState.Attacking;
+            if (attackTarget != null) state = UnitState.Attacking;
             else state = UnitState.Idle;
         }
     }
 
-    // Handles combat — chases, attacks, cleans up dead targets
+    // Basic attack state — subclasses override for stance logic
     protected virtual void HandleAttackingState()
     {
-        if (attackTarget == null)
+        if (attackTarget == null || !attackTarget.Stats.IsAlive)
         {
+            attackTarget = null;
             state = UnitState.Idle;
             return;
         }
 
-        Vector3 toTarget = attackTarget.transform.position - transform.position;
-        float sqrDistance = toTarget.sqrMagnitude;
-        float sqrAttackRange = stats.attackRange * stats.attackRange;
-
-        if (sqrDistance > sqrAttackRange)
+        if (Calc.WithinRange(attackTarget.transform.position, transform.position, stats.attackRange))
+        {
+            if (attackTimer <= 0f)
+                TriggerAttack();
+        }
+        else
         {
             agent.SetDestination(attackTarget.transform.position);
             state = UnitState.Moving;
-            return;
-        }
-
-        if (attackTimer <= 0f)
-        {
-            unitAnimator.TriggerAttack();
-            attackTimer = stats.attackInterval;
         }
     }
+    #endregion
 
-    // Called by animation event — deals damage to current attack target
+    
+    #region Attack
+    protected void TriggerAttack()
+    {
+        unitAnimator.TriggerAttack();
+        attackTimer = stats.attackInterval; // check
+        controlState = ControlState.Locked; 
+        //Debug.Log("trigger attack");
+    }
+
+    // Called by animation event
     public void DealAttackDamage()
     {
         if (attackTarget == null) return;
         attackTarget.TakeDamage(stats.attackDamage);
+        //Debug.Log(attackTarget.name + " was dealt " + stats.attackDamage + " attack damage");
     }
-
-    // Ticks gather timer and pulls resources from node
-    protected virtual void HandleGatheringState()
+    #endregion
+    
+    
+    #region Animation Events
+    public virtual void OnAttackImpact()
     {
-        if (nodeTarget == null || !nodeTarget.HasResources())
-        {
-            state = UnitState.Idle;
-            nodeTarget = null;
-            return;
-        }
-
-        gatherTimer -= Time.deltaTime;
-        if (gatherTimer <= 0f)
-        {
-            int harvested = nodeTarget.Harvest(stats.gatherAmount);
-            GameManager.Instance.AddResources(nodeTarget.resourceNodeData.resourceType, harvested, stats.faction);
-            gatherTimer = stats.gatherInterval;
-        }
+        // Base damage - works for any unit that attacks - called by UnitAnimator
+        if (attackTarget == null) return;
+        DealAttackDamage();
     }
-
-    // Orders unit to attack a target
-    public void OrderAttack(EntityController target)
+    
+    //public virtual void OnAttackEnd() { /* Only Military Units need this for now */ }
+    public virtual void OnAttackEnd()
     {
-        if (target == null) return;
-        attackTarget = target;
-        nodeTarget = null;
-        agent.stoppingDistance = stats.attackRange;
-        agent.SetDestination(attackTarget.transform.position);
-        state = UnitState.Moving;
-
-        // Snap rotation if already in range
-        Vector3 dir = (target.transform.position - transform.position);
-        if (dir.sqrMagnitude < stats.attackRange * stats.attackRange)
-            transform.rotation = SnapToXDirections(dir);
+        controlState = ControlState.AIControlled; // flow: if in Player control state attack -> TriggerAttack -> Locked control state -> now AI Controlled Attacking State
     }
+    #endregion
 
-    // Orders unit to gather from a resource node
-    public void OrderGather(ResourceNode node)
+    protected void SetUnitState(UnitState newState)
     {
-        if (node == null || stats.gatherAmount <= 0) return;
-        nodeTarget = node;
-        attackTarget = null;
-        agent.stoppingDistance = stats.gatherRange;
-        agent.SetDestination(nodeTarget.transform.position);
-        state = UnitState.Moving;
-
-        // Snap rotation if already in range
-        Vector3 dir = (node.transform.position - transform.position);
-        if (dir.sqrMagnitude < stats.gatherRange * stats.gatherRange)
-            transform.rotation = SnapToXDirections(dir);
+        state = newState;
     }
-
-    // Orders unit to move to a position
-    public void OrderMove(Vector3 destination)
+    
+    #region Orders
+    public virtual void OrderMove(Vector3 destination)
     {
         attackTarget = null;
-        nodeTarget = null;
+        homePosition = destination;
         agent.stoppingDistance = 0.1f;
         agent.SetDestination(destination);
         state = UnitState.Moving;
     }
 
-    // Orders unit to stop immediately
-    public void OrderStop()
+    public virtual void OrderAttack(EntityController target)
+    {
+        if (target == null) return;
+        attackTarget = target;
+        agent.stoppingDistance = stats.attackRange;
+        agent.SetDestination(attackTarget.transform.position);
+        state = UnitState.Moving;
+
+        Vector3 dir = Calc.Dir(transform.position, target.transform.position);
+        if (Calc.WithinRange(dir, stats.attackRange))
+            transform.rotation = SnapToYAngles(dir);
+    }
+
+    public virtual void OrderStop()
     {
         attackTarget = null;
-        nodeTarget = null;
         agent.ResetPath();
         state = UnitState.Idle;
     }
-
-    void HandleRotation()
+    #endregion
+    
+    
+    #region Rotation
+    protected virtual void UpdateRotation()
     {
         switch (state)
         {
+            case UnitState.Returning:
+            case UnitState.Patrolling:
             case UnitState.Moving: RotateTowardVelocity(); break;
-            case UnitState.Attacking: RotateToward(attackTarget?.transform.position); break;
-            case UnitState.Gathering: RotateTowardIfNeeded(nodeTarget?.transform.position); break;
-            case UnitState.Idle: break;
+            case UnitState.Attacking: RotateTowardIfNeeded(attackTarget?.transform.position); break;
         }
     }
 
-    void RotateTowardVelocity()
+    protected void RotateTowardVelocity()
     {
         if (agent.velocity.sqrMagnitude < 0.1f) return;
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
-            SnapToXDirections(agent.velocity),
+            SnapToYAngles(agent.velocity),
             900f * Time.deltaTime);
     }
 
-    void RotateToward(Vector3? targetPos)
+    protected void RotateToward(Vector3? targetPos)
     {
         if (targetPos == null) return;
         Vector3 dir = targetPos.Value - transform.position;
         dir.y = 0f;
         if (dir == Vector3.zero) return;
-        transform.rotation = SnapToXDirections(dir);
+        transform.rotation = SnapToYAngles(dir);
     }
 
-    void RotateTowardIfNeeded(Vector3? targetPos, float threshold = 22.5f)
+    protected void RotateTowardIfNeeded(Vector3? targetPos, float threshold = 22.5f)
     {
         if (targetPos == null) return;
         Vector3 dir = targetPos.Value - transform.position;
         dir.y = 0f;
         if (dir == Vector3.zero) return;
         if (Vector3.Angle(transform.forward, dir) > threshold)
-            transform.rotation = SnapToXDirections(dir);
+            transform.rotation = SnapToYAngles(dir);
     }
 
-    Quaternion SnapToXDirections(Vector3 direction)
+    protected Quaternion SnapToYAngles(Vector3 direction)
     {
         float angleDiv = 22.5f;
         direction.y = 0f;
@@ -237,4 +228,9 @@ public class UnitController : EntityController
         float snapped = Mathf.Round(angle / angleDiv) * angleDiv;
         return Quaternion.Euler(0f, snapped, 0f);
     }
+    #endregion
 }
+
+
+
+

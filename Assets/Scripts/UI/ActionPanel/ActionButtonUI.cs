@@ -23,7 +23,7 @@ public class ActionButtonUI : MonoBehaviour
     // Data
     private ProductionOptionData productionOption; // Building
     private CommandData commandData; // Unit
-    private BuildingOptionData buildOption; // Villager
+    private BuildOptionData buildOption; // Villager
     private BuildingController targetBuilding;
     private UnitController targetUnit;
 
@@ -102,7 +102,7 @@ public class ActionButtonUI : MonoBehaviour
         button.image.color = affordableColor;
     }
 
-    public void InitializeFromBuildOption(BuildingOptionData option, UnitController unit)
+    public void InitializeFromBuildOption(BuildOptionData option, UnitController unit)
     {
         if (option == null) return;
         mode = ButtonMode.Build;
@@ -138,27 +138,44 @@ public class ActionButtonUI : MonoBehaviour
             if (targetUnit == null || commandData == null) return;
             if (commandData.commandType == CommandType.Build) // Build command - access build submenu
             {
-                //GetComponentInParent<ActionPanelUI>().ShowBuildSubmenu(targetUnit); // make sure ActionButton is always child of this
-                //FindObjectOfType<ActionPanelUI>().ShowBuildSubmenu(targetUnit);
                 UIManager.Instance.ShowActionPanelBuildSubmenu(targetUnit);
             }
             else if (targetUnit.TryGetComponent(out CommandController cc)) // Execute regular command
+            {
                 cc.ExecuteCommand(commandData.commandType);
+            }
         }
         else if (mode == ButtonMode.Build)
         {
             if (buildOption == null) return;
-            BuildingPlacer.Instance.StartPlacing(buildOption.buildingData);
+            BuildingPlacer.Instance.StartPlacing(buildOption);
         }
     }
 
     void UpdateAffordability(FactionInstance f)
     {
         if (f != GameManager.Instance.PlayerFaction) return;
-        if (mode != ButtonMode.Production || productionOption == null || !gameObject.activeSelf) return;
+        if (mode != ButtonMode.Production || productionOption == null) return; // removed activeSelf check
+        if (GetComponent<CanvasGroup>().alpha == 0f) return; // hidden check
         canAfford = GameManager.Instance.CanAfford(productionOption.cost, GameManager.Instance.PlayerFaction);
         button.image.color = canAfford ? affordableColor : unaffordableColor;
     }
     
     
 }
+
+
+
+// public void ShowSubmenu(CommandSubmenu type, UnitController unit)
+// {
+//     switch (type)
+//     {
+//         case CommandSubmenu.Build:
+//             actionPanelUI.ShowBuildSubmenu(unit);
+//             PlayerInputHandler.Instance.SetBuildSubmenuActive(true);
+//             break;
+//         // Future:
+//         // case CommandSubmenu.Stance: actionPanelUI.ShowStanceSubmenu(unit); break;
+//         // case CommandSubmenu.Formation: actionPanelUI.ShowFormationSubmenu(unit); break;
+//     }
+// }

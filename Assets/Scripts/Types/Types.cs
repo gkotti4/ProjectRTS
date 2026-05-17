@@ -1,133 +1,85 @@
 using UnityEngine;
-using UnityEngine.Serialization;
 
-// Commands (Units)
-public enum CommandType
-{
-    // Context (right click)
-    Move,
-    Attack,
-    Gather,
+// ============================================================
+// ENTITY TYPES
+// ============================================================
 
-    // Explicit (button/hotkey)
-    Stop,
-    AttackMove,
-    Patrol,
-    Build, //BuildMode?
-    Garrison,
-
-    // Special abilities (component based)
-    Ability
-}
-
-// Entities (ALL things)
 public enum EntityType { None, Unit, Building }
 
-// In Types.cs — replaces UnitType for upgrade targeting
 public enum EntityTag
 {
     None = 0,
-    
-    // Unit categories
-    // Economic
+
+    // Units — Economic
     Villager,
-    
-    // Military
+
+    // Units — Military
     Infantry,
     Ranged,
     Cavalry,
     Siege,
-    
-    // Building categories
+
+    // Buildings
+    TownCenter,
     MilitaryBuilding,
     ResourceBuilding,
     ProductionBuilding,
     DefenseBuilding,
-    
-    // Broad
+
+    // Broad selectors (used in upgrades)
     AllUnits,
     AllBuildings,
     All
-    
 }
 
-
-// Units
-public enum UnitState { Idle, Moving, Attacking, Gathering, Building, Patrolling }
 public enum UnitType { None, Villager, Infantry, Ranged }
-
-// Buildings
 public enum BuildingType { None, TownCenter, Barracks, Farm }
 
 
-// Resources
-public enum ResourceType { Wood, Food, Gold, Stone }
+// ============================================================
+// UNIT STATE & STANCE
+// ============================================================
 
-[System.Serializable]
-public struct ResourceCost
+public enum UnitState { Idle, Moving, Attacking, Returning, Gathering, Building, Patrolling }
+public enum UnitStance { Aggressive, Defensive, StandGround, NoAttack }
+
+
+// ============================================================
+// COMMANDS
+// ============================================================
+
+public enum CommandSubmenuType { None, Build } //, Stance, Formation } 
+
+public enum CommandType
 {
-    public int wood;
-    public int gold;
-    public int food;
-    public int stone;
-    public ResourceCost(int wood = 0, int gold = 0, int food = 0, int stone = 0)
-    {
-        this.wood = wood;
-        this.gold = gold;
-        this.food = food;
-        this.stone = stone;
-    }
+    // Implicit context (right click routing — not used as CommandData)
+    //Move,
+    //Attack,
+    //Gather,
+
+    // Explicit (button/hotkey — used as CommandData SO)
+    Stop,
+    AttackMove,
+    Patrol,
+    Build,
+    Garrison,
+    
+    // Military Unit Stances
+    Aggressive, // Chases units forever
+    Defensive, // Chases units until x dist
+    StandGround, // Doesn't chase, but attacks if in attack range
+    NoAttack, // No attack
+
+    // Special abilities (future ICommand components)
+    Ability
 }
 
-
-// Production
-public enum ProductionType { Unit, Upgrade }
-
-// Upgrade Production
-public enum UpgradeType { Global, Unit } // AgeUp
-public enum StatType
-{
-    Attack,
-    MeleeArmor,
-    PierceArmor,
-    AttackSpeed,
-    AttackRange,
-    LineOfSight,
-    MoveSpeed,
-    GatherSpeed,
-    GatherAmount,
-    CarryCapacity,
-    BuildSpeed,
-    MaxHealth,
-    HealRate,
-    PopulationCost,
-    ResourceGenerationRate,
-    ProductionSpeed,
-    GarrisonCapacity,
-}
-public enum ModifierType
-{
-    Flat,       // +5 attack
-    Percentage  // +10% attack
-}
-[System.Serializable]
-public struct StatModifier
-{
-    public StatType stat;
-    public float value;
-    public ModifierType modifierType; // Flat, Percentage
-}
-
-
-
-// Command Context - Hotkeys - What is selected
 public enum CommandContext
 {
     Default,
     EconomicUnitSelected,
     MilitaryUnitSelected,
     BuildingSelected,
-    // Multiple Units?
 }
 
 public enum HotkeySlot
@@ -139,29 +91,83 @@ public enum HotkeySlot
 }
 
 
+// ============================================================
+// RESOURCES
+// ============================================================
+
+public enum ResourceType { Wood, Food, Gold, Stone }
+
+[System.Serializable]
+public struct ResourceCost
+{
+    public int wood;
+    public int gold;
+    public int food;
+    public int stone;
+
+    public ResourceCost(int wood = 0, int gold = 0, int food = 0, int stone = 0)
+    {
+        this.wood = wood;
+        this.gold = gold;
+        this.food = food;
+        this.stone = stone;
+    }
+}
 
 
+// ============================================================
+// PRODUCTION & UPGRADES
+// ============================================================
 
+public enum ProductionType { Unit, Upgrade }
+public enum UpgradeType { Global, Unit }
 
+public enum StatType
+{
+    // Combat
+    Attack,
+    MeleeArmor,
+    PierceArmor,
+    AttackSpeed,
+    AttackRange,
 
+    // Movement
+    MoveSpeed,
 
+    // Vision
+    LineOfSight,
 
+    // Gathering
+    GatherSpeed,
+    GatherAmount,
+    CarryCapacity,
 
+    // Building
+    BuildSpeed,
 
+    // Health
+    MaxHealth,
+    HealRate,
 
+    // Economy
+    PopulationCost,
+    ResourceGenerationRate,
 
+    // Production
+    ProductionSpeed,
+    GarrisonCapacity,
+}
 
+public enum ModifierType
+{
+    Flat,       // +5 attack
+    Percentage  // +10% attack
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+[System.Serializable]
+public struct StatModifier
+{
+    public StatType stat;
+    public float value;
+    public ModifierType modifierType;
+}

@@ -7,6 +7,7 @@ using UnityEngine.Rendering.Universal;
 public abstract class EntityController : MonoBehaviour, ISelectable, IDamageable
 {
     [SerializeField] protected DecalProjector selectionDecal;
+    protected HealthBarUI healthBar;
 
     protected EntityStats stats;
     public EntityStats Stats => stats;
@@ -20,20 +21,30 @@ public abstract class EntityController : MonoBehaviour, ISelectable, IDamageable
     {
         isSelected = true;
         if (selectionDecal) selectionDecal.enabled = true;
+        if (healthBar != null)
+            healthBar.OnSelected();
     }
     public virtual void OnDeselect()
     {
         isSelected = false;
         if (selectionDecal) selectionDecal.enabled = false;
+        if (healthBar != null)
+            healthBar.OnDeselected();
     }
 
     public virtual bool IsDragSelectable => false;
-    public GameObject GetGameObject() => gameObject;
+
+    public GameObject GetGameObject()
+    {
+        if (gameObject == null) return null;
+        return gameObject;
+    }
 
     protected virtual void Awake()
     {
         stats = GetComponent<EntityStats>();
         if (selectionDecal) selectionDecal.enabled = false;
+        healthBar = GetComponentInChildren<HealthBarUI>();
     }
 
     protected virtual void Start()

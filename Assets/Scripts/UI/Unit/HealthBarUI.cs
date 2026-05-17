@@ -1,0 +1,52 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+public class HealthBarUI : MonoBehaviour
+{
+    [SerializeField] private Image fillImage;
+    [SerializeField] private float hideDelay = 3f;
+
+    private Camera mainCamera;
+    private float hideTimer = 0f;
+    private bool isSelected = false;
+    private Canvas canvas;
+    
+    void Start()
+    {
+        mainCamera = Camera.main;
+        canvas = GetComponent<Canvas>();
+        canvas.worldCamera = mainCamera;
+        Hide();
+    }
+
+    void Update()
+    {
+        // Always face camera
+        transform.rotation = mainCamera.transform.rotation;
+
+        if (isSelected) return;
+        
+        // Hide after delay
+        if (hideTimer > 0f)
+        {
+            hideTimer -= Time.deltaTime;
+            if (hideTimer <= 0f)
+                Hide();
+        }
+    }
+
+    public void OnDamaged(int currentHealth, int maxHealth)
+    {
+        Debug.Log("health bar on damaged");
+        Show();
+        fillImage.fillAmount = (float)currentHealth / (float)maxHealth;
+        hideTimer = hideDelay;
+    }
+    
+    public void OnSelected() { isSelected = true; Show(); Debug.Log("selected"); }
+    public void OnDeselected() { isSelected = false; Hide(); }
+    
+    void Show() => canvas.enabled = true;
+    void Hide() => canvas.enabled = false;
+    
+}

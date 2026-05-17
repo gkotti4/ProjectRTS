@@ -5,8 +5,8 @@ public class PlayerInputHandler : MonoBehaviour
 {
     public static PlayerInputHandler Instance { get; private set; }
     
-    [SerializeField] private EntityData townCenterData;
-    [SerializeField] private EntityData barracksData;
+    [SerializeField] private BuildOptionData townCenterData;
+    [SerializeField] private BuildOptionData barracksData;
 
     private CommandContext currentContext = CommandContext.Default;
     private bool isPlacingBuilding = false;
@@ -70,6 +70,8 @@ public class PlayerInputHandler : MonoBehaviour
         currentSelections = SelectionManager.Instance.GetSelectedObjects();
         UpdateContext();
     }
+    
+    void HandlePlacementModeChanged(bool isPlacing) => isPlacingBuilding = isPlacing;
 
     // Determines command context from current selection
     void UpdateContext()
@@ -122,8 +124,8 @@ public class PlayerInputHandler : MonoBehaviour
         {
             if (hitEnemy)
                 unit.OrderAttack(hitEntity);
-            else if (hitNode && unit.Stats.gatherAmount > 0)
-                unit.OrderGather(node);
+            else if (hitNode && unit.Stats.gatherAmount > 0 && unit.TryGetComponent(out VillagerController vil)) // Update: refactor to include new VilController
+                vil.OrderGather(node);
             else
                 unit.OrderMove(hit.point);
         }
@@ -144,6 +146,7 @@ public class PlayerInputHandler : MonoBehaviour
             units[i].OrderMove(destination + new Vector3(offsetX, 0f, offsetZ));
         }
     }
+    
 
     // Routes hotkeys based on current context
     void HandleHotkeys()
@@ -187,7 +190,7 @@ public class PlayerInputHandler : MonoBehaviour
             {
                 if (!Input.GetKeyDown(kvp.Value)) continue;
 
-                // Check if this hotkey matches the Build command
+                // Build command - Villager Only
                 CommandData matchingCmd = unit.Stats.baseData.baseCommands.Find(c => c.hotkey == kvp.Key);
                 if (matchingCmd != null && matchingCmd.commandType == CommandType.Build)
                 {
@@ -195,7 +198,7 @@ public class PlayerInputHandler : MonoBehaviour
                     return;
                 }
 
-                // Otherwise route through CommandController
+                // Execute Command (all command types besides right-click/build commands)
                 cc.ExecuteHotkeyCommand(kvp.Key, hit);
                 return;
             }
@@ -227,15 +230,14 @@ public class PlayerInputHandler : MonoBehaviour
         if (currentSelections[0] is not UnitController unit) return;
         if (unit.Stats.baseData.unitType != UnitType.Villager) return;
 
-        foreach (BuildingOptionData option in unit.Stats.baseData.buildOptions)
+        foreach (BuildOptionData option in unit.Stats.baseData.buildOptions)
         {
             if (Input.GetKeyDown(slotToKey[option.hotkey]))
             {
-                BuildingPlacer.Instance.StartPlacing(option.buildingData);
+                BuildingPlacer.Instance.StartPlacing(option);
                 return;
             }
         }
     }
 
-    void HandlePlacementModeChanged(bool isPlacing) => isPlacingBuilding = isPlacing;
 }

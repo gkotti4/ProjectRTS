@@ -24,13 +24,15 @@ public class EntityStats : MonoBehaviour
     public int armor;
     public int lineOfSight;
 
+    // Movement
+    public float moveSpeed;
+
     // Combat
     public int attackDamage;
     public float attackRange;
     public float attackInterval;
 
-    // Movement
-    public float moveSpeed;
+    public float defensiveChaseRange;
 
     // Gathering
     public int gatherAmount;
@@ -41,10 +43,13 @@ public class EntityStats : MonoBehaviour
     public float productionSpeed;
     public int garrisonCapacity;
     
+    // private UI
+    private HealthBarUI healthBar;
     
     void Awake()
     {
         InitializeFromBaseData();
+        healthBar = GetComponentInChildren<HealthBarUI>();
     }
     
     void Start()
@@ -84,11 +89,13 @@ public class EntityStats : MonoBehaviour
         armor = baseData.armor;
         lineOfSight = baseData.lineOfSight;
 
+        moveSpeed = baseData.moveSpeed;
+
         attackDamage = baseData.attackDamage;
         attackRange = baseData.attackRange;
         attackInterval = baseData.attackInterval;
-
-        moveSpeed = baseData.moveSpeed;
+        
+        defensiveChaseRange = baseData.defensiveChaseRange;
 
         gatherAmount = baseData.gatherAmount;
         gatherRange = baseData.gatherRange;
@@ -105,8 +112,12 @@ public class EntityStats : MonoBehaviour
     {
         int reducedDamage = Mathf.Max(1, rawDamage - armor); // armor reduces damage
         currentHealth -= reducedDamage;
+        
         if (currentHealth <= 0)
             Die();
+        
+        if (healthBar != null)
+            healthBar.OnDamaged(currentHealth, maxHealth);
     }
 
     public void Heal(int amount)
@@ -117,22 +128,20 @@ public class EntityStats : MonoBehaviour
     
     void Die()
     {
-        // if (TryGetComponent(out UnitAnimator unitAnimator))
-        //     unitAnimator.TriggerDeath();
+        // Disable controller immediately so Update stops
+        if (TryGetComponent(out UnitController uc)) uc.enabled = false;
+        if (TryGetComponent(out MilitaryController mc)) mc.enabled = false;
+    
+        if (TryGetComponent(out UnitAnimator unitAnimator))
+            unitAnimator.TriggerDeath();
 
-        if (TryGetComponent(out UnitController unitController))
-        {
-            unitController.Agent.enabled = false;
-            if (TryGetComponent(out Rigidbody rb))
-                rb.isKinematic = false;
-            unitController.UnitAnimator.TriggerDeath();
-        }
+        if (TryGetComponent(out NavMeshAgent agent))
+            agent.enabled = false;
 
-        // Get faction from EntityStats and unregister directly
-        if (faction != null)
-            faction.UnregisterEntity(this);
-        // GameEvents.PopulationChanged(stats.faction); moved to FactionInstance
+        if (TryGetComponent(out Rigidbody rb))
+            rb.isKinematic = false;
 
+        faction?.UnregisterEntity(this);
         GameEvents.EntityDied(gameObject);
         Destroy(gameObject, 2f);
     }

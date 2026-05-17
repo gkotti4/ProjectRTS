@@ -47,7 +47,6 @@ public class UIManager : MonoBehaviour
         if (!isPlacing)
         {
             SetDefaultCursor();
-            // Exit build submenu when placement ends — cancel or confirm
             ExitBuildSubmenu();
         }
     }
@@ -62,7 +61,7 @@ public class UIManager : MonoBehaviour
         if (selected.Count == 1 && selected[0] is BuildingController building)
         {
             HideAllPanels();
-            actionPanelUI.ShowPanel(building);
+            actionPanelUI.ShowProductionPanel(building);
             queuePanelUI.ShowPanel(building);
             return;
         }
@@ -70,7 +69,7 @@ public class UIManager : MonoBehaviour
         if (selected.Count == 1 && selected[0] is UnitController unit)
         {
             HideAllPanels();
-            actionPanelUI.ShowUnitButtons(unit);
+            actionPanelUI.ShowUnitPanel(unit);
             return;
         }
 
@@ -95,15 +94,16 @@ public class UIManager : MonoBehaviour
     }
 
     // Build submenu
-    public void ShowActionPanelBuildSubmenu(UnitController unit) // Could replace with event if methods get hacky 
+    // TODO: Replace with event if more systems need to react to build submenu state
+    public void ShowActionPanelBuildSubmenu(UnitController unit)
     {
-        actionPanelUI.ShowBuildSubmenu(unit);
+        actionPanelUI.ShowBuildPanel(unit);
         PlayerInputHandler.Instance.SetBuildSubmenuActive(true);
     }
 
     public void ExitBuildSubmenu()
     {
-        actionPanelUI.ExitBuildSubmenu();
+        actionPanelUI.ExitBuildPanel();
         PlayerInputHandler.Instance.SetBuildSubmenuActive(false);
     }
 }

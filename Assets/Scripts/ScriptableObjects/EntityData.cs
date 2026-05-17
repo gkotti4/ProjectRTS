@@ -16,25 +16,27 @@ public class EntityData : ScriptableObject
     [Header("___Shared___")]
     public int maxHealth = 100;
     public int armor = 0;
-    public int lineOfSight = 5;
+    public int lineOfSight = 20;
 
     [Space(10)]
     [Header("___Units Only___")]
+    // Movement (units only)
+    public UnitType unitType;  
+    public float moveSpeed = 0f;
+    
     // Combat
     public int attackDamage = 0;
     public float attackRange = 0f;
     public float attackInterval = 1f;
-    
-    // Movement (units only)
-    public UnitType unitType;  
-    public float moveSpeed = 0f;
 
+    public float defensiveChaseRange = 20f;
+    
     // Villager Only
     [Header("Villager Only")]
     public int gatherAmount = 0;
     public float gatherRange = 0f;
     public float gatherInterval = 0f;
-    public List<BuildingOptionData> buildOptions;
+    public List<BuildOptionData> buildOptions;
     
     //public float buildSpeed? = buildInterval = 0f; -> Instantly place buildings now
 
@@ -46,7 +48,6 @@ public class EntityData : ScriptableObject
     [Space(10)]
     [Header("___Building Only___")]
     public BuildingType buildingType; 
-    public ResourceCost buildingCost = new ResourceCost();
     public int gridWidth = 1;
     public int gridHeight = 1;
     
@@ -59,6 +60,4 @@ public class EntityData : ScriptableObject
     public List<ProductionOptionData> productionOptions;
     public float productionSpeed = 1f; // 1 = normal, 2 = double
     
-
-
 }

@@ -16,7 +16,7 @@ public static class EntityFactory
         if (entity.TryGetComponent(out EntityStats stats))
             stats.faction = faction;
         else
-            Debug.LogWarning("EntityFactory.Spawn — " + prefab.name + " has no EntityStats");
+            Debug.Log("EntityFactory.Spawn — " + prefab.name + " has no EntityStats");
         
         // Once we do not use pre-spawned units, we could put SelectionManager.Instance.RegisterSelectable here too if we want
 

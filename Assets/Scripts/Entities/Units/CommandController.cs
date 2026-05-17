@@ -26,18 +26,48 @@ public class CommandController : MonoBehaviour
         }
     }
 
-    public void ExecuteCommand(CommandType cmdType)
+    public void ExecuteCommand(CommandType cmdType) // Non-RightClick commands (Hotkeys/Buttons)
     {
-        switch (cmdType)
+        if (unit.TryGetComponent(out MilitaryController mil)) // Military Units
         {
-            case CommandType.Stop: unit.OrderStop(); break;
-            case CommandType.Build: break;
+            switch (cmdType)
+            {
+                case CommandType.Stop: mil.OrderStop(); break;
+                case CommandType.AttackMove: break; // TODO            
+
+                // Stances
+                case CommandType.Aggressive: mil.OrderSetStance(UnitStance.Aggressive); break;
+                case CommandType.Defensive: mil.OrderSetStance(UnitStance.Defensive); break;
+                case CommandType.StandGround: mil.OrderSetStance(UnitStance.StandGround); break;
+                case CommandType.NoAttack: mil.OrderSetStance(UnitStance.NoAttack); break;
+            }
+        }
+        else if (unit.TryGetComponent(out VillagerController vil)) // Villager Units
+        {
+            switch (cmdType)
+            {
+                case CommandType.Stop: vil.OrderStop(); break;
+                case CommandType.Build: vil.OrderStop(); break; // TODO 
+            }
         }
     }
 
     // Returns command list for UI button generation
     public List<CommandData> GetAllCommands()
     {
-        return stats.baseData.baseCommands;
+        var commands = new List<CommandData>();
+        var usedSlots = new HashSet<HotkeySlot>();
+        foreach (CommandData cmd in stats.baseData.baseCommands)
+        {
+            if (cmd.hotkey != HotkeySlot.None && usedSlots.Contains(cmd.hotkey))
+            {
+                Debug.LogWarning("Duplicate hotkey " + cmd.hotkey + " on " + gameObject.name + " — skipping " + cmd.commandName);
+                continue;
+            }
+            usedSlots.Add(cmd.hotkey);
+            commands.Add(cmd);
+        }
+        commands.Sort((a, b) => a.hotkey.CompareTo(b.hotkey));
+        return commands;
     }
 }

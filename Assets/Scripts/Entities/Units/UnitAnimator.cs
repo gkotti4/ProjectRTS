@@ -27,7 +27,6 @@ public class UnitAnimator : MonoBehaviour
     void Update()
     {
         UpdateMovement();
-        //UpdateCombat();
     }
 
     void UpdateMovement()
@@ -35,13 +34,7 @@ public class UnitAnimator : MonoBehaviour
         bool isMoving = agent.velocity.magnitude > 0.1f;
         animator.SetBool(IsMoving, isMoving);
     }
-
-    void UpdateCombat()
-    {
-        //bool isAttacking = unitController.State == UnitState.Attacking;
-        //animator.SetBool(IsAttacking, isAttacking);
-    }
-
+    
     public void TriggerAttack()
     {
         animator.SetTrigger(Attack);
@@ -56,9 +49,12 @@ public class UnitAnimator : MonoBehaviour
     // Animator events - relayed from AnimationEventRelay script
     public void OnAttackImpact()
     {
-        if (unitController.AttackTarget == null) return;
-        if(!unitController.AttackTarget.TryGetComponent(out IDamageable damageable)) return;
-        damageable.TakeDamage(unitController.Stats.attackDamage);
+        unitController.DealAttackDamage();
+    }
+
+    public void OnAttackEnd()
+    {
+        unitController.OnAttackEnd();
     }
     
 }
