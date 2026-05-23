@@ -148,13 +148,11 @@ public class SelectionManager : MonoBehaviour
     {
         if (!Input.GetKey(KeyCode.LeftShift))
             DeselectAll();
-
+        
         Rect selectionRect = GetScreenRectRaw(dragStart, Input.mousePosition);
 
         foreach (ISelectable selectable in allSelectables)
         {
-            if (selectable == null || selectable.GetGameObject() == null) continue;
-
             Vector3 screenPos = mainCamera.WorldToScreenPoint(selectable.GetGameObject().transform.position);
             if (screenPos.z > 0 && selectionRect.Contains(screenPos, true) && selectable.IsDragSelectable)
                 Select(selectable);
@@ -242,5 +240,20 @@ public class SelectionManager : MonoBehaviour
             isDragging = false;
             dragStart = Input.mousePosition; // reset drag position
         }
+    }
+    
+    
+    // (null_death_while_selected)
+    public void CleanAllDeadSelectables() 
+    {
+        selectedObjects.RemoveAll(s => s == null || s.Equals(null) || s.GetGameObject() == null);
+        allSelectables.RemoveAll(s => s == null || s.Equals(null) || s.GetGameObject() == null);
+    }
+    public void CleanDeadSelectable(ISelectable selectable) 
+    {
+        selectable.OnDeselect();
+        selectedObjects.Remove(selectable);
+        allSelectables.Remove(selectable);
+        GameEvents.SelectionChanged();
     }
 }

@@ -37,13 +37,13 @@ public class HealthBarUI : MonoBehaviour
 
     public void OnDamaged(int currentHealth, int maxHealth)
     {
-        Debug.Log("health bar on damaged");
+        //Debug.Log("health bar on damaged");
         Show();
         fillImage.fillAmount = (float)currentHealth / (float)maxHealth;
         hideTimer = hideDelay;
     }
     
-    public void OnSelected() { isSelected = true; Show(); Debug.Log("selected"); }
+    public void OnSelected() { isSelected = true; Show(); }
     public void OnDeselected() { isSelected = false; Hide(); }
     
     void Show() => canvas.enabled = true;

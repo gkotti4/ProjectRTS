@@ -12,6 +12,7 @@ public abstract class EntityController : MonoBehaviour, ISelectable, IDamageable
     protected EntityStats stats;
     public EntityStats Stats => stats;
     protected bool isSelected;
+    public bool IsSelected => isSelected;
 
     // IDamageable
     public virtual void TakeDamage(int damage) => stats.TakeDamage(damage);
@@ -54,6 +55,6 @@ public abstract class EntityController : MonoBehaviour, ISelectable, IDamageable
 
     protected virtual void OnDestroy()
     {
-        SelectionManager.Instance.UnregisterSelectable(this);
+        //SelectionManager.Instance.UnregisterSelectable(this); (null_death_while_selected) - moved to EntityStats Die()
     }
 }

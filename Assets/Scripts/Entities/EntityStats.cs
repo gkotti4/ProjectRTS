@@ -56,7 +56,7 @@ public class EntityStats : MonoBehaviour
     {
         if (faction == null) // check
         {
-            Debug.LogWarning(gameObject.name + " spawned with no faction — check spawner");
+            //Debug.LogWarning(gameObject.name + " spawned with no faction — check spawner"); // (ghost buildings call this)
             return;
         }
         GameManager.Instance.RegisterEntity(this);
@@ -66,7 +66,7 @@ public class EntityStats : MonoBehaviour
     {
         if (faction == null)
         {
-            Debug.LogWarning(gameObject.name + " destroyed with no faction"); // Check
+            //Debug.LogWarning(gameObject.name + " destroyed with no faction"); // Check (ghost buildings call this)
             return;
         }
         GameManager.Instance.UnregisterEntity(this);
@@ -131,9 +131,6 @@ public class EntityStats : MonoBehaviour
         // Disable controller immediately so Update stops
         if (TryGetComponent(out UnitController uc)) uc.enabled = false;
         if (TryGetComponent(out MilitaryController mc)) mc.enabled = false;
-    
-        if (TryGetComponent(out UnitAnimator unitAnimator))
-            unitAnimator.TriggerDeath();
 
         if (TryGetComponent(out NavMeshAgent agent))
             agent.enabled = false;
@@ -141,8 +138,15 @@ public class EntityStats : MonoBehaviour
         if (TryGetComponent(out Rigidbody rb))
             rb.isKinematic = false;
 
+        // (null_death_while_selected)
+        SelectionManager.Instance.CleanDeadSelectable(uc); 
+        
         faction?.UnregisterEntity(this);
         GameEvents.EntityDied(gameObject);
+        
+        // Death animation and destroy
+        if (TryGetComponent(out UnitAnimator unitAnimator))
+            unitAnimator.TriggerDeath();
         Destroy(gameObject, 2f);
     }
 
