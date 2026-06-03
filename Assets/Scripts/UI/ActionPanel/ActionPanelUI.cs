@@ -71,6 +71,7 @@ public class ActionPanelUI : MonoBehaviour
             FillSlot(slotIndex, btn => btn.InitializeFromBuildOption(option, unit));
         }
     }
+    
 
     // Returns to base unit commands from build submenu
     public void ExitBuildPanel()

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // ============================================================
@@ -37,11 +38,44 @@ public enum BuildingType { None, TownCenter, Barracks, Farm }
 
 
 // ============================================================
-// UNIT STATE & STANCE
+// UNIT STATE & STANCE & FORMATION
 // ============================================================
 
-public enum UnitState { Idle, Moving, Attacking, Returning, Gathering, Building, Patrolling }
-public enum UnitStance { Aggressive, Defensive, StandGround, NoAttack }
+public enum UnitState { Idle, Moving, Attacking, Returning, Gathering, Building, Patrolling, AttackMoving }
+public enum UnitStance { Aggressive, Defensive, StandGround, NoAttack } // Stance saved per unit
+
+public enum UnitFormation { Line, Spread, Box, Circle, Wedge } // used in Control groups or for selected units (not saved per unit)
+
+
+// ============================================================
+// Control Groups
+// ============================================================
+public class ControlGroup
+{
+    public List<ISelectable> members = new List<ISelectable>();
+    public bool formationMode = false;
+    public UnitStance formationStance = UnitStance.Aggressive;
+    public UnitFormation formation = UnitFormation.Line;
+    public List<Vector2> formationOffsets = new List<Vector2>();
+    public float formationWidth = -1f; // -1 = default spacing
+    public FormationAnchor anchor;
+    public float formationChaseRange = 3f;
+
+    // Maps each member to their offset index
+    public Dictionary<int, int> unitToOffsetIndex = new Dictionary<int, int>(); // instanceID → offset index
+    
+    public ControlGroup()
+    {
+        members = new  List<ISelectable>();
+        formationMode = false;
+        formationStance = UnitStance.Aggressive;
+        formation = UnitFormation.Line;
+        formationOffsets = new List<Vector2>();
+        formationWidth = -1f;
+        formationChaseRange = 3f;
+        //formationAnchor = new FormationAnchor(...);
+    }
+}
 
 
 // ============================================================
@@ -52,23 +86,26 @@ public enum CommandSubmenuType { None, Build } //, Stance, Formation }
 
 public enum CommandType
 {
-    // Implicit context (right click routing — not used as CommandData)
-    //Move,
-    //Attack,
-    //Gather,
-
-    // Explicit (button/hotkey — used as CommandData SO)
     Stop,
     AttackMove,
     Patrol,
     Build,
     Garrison,
     
-    // Military Unit Stances
+    // Stances
     Aggressive, // Chases units forever
     Defensive, // Chases units until x dist
     StandGround, // Doesn't chase, but attacks if in attack range
     NoAttack, // No attack
+    
+    // Formations
+    ToggleFormationMode, // enter formation mode, only active in control groups.
+    
+    FormationLine,
+    FormationSpread,
+    FormationBox,
+    FormationCircle,
+    FormationWedge,
 
     // Special abilities (future ICommand components)
     Ability
@@ -80,6 +117,12 @@ public enum CommandContext
     EconomicUnitSelected,
     MilitaryUnitSelected,
     BuildingSelected,
+}
+
+public enum CommandScope
+{
+    PerUnit,
+    Group
 }
 
 public enum HotkeySlot

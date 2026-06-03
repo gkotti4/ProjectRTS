@@ -18,6 +18,7 @@ public class UnitController : EntityController
 
     protected UnitState state = UnitState.Idle;
     public UnitState State => state;
+    protected UnitState prevState = UnitState.Idle;
 
     // Movement
     protected Vector3 homePosition;
@@ -144,6 +145,7 @@ public class UnitController : EntityController
 
     protected void SetUnitState(UnitState newState)
     {
+        prevState = state;
         state = newState;
     }
     
@@ -189,6 +191,7 @@ public class UnitController : EntityController
             case UnitState.Moving: RotateTowardVelocity(); break;
             case UnitState.Attacking: RotateTowardIfNeeded(attackTarget?.transform.position); break;
         }
+        
     }
 
     protected void RotateTowardVelocity()

@@ -13,6 +13,9 @@ public abstract class EntityController : MonoBehaviour, ISelectable, IDamageable
     public EntityStats Stats => stats;
     protected bool isSelected;
     public bool IsSelected => isSelected;
+    
+    // Control Groups
+    public int controlGroup = -1;
 
     // IDamageable
     public virtual void TakeDamage(int damage) => stats.TakeDamage(damage);
@@ -55,6 +58,6 @@ public abstract class EntityController : MonoBehaviour, ISelectable, IDamageable
 
     protected virtual void OnDestroy()
     {
-        //SelectionManager.Instance.UnregisterSelectable(this); (null_death_while_selected) - moved to EntityStats Die()
+        //SelectionManager.Instance.UnregisterSelectable(this); // called through EntityStats Die(), was needed for ghosts but made their own prefabs without controllers
     }
 }

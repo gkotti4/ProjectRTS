@@ -45,6 +45,7 @@ public class EntityStats : MonoBehaviour
     
     // private UI
     private HealthBarUI healthBar;
+    public HealthBarUI HealthBar => healthBar;
     
     void Awake()
     {
@@ -129,17 +130,17 @@ public class EntityStats : MonoBehaviour
     void Die()
     {
         // Disable controller immediately so Update stops
+        if (!TryGetComponent(out EntityController ec)) Debug.Log("No entity controller found on Die()");
         if (TryGetComponent(out UnitController uc)) uc.enabled = false;
         if (TryGetComponent(out MilitaryController mc)) mc.enabled = false;
 
         if (TryGetComponent(out NavMeshAgent agent))
             agent.enabled = false;
 
-        if (TryGetComponent(out Rigidbody rb))
-            rb.isKinematic = false;
+        // if (TryGetComponent(out Rigidbody rb)) // later
+        //     rb.isKinematic = false;
 
-        // (null_death_while_selected)
-        SelectionManager.Instance.CleanDeadSelectable(uc); 
+        SelectionManager.Instance.UnregisterSelectable(ec); // changed to ec to account for buildings
         
         faction?.UnregisterEntity(this);
         GameEvents.EntityDied(gameObject);
@@ -149,6 +150,8 @@ public class EntityStats : MonoBehaviour
             unitAnimator.TriggerDeath();
         Destroy(gameObject, 2f);
     }
+
+
 
     // Called by GameManager (FACTION INSTANCE) when an upgrade is registered
     public void ApplyUpgrade(UpgradeData upgrade) // Check when upgrades are added

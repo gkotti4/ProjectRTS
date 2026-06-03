@@ -3,9 +3,10 @@ using UnityEngine;
 
 public class BuildingController : EntityController
 {
+    [SerializeField] private GameObject rallyFlag;
     [SerializeField] private Transform spawnPoint;
     [SerializeField] private Transform pivotPoint;
-
+    
     // Production
     private List<ProductionOptionData> productionQueue = new List<ProductionOptionData>();
     public List<ProductionOptionData> ProductionQueue => productionQueue;
@@ -24,6 +25,19 @@ public class BuildingController : EntityController
     protected override void Start()
     {
         base.Start();
+        if (rallyFlag != null) rallyFlag.SetActive(false);
+    }
+
+    public override void OnSelect()
+    {
+        base.OnSelect();
+        if (rallyFlag != null) rallyFlag.SetActive(true);
+    }
+    
+    public override void OnDeselect()
+    {
+        base.OnDeselect();
+        if (rallyFlag != null) rallyFlag.SetActive(false);
     }
 
     protected virtual void Update()
@@ -108,7 +122,21 @@ public class BuildingController : EntityController
     private void SpawnUnit(ProductionOptionData option)
     {
         if (!GameManager.Instance.CanSpawn(stats.faction) || option.prefab == null) return;
-        EntityFactory.Spawn(option.prefab, GetSpawnPosition(), Quaternion.identity, stats.faction);
+        GameObject spawned = EntityFactory.Spawn(option.prefab, GetSpawnPosition(), Quaternion.identity, stats.faction);
+
+        if (rallyFlag != null && spawned.TryGetComponent(out UnitController uc))
+        {
+            Vector3 rallyPos = rallyFlag.transform.position;
+            
+            // Spread units around rally point
+            Vector3 rallyOffset = new Vector3(
+                Random.Range(-2f, 2f),
+                0f,
+                Random.Range(-2f, 2f)
+            );
+            
+            uc.OrderMove(rallyPos + rallyOffset);
+        }
     }
 
     private void ApplyUpgrade(ProductionOptionData option)
@@ -130,5 +158,12 @@ public class BuildingController : EntityController
     {
         if (!isProducing || productionQueue.Count == 0) return 0f;
         return 1f - (productionTimer / productionQueue[0].productionTime);
+    }
+
+
+    public void SetRallyPoint(Vector3 position)
+    {
+        if (rallyFlag != null)
+            rallyFlag.transform.position = position;
     }
 }

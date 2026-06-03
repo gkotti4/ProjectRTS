@@ -64,7 +64,7 @@ public class BuildingPlacer : MonoBehaviour
         GameEvents.PlacementModeChanged(isPlacing);
         
         // Spawn ghost preview
-        ghostObject = Instantiate(selectedBuildOption.buildingData.prefab); 
+        ghostObject = Instantiate(selectedBuildOption.buildingData.ghostPrefab); 
         if (ghostObject == null) { Debug.LogWarning("Ghost Object is null in BuildingPlacer."); return; }
 
         // Disable all colliders on ghost and children so it doesn't interact with physics
@@ -76,7 +76,6 @@ public class BuildingPlacer : MonoBehaviour
             navObstacle.enabled = false;
 
         SetGhostMaterial(validMaterial);
-        //Debug.Log("Placing: " + buildingData.entityName);
         
         // Spend Resources
         GameManager.Instance.SpendResources(selectedBuildOption.cost, GameManager.Instance.PlayerFaction);
@@ -85,7 +84,7 @@ public class BuildingPlacer : MonoBehaviour
     private void HandlePlacementInput() // Placement mode // Handles confirm and cancel input during placement
     {
         // Cancel on right-click or escape
-        if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
+        if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape)) // also in PlayerInputHandler for escape
         {
             CancelPlacement();
             return;
@@ -141,7 +140,7 @@ public class BuildingPlacer : MonoBehaviour
         ExitPlacementMode(); // No refund, resources stay spent
     }
     
-    private void CancelPlacement() // cancel = refund
+    public void CancelPlacement() // cancel = refund
     {
         if (selectedBuildOption != null)
             GameManager.Instance.AddResources(selectedBuildOption.cost, GameManager.Instance.PlayerFaction);

@@ -6,8 +6,6 @@ public static class GameEvents
     // Selection
     public static event Action OnSelectionChanged;
     
-    public static event Action<BuildingController> OnBuildingSelected;
-    public static event Action<UnitController> OnUnitSelected;
     public static event Action OnDeselected;
 
     // Building Placer
@@ -30,8 +28,6 @@ public static class GameEvents
 
     // Firing methods — keeps invoke calls clean
     public static void SelectionChanged() => OnSelectionChanged?.Invoke();
-    public static void BuildingSelected(BuildingController b) => OnBuildingSelected?.Invoke(b);
-    public static void UnitSelected(UnitController u) => OnUnitSelected?.Invoke(u);
     public static void Deselected() => OnDeselected?.Invoke();
     public static void PlacementModeChanged(bool b) => OnPlacementModeChanged?.Invoke(b);
     public static void ProductionQueueChanged(BuildingController b) => OnProductionQueueChanged?.Invoke(b);
@@ -42,3 +38,12 @@ public static class GameEvents
     public static void ResourcesChanged(FactionInstance fi) => OnResourcesChanged?.Invoke(fi);
     public static void PopulationChanged(FactionInstance fi) => OnPopulationChanged?.Invoke(fi);
 }
+
+
+
+
+
+    // public static event Action<BuildingController> OnBuildingSelected;
+    // public static event Action<UnitController> OnUnitSelected;
+    // public static void BuildingSelected(BuildingController b) => OnBuildingSelected?.Invoke(b);
+    // public static void UnitSelected(UnitController u) => OnUnitSelected?.Invoke(u);

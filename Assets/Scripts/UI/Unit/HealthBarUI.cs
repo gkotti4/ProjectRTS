@@ -9,6 +9,7 @@ public class HealthBarUI : MonoBehaviour
     private Camera mainCamera;
     private float hideTimer = 0f;
     private bool isSelected = false;
+    public bool IsSelected => isSelected;
     private Canvas canvas;
     
     void Start()
@@ -46,7 +47,7 @@ public class HealthBarUI : MonoBehaviour
     public void OnSelected() { isSelected = true; Show(); }
     public void OnDeselected() { isSelected = false; Hide(); }
     
-    void Show() => canvas.enabled = true;
-    void Hide() => canvas.enabled = false;
+    public void Show() => canvas.enabled = true;
+    public void Hide() => canvas.enabled = false;
     
 }

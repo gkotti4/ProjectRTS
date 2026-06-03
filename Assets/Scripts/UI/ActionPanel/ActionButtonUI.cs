@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -127,25 +128,54 @@ public class ActionButtonUI : MonoBehaviour
 
     void OnClick()
     {
+        // ProductionButtonUI
         if (mode == ButtonMode.Production)
         {
-            if (targetBuilding == null || productionOption == null) return;
-            if (canAfford)
-                targetBuilding.EnqueueProduction(productionOption);
+            if (productionOption == null) return;
+            if (!canAfford) return;
+
+            List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
+
+            // Enqueue production on ALL selected buildings
+            foreach (ISelectable s in selected)
+            {
+                if (!canAfford) return;
+                if (s is BuildingController bc)
+                {
+                    bc.EnqueueProduction(productionOption);
+                }
+            }     
         }
+        // CommandButtonUI
         else if (mode == ButtonMode.Command)
         {
-            if (targetUnit == null || commandData == null) return;
-            if (commandData.commandType == CommandType.Build) // Build command - access build submenu
+            if (commandData == null) return;
+
+            if (commandData.commandType == CommandType.Build) // Opens build submenu!
             {
-                UIManager.Instance.ShowActionPanelBuildSubmenu(targetUnit);
+                if (targetUnit != null)
+                    UIManager.Instance.ShowActionPanelBuildSubmenu(targetUnit);
+                return;
             }
-            else if (targetUnit.TryGetComponent(out CommandController cc)) // Execute regular command
+
+            
+            // New - Group type Command (Formations currently)
+            if (commandData.commandScope == CommandScope.Group)
             {
-                cc.ExecuteCommand(commandData.commandType);
+                PlayerInputHandler.Instance.ExecuteGroupCommand(commandData.commandType);
+                return;
+            }
+            
+            // Execute command on ALL selected units
+            List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
+            foreach (ISelectable s in selected)
+            {
+                if (s.GetGameObject().TryGetComponent(out CommandController cc))
+                    cc.ExecuteCommand(commandData.commandType);
             }
         }
-        else if (mode == ButtonMode.Build)
+        // BuildOptionButtonUI
+        else if (mode == ButtonMode.Build) // Builds a build option from button!
         {
             if (buildOption == null) return;
             BuildingPlacer.Instance.StartPlacing(buildOption);

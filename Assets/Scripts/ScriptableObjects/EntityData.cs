@@ -6,10 +6,11 @@ public class EntityData : ScriptableObject
 {
     // Identity
     public string entityName = "Entity";
-    public int entityID = 0;
+    //public int entityID = 0; // use GetEntityID() built-in instead
     public EntityTag entityTag = EntityTag.None;
     public EntityType entityType; // Unit, Building
     public GameObject prefab;
+    public GameObject ghostPrefab; // Mainly for buildings (placement)
 
     // Shared Stats
     [Space(10)]
