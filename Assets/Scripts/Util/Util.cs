@@ -42,6 +42,7 @@ public static class Calc
     }
 
     /// Returns true if a precomputed squared magnitude exceeds range.
+    /// sqrMagnitude -> (a - b).sqrMagnitude, range -> range to square
     public static bool OutOfRange(float sqrMagnitude, float range)
     {
         return sqrMagnitude > range * range;

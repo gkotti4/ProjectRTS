@@ -11,6 +11,7 @@ public class ControlGroupManager : MonoBehaviour
     public ControlGroup[] GetControlGroups() => controlGroups;
 
 
+    #region Unity Lifecycle
     void Awake()
     {
         if (Instance != null && Instance != this)
@@ -23,9 +24,10 @@ public class ControlGroupManager : MonoBehaviour
         for (int i = 0; i < controlGroups.Length; i++)
             controlGroups[i] = new ControlGroup();
     }
+    #endregion
 
 
-
+    #region Control Group Assignment
     /// Returns the control group at the given index, null if out of range
     public ControlGroup GetControlGroup(int group)
     {
@@ -86,32 +88,6 @@ public class ControlGroupManager : MonoBehaviour
 
         RebuildGroupFormation(cg);
     }
-    
-    private void RebuildGroupFormation(ControlGroup cg) // CHECK NEW
-    {
-        List<MilitaryController> military = GetMilitaryFromGroup(cg);
-
-        float width = cg.formationWidth > 0
-            ? cg.formationWidth
-            : military.Count * FormationManager.Instance.DefaultSpacing;
-
-        cg.formationOffsets =
-            FormationManager.Instance.CalculateOffsets(
-                military.Count,
-                width,
-                cg.formation);
-
-        if (military.Count > 0)
-        {
-            Vector3 center = GetAveragePosition(military);
-            float speed = military.Min(u => u.Stats.moveSpeed);
-
-            cg.anchor = new FormationAnchor(
-                center,
-                military[0].transform.forward,
-                speed);
-        }
-    }
 
     /// Selects all members of a control group
     public void SelectControlGroup(int group)
@@ -124,7 +100,6 @@ public class ControlGroupManager : MonoBehaviour
             SelectionManager.Instance.SelectExternal(s);
     }
 
-    
     /// Removes a selectable from its control group - called on death/unregister (new - check)
     public void RemoveFromGroup(ISelectable selectable)
     {
@@ -159,7 +134,36 @@ public class ControlGroupManager : MonoBehaviour
         
         ec.controlGroup = -1;
     }
+    #endregion
 
+
+    #region Formation
+    /// Rebuilds formation offsets and anchor for a group — called on assign and on unit death
+    private void RebuildGroupFormation(ControlGroup cg) // CHECK NEW
+    {
+        List<MilitaryController> military = GetMilitaryFromGroup(cg);
+
+        float width = cg.formationWidth > 0
+            ? cg.formationWidth
+            : military.Count * FormationManager.Instance.DefaultSpacing;
+
+        cg.formationOffsets =
+            FormationManager.Instance.CalculateOffsets(
+                military.Count,
+                width,
+                cg.formation);
+
+        if (military.Count > 0)
+        {
+            Vector3 center = GetAveragePosition(military);
+            float speed = military.Min(u => u.Stats.moveSpeed);
+
+            cg.anchor = new FormationAnchor(
+                center,
+                military[0].transform.forward,
+                speed);
+        }
+    }
 
     /// Toggles formation mode on a control group - only acts on first military unit call
     public void ToggleFormationMode(int group)
@@ -169,7 +173,6 @@ public class ControlGroupManager : MonoBehaviour
         cg.formationMode = !cg.formationMode;
         Debug.Log("Group " + group + " formation mode: " + cg.formationMode);
     }
-
 
     /// Sets formation type on a control group and reforms in place
     public void SetFormation(int group, UnitFormation formation)
@@ -195,10 +198,10 @@ public class ControlGroupManager : MonoBehaviour
         if (cg == null) return;
         cg.formationStance = stance;
     }
-    
-    
+    #endregion
+
+
     #region Helpers
-    
     /// Returns military units from a control group sorted by instance ID
     public List<MilitaryController> GetMilitaryFromGroup(ControlGroup cg)
     {
@@ -215,8 +218,5 @@ public class ControlGroupManager : MonoBehaviour
         foreach(MilitaryController mc in units) avg += mc.transform.position;
         return avg / units.Count;
     }
-    
     #endregion
-    
-    
 }

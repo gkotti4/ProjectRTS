@@ -536,7 +536,7 @@ public class MilitaryController : UnitController
                 transform.position, formationSlot, cg.formationChaseRange);
 
             if (activeStance == UnitStance.StandGround ||
-                (activeStance == UnitStance.Defensive && tooFarFromSlot))
+                (activeStance == UnitStance.Defensive || tooFarFromSlot)) // && tooFarFromSlot)) 6/5
             {
                 attackTarget = null;
                 if (formationSlot != Vector3.zero)
