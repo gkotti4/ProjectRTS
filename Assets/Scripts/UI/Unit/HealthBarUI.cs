@@ -47,7 +47,24 @@ public class HealthBarUI : MonoBehaviour
     public void OnSelected() { isSelected = true; Show(); }
     public void OnDeselected() { isSelected = false; Hide(); }
     
-    public void Show() => canvas.enabled = true;
-    public void Hide() => canvas.enabled = false;
+    // public void Show() => canvas.enabled = true;
+    public void Show() {
+        if (!canvas)
+        {
+            Debug.LogError("canvas not found on " +  gameObject.name); // CHECK: this triggered after exiting (figure out the closing order and why its caused. - happened after Squads)
+            return;
+        }
+        canvas.enabled = true;
+    }
+    // public void Hide() => canvas.enabled = false;
+    public void Hide() {
+        if (!canvas)
+        {
+            Debug.LogError("canvas not found on " + gameObject.name);
+            return;
+        }
+        canvas.enabled = false;
+    }
+
     
 }

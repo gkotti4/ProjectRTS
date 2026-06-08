@@ -1,3 +1,536 @@
+// SESSION: Squad Control Refactor
+
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.EventSystems;
+
+public class SelectionManager : MonoBehaviour
+{
+    public static SelectionManager Instance { get; private set; }
+
+    #region Fields
+
+    [Header("Selection")]
+    [SerializeField] private LayerMask selectableLayers;
+    [SerializeField] private float dragThreshold = 5f;
+
+    [Header("Double Click")]
+    [SerializeField] private float doubleClickTime = 0.3f;
+    [SerializeField] private float sameTypeUnitRange = 20f;
+    [SerializeField] private float sameTypeBuildingRange = 40f;
+    [SerializeField] private float sameCategorySquadRange = 40f;
+
+    private readonly List<ISelectable> selectedObjects = new List<ISelectable>();
+    private readonly List<ISelectable> allSelectables = new List<ISelectable>();
+
+    private Camera mainCamera;
+
+    private Vector2 dragStart;
+    private bool isDragging = false;
+    private Texture2D boxTexture;
+
+    private float lastClickTime = 0f;
+    private ISelectable lastClicked = null;
+
+    private bool isPlacingBuilding = false;
+    private EntityStats hoveredES = null;
+
+    #endregion
+
+    #region Unity Lifecycle
+
+    void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+
+        boxTexture = new Texture2D(1, 1);
+        boxTexture.SetPixel(0, 0, new Color(0.6f, 0.8f, 1f, 0.25f));
+        boxTexture.Apply();
+    }
+
+    void Start()
+    {
+        mainCamera = Camera.main;
+        GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
+    }
+
+    void OnDestroy()
+    {
+        GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
+    }
+
+    void Update()
+    {
+        HandleSelectionInput();
+        HandleHover();
+    }
+
+    #endregion
+
+    #region Registration
+
+    public void RegisterSelectable(ISelectable selectable)
+    {
+        if (selectable == null) return;
+        if (allSelectables.Contains(selectable)) return;
+
+        allSelectables.Add(selectable);
+    }
+
+    public void UnregisterSelectable(ISelectable selectable)
+    {
+        if (selectable == null) return;
+
+        if (selectedObjects.Contains(selectable))
+            selectable.OnDeselect();
+
+        selectedObjects.Remove(selectable);
+        allSelectables.Remove(selectable);
+
+        GameEvents.SelectionChanged();
+    }
+
+    #endregion
+
+    #region Resolve Selectable
+
+    // Clicking or drag-selecting a squad member selects its SquadController instead.
+    ISelectable ResolveSelectable(ISelectable selectable)
+    {
+        if (selectable == null) return null;
+
+        GameObject go = selectable.GetGameObject();
+        if (go == null) return null;
+
+        if (go.TryGetComponent(out SquadMemberController member) &&
+            member.Squad != null)
+        {
+            return member.Squad;
+        }
+
+        return selectable;
+    }
+
+    #endregion
+
+    #region Hover
+
+    void HandleHover()
+    {
+        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+
+        if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
+        {
+            EntityStats entity = hit.collider.GetComponentInParent<EntityStats>();
+
+            if (entity == hoveredES)
+                return;
+
+            HideHoveredHealthBarIfNeeded();
+
+            hoveredES = entity;
+
+            if (hoveredES != null && hoveredES.HealthBar != null)
+                hoveredES.HealthBar.Show();
+
+            return;
+        }
+
+        HideHoveredHealthBarIfNeeded();
+        hoveredES = null;
+    }
+
+    void HideHoveredHealthBarIfNeeded()
+    {
+        if (hoveredES == null) return;
+        if (hoveredES.HealthBar == null) return;
+        if (hoveredES.HealthBar.IsSelected) return;
+
+        hoveredES.HealthBar.Hide();
+    }
+
+    #endregion
+
+    #region Selection Input
+
+    void HandleSelectionInput()
+    {
+        if (isPlacingBuilding) return;
+
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            DeselectAll();
+            return;
+        }
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (EventSystem.current.IsPointerOverGameObject()) return;
+
+            dragStart = Input.mousePosition;
+            isDragging = false;
+        }
+
+        if (Input.GetMouseButton(0))
+        {
+            if (EventSystem.current.IsPointerOverGameObject()) return;
+
+            if (Vector2.Distance(dragStart, Input.mousePosition) > dragThreshold)
+                isDragging = true;
+        }
+
+        if (Input.GetMouseButtonUp(0))
+        {
+            if (isDragging)
+            {
+                HandleDragSelect();
+            }
+            else if (!EventSystem.current.IsPointerOverGameObject())
+            {
+                HandleClickSelect();
+            }
+
+            isDragging = false;
+        }
+    }
+
+    void HandleClickSelect()
+    {
+        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+
+        if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
+        {
+            if (!Input.GetKey(KeyCode.LeftShift))
+                DeselectAll();
+
+            return;
+        }
+
+        if (!hit.collider.TryGetComponent(out ISelectable rawSelectable))
+        {
+            if (!Input.GetKey(KeyCode.LeftShift))
+                DeselectAll();
+
+            return;
+        }
+
+        ISelectable selectable = ResolveSelectable(rawSelectable);
+        if (selectable == null) return;
+
+        bool isDoubleClick =
+            Time.time - lastClickTime < doubleClickTime &&
+            lastClicked == selectable;
+
+        if (isDoubleClick)
+        {
+            SelectSameTypeInRange(selectable);
+        }
+        else if (Input.GetKey(KeyCode.LeftShift))
+        {
+            ToggleSelect(selectable);
+        }
+        else
+        {
+            DeselectAll();
+            Select(selectable);
+        }
+
+        lastClickTime = Time.time;
+        lastClicked = selectable;
+    }
+
+    void HandleDragSelect()
+    {
+        if (!Input.GetKey(KeyCode.LeftShift))
+            DeselectAll();
+
+        Rect selectionRect = GetScreenRectRaw(dragStart, Input.mousePosition);
+
+        foreach (ISelectable rawSelectable in allSelectables)
+        {
+            ISelectable selectable = ResolveSelectable(rawSelectable);
+            if (selectable == null) continue;
+            if (!selectable.IsDragSelectable) continue;
+
+            GameObject rawGO = rawSelectable.GetGameObject();
+            if (rawGO == null) continue;
+
+            Vector3 screenPos = mainCamera.WorldToScreenPoint(rawGO.transform.position);
+
+            if (screenPos.z > 0 && selectionRect.Contains(screenPos, true))
+                Select(selectable);
+        }
+    }
+
+    #endregion
+
+    #region Double Click
+
+    void SelectSameTypeInRange(ISelectable selectable)
+    {
+        selectable = ResolveSelectable(selectable);
+        if (selectable == null) return;
+
+        DeselectAll();
+
+        if (selectable is SquadController squad)
+        {
+            SelectSameSquadCategoryInRange(squad);
+            return;
+        }
+
+        if (!selectable.GetGameObject().TryGetComponent(out EntityStats stats))
+            return;
+
+        if (stats.baseData.entityType == EntityType.Unit)
+        {
+            SelectSameUnitTypeInRange(selectable, stats);
+            return;
+        }
+
+        if (stats.baseData.entityType == EntityType.Building)
+        {
+            SelectSameBuildingTypeInRange(selectable, stats);
+        }
+    }
+
+    void SelectSameSquadCategoryInRange(SquadController source)
+    {
+        foreach (ISelectable rawSelectable in allSelectables)
+        {
+            ISelectable selectable = ResolveSelectable(rawSelectable);
+            if (selectable is not SquadController squad) continue;
+            if (squad.Category != source.Category) continue;
+
+            if (Calc.OutOfRange(
+                    source.transform.position,
+                    squad.transform.position,
+                    sameCategorySquadRange))
+                continue;
+
+            Select(squad);
+        }
+    }
+
+    void SelectSameUnitTypeInRange(ISelectable sourceSelectable, EntityStats sourceStats)
+    {
+        UnitType unitType = sourceStats.baseData.unitType;
+        Vector3 sourcePos = sourceSelectable.GetGameObject().transform.position;
+
+        foreach (ISelectable rawSelectable in allSelectables)
+        {
+            ISelectable selectable = ResolveSelectable(rawSelectable);
+            if (selectable == null) continue;
+            if (selectable is SquadController) continue;
+
+            GameObject go = selectable.GetGameObject();
+            if (go == null) continue;
+            if (!go.TryGetComponent(out EntityStats otherStats)) continue;
+            if (otherStats.baseData.unitType != unitType) continue;
+
+            if (Calc.OutOfRange(sourcePos, go.transform.position, sameTypeUnitRange))
+                continue;
+
+            Select(selectable);
+        }
+    }
+
+    void SelectSameBuildingTypeInRange(ISelectable sourceSelectable, EntityStats sourceStats)
+    {
+        BuildingType buildingType = sourceStats.baseData.buildingType;
+        Vector3 sourcePos = sourceSelectable.GetGameObject().transform.position;
+
+        foreach (ISelectable rawSelectable in allSelectables)
+        {
+            ISelectable selectable = ResolveSelectable(rawSelectable);
+            if (selectable == null) continue;
+
+            GameObject go = selectable.GetGameObject();
+            if (go == null) continue;
+            if (!go.TryGetComponent(out EntityStats otherStats)) continue;
+            if (otherStats.baseData.buildingType != buildingType) continue;
+
+            if (Calc.OutOfRange(sourcePos, go.transform.position, sameTypeBuildingRange))
+                continue;
+
+            Select(selectable);
+        }
+    }
+
+    #endregion
+
+    #region Select / Deselect
+
+    void Select(ISelectable selectable)
+    {
+        selectable = ResolveSelectable(selectable);
+
+        if (selectable == null) return;
+        if (selectedObjects.Contains(selectable)) return;
+
+        if (selectedObjects.Count > 0)
+        {
+            SelectionKind incomingKind = GetSelectionKind(selectable);
+            SelectionKind existingKind = GetSelectionKind(selectedObjects[0]);
+
+            if (incomingKind != existingKind)
+                DeselectAll();
+        }
+
+        selectedObjects.Add(selectable);
+        selectable.OnSelect();
+
+        GameEvents.SelectionChanged();
+    }
+
+    public void SelectExternal(ISelectable selectable)
+    {
+        Select(selectable);
+    }
+
+    void ToggleSelect(ISelectable selectable)
+    {
+        selectable = ResolveSelectable(selectable);
+
+        if (selectable == null) return;
+
+        if (selectedObjects.Contains(selectable))
+            Deselect(selectable);
+        else
+            Select(selectable);
+    }
+
+    void Deselect(ISelectable selectable)
+    {
+        selectable = ResolveSelectable(selectable);
+
+        if (selectable == null) return;
+        if (!selectedObjects.Contains(selectable)) return;
+
+        selectedObjects.Remove(selectable);
+        selectable.OnDeselect();
+
+        GameEvents.SelectionChanged();
+    }
+
+    public void DeselectAll()
+    {
+        foreach (ISelectable selectable in selectedObjects)
+        {
+            if (selectable == null) continue;
+            selectable.OnDeselect();
+        }
+
+        selectedObjects.Clear();
+
+        GameEvents.Deselected();
+        GameEvents.SelectionChanged();
+    }
+
+    #endregion
+
+    #region Getters
+
+    public List<ISelectable> GetSelectedObjects()
+    {
+        return selectedObjects;
+    }
+
+    #endregion
+
+    #region Selection Kind
+
+    enum SelectionKind
+    {
+        None,
+        Unit,
+        Building,
+        Squad
+    }
+
+    SelectionKind GetSelectionKind(ISelectable selectable)
+    {
+        selectable = ResolveSelectable(selectable);
+
+        if (selectable == null || selectable.GetGameObject() == null)
+            return SelectionKind.None;
+
+        GameObject go = selectable.GetGameObject();
+
+        if (go.TryGetComponent(out SquadController _))
+            return SelectionKind.Squad;
+
+        if (go.TryGetComponent(out BuildingController _))
+            return SelectionKind.Building;
+
+        if (go.TryGetComponent(out UnitController _))
+            return SelectionKind.Unit;
+
+        return SelectionKind.None;
+    }
+
+    #endregion
+
+    #region Rect / GUI
+
+    Rect GetScreenRectRaw(Vector2 start, Vector2 end)
+    {
+        return Rect.MinMaxRect(
+            Mathf.Min(start.x, end.x),
+            Mathf.Min(start.y, end.y),
+            Mathf.Max(start.x, end.x),
+            Mathf.Max(start.y, end.y)
+        );
+    }
+
+    Rect GetScreenRectGUI(Vector2 start, Vector2 end)
+    {
+        Vector2 s = new Vector2(start.x, Screen.height - start.y);
+        Vector2 e = new Vector2(end.x, Screen.height - end.y);
+
+        return Rect.MinMaxRect(
+            Mathf.Min(s.x, e.x),
+            Mathf.Min(s.y, e.y),
+            Mathf.Max(s.x, e.x),
+            Mathf.Max(s.y, e.y)
+        );
+    }
+
+    void OnGUI()
+    {
+        if (!isDragging) return;
+
+        Rect screenRect = GetScreenRectGUI(dragStart, Input.mousePosition);
+        GUI.DrawTexture(screenRect, boxTexture);
+    }
+
+    #endregion
+
+    #region Placement Mode
+
+    void HandlePlacementModeChanged(bool isPlacing)
+    {
+        isPlacingBuilding = isPlacing;
+
+        if (!isPlacingBuilding)
+        {
+            isDragging = false;
+            dragStart = Input.mousePosition;
+        }
+    }
+
+    #endregion
+}
+
+
+
+
 // using System.Collections.Generic;
 // using UnityEngine;
 // using UnityEngine.EventSystems;
@@ -65,14 +598,36 @@
 //
 //     public void UnregisterSelectable(ISelectable selectable)
 //     {
+//         // Called by EntityStats.Die() — cleans all lists and fires SelectionChanged
 //         selectable.OnDeselect();
 //         selectedObjects.Remove(selectable);
 //         allSelectables.Remove(selectable);
-//         ControlGroupManager.Instance.RemoveFromGroup(selectable); // Move to another class later
+//         // SESSION: Squad Control
+//         // ControlGroupManager.Instance.RemoveFromGroup(selectable); // Move to another class later
 //         GameEvents.SelectionChanged();
 //     }
 //     #endregion
 //
+//     
+//     // SESSION: Squad Control
+//     ISelectable ResolveSelectable(ISelectable selectable)
+//     {
+//         if (selectable == null) return null;
+//
+//         GameObject go = selectable.GetGameObject();
+//         if (go == null) return null;
+//
+//         // If clicking a squad member, select the squad instead.
+//         if (go.TryGetComponent(out SquadMemberController member) &&
+//             member.Squad != null)
+//         {
+//             return member.Squad;
+//         }
+//
+//         return selectable;
+//     }
+//     
+//     
 //     #region Hover
 //     void HandleHover()
 //     {
@@ -84,6 +639,7 @@
 //
 //             if (entity != hoveredES)
 //             {
+//                 // Only hide previous if it isn't selected — selected units keep their health bar
 //                 if (hoveredES != null && hoveredES.HealthBar != null && !hoveredES.HealthBar.IsSelected)
 //                     hoveredES.HealthBar.Hide();
 //
@@ -112,12 +668,14 @@
 //             return;
 //         }
 //
+//         // Record drag start position on mouse down
 //         if (Input.GetMouseButtonDown(0))
 //         {
 //             if (EventSystem.current.IsPointerOverGameObject()) return;
 //             dragStart = Input.mousePosition;
 //         }
 //
+//         // Check if mouse has moved enough to start a drag
 //         if (Input.GetMouseButton(0))
 //         {
 //             if (EventSystem.current.IsPointerOverGameObject()) return;
@@ -142,15 +700,25 @@
 //
 //         if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
 //         {
-//             if (hit.collider.TryGetComponent(out ISelectable selectable))
+//             // if (hit.collider.TryGetComponent(out ISelectable selectable))
+//             // {
+//             //     bool isDoubleClick = (Time.time - lastClickTime) < doubleClickTime &&
+//             //                          lastClicked == selectable;
+//
+//             // SESSION: Squad Control
+//             if (hit.collider.TryGetComponent(out ISelectable rawSelectable))
 //             {
+//                 ISelectable selectable = ResolveSelectable(rawSelectable);
+//                 if (selectable == null) return;
+//
 //                 bool isDoubleClick = (Time.time - lastClickTime) < doubleClickTime &&
 //                                      lastClicked == selectable;
-//
+//                 
 //                 if (isDoubleClick)
 //                     SelectSameTypeInRange(selectable);
 //                 else if (Input.GetKey(KeyCode.LeftShift))
 //                 {
+//                     // Shift click — toggle this selectable in current selection
 //                     if (selectedObjects.Contains(selectable))
 //                         Deselect(selectable);
 //                     else
@@ -158,6 +726,7 @@
 //                 }
 //                 else
 //                 {
+//                     // Normal click — clear and select
 //                     DeselectAll();
 //                     Select(selectable);
 //                 }
@@ -185,12 +754,27 @@
 //
 //         Rect selectionRect = GetScreenRectRaw(dragStart, Input.mousePosition);
 //
-//         foreach (ISelectable selectable in allSelectables)
+//         // Select all selectables whose screen position falls inside the drag rect
+//         // foreach (ISelectable selectable in allSelectables)
+//         // {
+//         //     Vector3 screenPos = mainCamera.WorldToScreenPoint(
+//         //         selectable.GetGameObject().transform.position);
+//         //     if (screenPos.z > 0 && selectionRect.Contains(screenPos, true) &&
+//         //         selectable.IsDragSelectable)
+//         //         Select(selectable);
+//         // }
+//         
+//         // SESSION: Squad Control
+//         foreach (ISelectable rawSelectable in allSelectables)
 //         {
+//             ISelectable selectable = ResolveSelectable(rawSelectable);
+//             if (selectable == null) continue;
+//             if (!selectable.IsDragSelectable) continue;
+//
 //             Vector3 screenPos = mainCamera.WorldToScreenPoint(
-//                 selectable.GetGameObject().transform.position);
-//             if (screenPos.z > 0 && selectionRect.Contains(screenPos, true) &&
-//                 selectable.IsDragSelectable)
+//                 rawSelectable.GetGameObject().transform.position);
+//
+//             if (screenPos.z > 0 && selectionRect.Contains(screenPos, true))
 //                 Select(selectable);
 //         }
 //     }
@@ -198,9 +782,21 @@
 //     void SelectSameTypeInRange(ISelectable selectable)
 //     {
 //         if (!selectable.GetGameObject().TryGetComponent(out EntityStats stats)) return;
+//         
+//         // SESSION: Squad Control
+//         selectable = ResolveSelectable(selectable);
+//         if (selectable == null) return;
+//
+//         if (selectable is SquadController)
+//         {
+//             DeselectAll();
+//             Select(selectable);
+//             return;
+//         }
 //
 //         DeselectAll();
 //
+//         // Units — select same UnitType within range
 //         if (stats.baseData.entityType == EntityType.Unit)
 //         {
 //             UnitType unitType = stats.baseData.unitType;
@@ -215,6 +811,7 @@
 //                 Select(other);
 //             }
 //         }
+//         // Buildings — select same BuildingType within range
 //         else if (stats.baseData.entityType == EntityType.Building)
 //         {
 //             BuildingType buildingType = stats.baseData.buildingType;
@@ -232,18 +829,27 @@
 //     }
 //     #endregion
 //
+//     
 //     #region Select / Deselect
 //     void Select(ISelectable selectable)
 //     {
 //         if (selectedObjects.Contains(selectable)) return;
 //
 //         // Mixed selection prevention — units and buildings can't be selected together
+//         // Every selection path — click, drag, shift click, double click — goes through here
 //         if (selectedObjects.Count > 0)
 //         {
-//             bool incomingIsUnit = selectable.GetGameObject().TryGetComponent(out UnitController _);
-//             bool existingIsUnit = selectedObjects[0].GetGameObject().TryGetComponent(out UnitController _);
+//             // bool incomingIsUnit = selectable.GetGameObject().TryGetComponent(out UnitController _);
+//             // bool existingIsUnit = selectedObjects[0].GetGameObject().TryGetComponent(out UnitController _);
+//             //
+//             // if (incomingIsUnit != existingIsUnit)
+//             //     DeselectAll();
+//             
+//             // SESSION: Squad Control
+//             SelectionKind incomingKind = GetSelectionKind(selectable);
+//             SelectionKind existingKind = GetSelectionKind(selectedObjects[0]);
 //
-//             if (incomingIsUnit != existingIsUnit)
+//             if (incomingKind != existingKind)
 //                 DeselectAll();
 //         }
 //
@@ -277,6 +883,7 @@
 //     #endregion
 //
 //     #region Rect / GUI
+//     // Raw screen rect — no Y flip, used for Contains checks
 //     Rect GetScreenRectRaw(Vector2 start, Vector2 end)
 //     {
 //         return Rect.MinMaxRect(
@@ -287,6 +894,7 @@
 //         );
 //     }
 //
+//     // Flipped Y rect — used for GUI.DrawTexture only
 //     Rect GetScreenRectGUI(Vector2 start, Vector2 end)
 //     {
 //         Vector2 s = new Vector2(start.x, Screen.height - start.y);
@@ -313,344 +921,43 @@
 //         isPlacingBuilding = isPlacing;
 //         if (!isPlacingBuilding)
 //         {
+//             // Reset drag state when placement ends to prevent phantom drag box
 //             isDragging = false;
 //             dragStart = Input.mousePosition;
 //         }
 //     }
 //     #endregion
+//     
+//     
+//     
+//     
+//     enum SelectionKind
+//     {
+//         None,
+//         Unit,
+//         Building,
+//         Squad
+//     }
+//
+//     SelectionKind GetSelectionKind(ISelectable selectable)
+//     {
+//         if (selectable == null || selectable.GetGameObject() == null)
+//             return SelectionKind.None;
+//
+//         GameObject go = selectable.GetGameObject();
+//
+//         if (go.TryGetComponent(out SquadController _))
+//             return SelectionKind.Squad;
+//
+//         if (go.TryGetComponent(out BuildingController _))
+//             return SelectionKind.Building;
+//
+//         if (go.TryGetComponent(out UnitController _))
+//             return SelectionKind.Unit;
+//
+//         return SelectionKind.None;
+//     }
+//     
+//     
+//     
 // }
-
-using System.Collections.Generic;
-using UnityEngine;
-using UnityEngine.EventSystems;
-
-public class SelectionManager : MonoBehaviour
-{
-    public static SelectionManager Instance { get; private set; }
-
-    [SerializeField] private LayerMask selectableLayers;
-    private List<ISelectable> selectedObjects = new List<ISelectable>();
-    private List<ISelectable> allSelectables = new List<ISelectable>();
-    private Camera mainCamera;
-
-    // Drag select
-    private Vector2 dragStart;
-    private bool isDragging = false;
-    private Texture2D boxTexture;
-    [SerializeField] private float dragThreshold = 5f;
-
-    // Double click
-    private readonly float doubleClickTime = 0.3f;
-    private float lastClickTime = 0f;
-    private ISelectable lastClicked = null;
-
-    // Placement mode
-    private bool isPlacingBuilding = false;
-
-    // Hover
-    private EntityStats hoveredES = null;
-
-    #region Unity Lifecycle
-    void Awake()
-    {
-        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-        Instance = this;
-
-        boxTexture = new Texture2D(1, 1);
-        boxTexture.SetPixel(0, 0, new Color(0.6f, 0.8f, 1f, 0.25f));
-        boxTexture.Apply();
-    }
-
-    void Start()
-    {
-        mainCamera = Camera.main;
-        GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
-    }
-
-    void OnDestroy()
-    {
-        GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
-    }
-
-    void Update()
-    {
-        HandleSelectionInput();
-        HandleHover();
-    }
-    #endregion
-
-    #region Registration
-    public void RegisterSelectable(ISelectable selectable)
-    {
-        allSelectables.Add(selectable);
-    }
-
-    public void UnregisterSelectable(ISelectable selectable)
-    {
-        // Called by EntityStats.Die() — cleans all lists and fires SelectionChanged
-        selectable.OnDeselect();
-        selectedObjects.Remove(selectable);
-        allSelectables.Remove(selectable);
-        ControlGroupManager.Instance.RemoveFromGroup(selectable); // Move to another class later
-        GameEvents.SelectionChanged();
-    }
-    #endregion
-
-    #region Hover
-    void HandleHover()
-    {
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-
-        if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
-        {
-            EntityStats entity = hit.collider.GetComponentInParent<EntityStats>();
-
-            if (entity != hoveredES)
-            {
-                // Only hide previous if it isn't selected — selected units keep their health bar
-                if (hoveredES != null && hoveredES.HealthBar != null && !hoveredES.HealthBar.IsSelected)
-                    hoveredES.HealthBar.Hide();
-
-                hoveredES = entity;
-                if (hoveredES != null && hoveredES.HealthBar != null)
-                    hoveredES.HealthBar.Show();
-            }
-        }
-        else if (hoveredES != null)
-        {
-            if (hoveredES.HealthBar != null && !hoveredES.HealthBar.IsSelected)
-                hoveredES.HealthBar.Hide();
-            hoveredES = null;
-        }
-    }
-    #endregion
-
-    #region Selection Input
-    void HandleSelectionInput()
-    {
-        if (isPlacingBuilding) return;
-
-        if (Input.GetKeyDown(KeyCode.Escape))
-        {
-            DeselectAll();
-            return;
-        }
-
-        // Record drag start position on mouse down
-        if (Input.GetMouseButtonDown(0))
-        {
-            if (EventSystem.current.IsPointerOverGameObject()) return;
-            dragStart = Input.mousePosition;
-        }
-
-        // Check if mouse has moved enough to start a drag
-        if (Input.GetMouseButton(0))
-        {
-            if (EventSystem.current.IsPointerOverGameObject()) return;
-            if (Vector2.Distance(dragStart, Input.mousePosition) > dragThreshold)
-                isDragging = true;
-        }
-
-        if (Input.GetMouseButtonUp(0))
-        {
-            if (isDragging)
-                HandleDragSelect();
-            else if (!EventSystem.current.IsPointerOverGameObject())
-                HandleClickSelect();
-
-            isDragging = false;
-        }
-    }
-
-    void HandleClickSelect()
-    {
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-
-        if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
-        {
-            if (hit.collider.TryGetComponent(out ISelectable selectable))
-            {
-                bool isDoubleClick = (Time.time - lastClickTime) < doubleClickTime &&
-                                     lastClicked == selectable;
-
-                if (isDoubleClick)
-                    SelectSameTypeInRange(selectable);
-                else if (Input.GetKey(KeyCode.LeftShift))
-                {
-                    // Shift click — toggle this selectable in current selection
-                    if (selectedObjects.Contains(selectable))
-                        Deselect(selectable);
-                    else
-                        Select(selectable);
-                }
-                else
-                {
-                    // Normal click — clear and select
-                    DeselectAll();
-                    Select(selectable);
-                }
-
-                lastClickTime = Time.time;
-                lastClicked = selectable;
-            }
-            else
-            {
-                if (!Input.GetKey(KeyCode.LeftShift))
-                    DeselectAll();
-            }
-        }
-        else
-        {
-            if (!Input.GetKey(KeyCode.LeftShift))
-                DeselectAll();
-        }
-    }
-
-    void HandleDragSelect()
-    {
-        if (!Input.GetKey(KeyCode.LeftShift))
-            DeselectAll();
-
-        Rect selectionRect = GetScreenRectRaw(dragStart, Input.mousePosition);
-
-        // Select all selectables whose screen position falls inside the drag rect
-        foreach (ISelectable selectable in allSelectables)
-        {
-            Vector3 screenPos = mainCamera.WorldToScreenPoint(
-                selectable.GetGameObject().transform.position);
-            if (screenPos.z > 0 && selectionRect.Contains(screenPos, true) &&
-                selectable.IsDragSelectable)
-                Select(selectable);
-        }
-    }
-
-    void SelectSameTypeInRange(ISelectable selectable)
-    {
-        if (!selectable.GetGameObject().TryGetComponent(out EntityStats stats)) return;
-
-        DeselectAll();
-
-        // Units — select same UnitType within range
-        if (stats.baseData.entityType == EntityType.Unit)
-        {
-            UnitType unitType = stats.baseData.unitType;
-            float range = 20f;
-
-            foreach (ISelectable other in allSelectables)
-            {
-                if (!other.GetGameObject().TryGetComponent(out EntityStats otherStats)) continue;
-                if (otherStats.baseData.unitType != unitType) continue;
-                if (Calc.OutOfRange(selectable.GetGameObject().transform.position,
-                        other.GetGameObject().transform.position, range)) continue;
-                Select(other);
-            }
-        }
-        // Buildings — select same BuildingType within range
-        else if (stats.baseData.entityType == EntityType.Building)
-        {
-            BuildingType buildingType = stats.baseData.buildingType;
-            float range = 40f;
-
-            foreach (ISelectable other in allSelectables)
-            {
-                if (!other.GetGameObject().TryGetComponent(out EntityStats otherStats)) continue;
-                if (otherStats.baseData.buildingType != buildingType) continue;
-                if (Calc.OutOfRange(selectable.GetGameObject().transform.position,
-                        other.GetGameObject().transform.position, range)) continue;
-                Select(other);
-            }
-        }
-    }
-    #endregion
-
-    #region Select / Deselect
-    void Select(ISelectable selectable)
-    {
-        if (selectedObjects.Contains(selectable)) return;
-
-        // Mixed selection prevention — units and buildings can't be selected together
-        // Every selection path — click, drag, shift click, double click — goes through here
-        if (selectedObjects.Count > 0)
-        {
-            bool incomingIsUnit = selectable.GetGameObject().TryGetComponent(out UnitController _);
-            bool existingIsUnit = selectedObjects[0].GetGameObject().TryGetComponent(out UnitController _);
-
-            if (incomingIsUnit != existingIsUnit)
-                DeselectAll();
-        }
-
-        selectedObjects.Add(selectable);
-        selectable.OnSelect();
-        GameEvents.SelectionChanged();
-    }
-
-    /// External selection entry point — used by ControlGroupManager
-    public void SelectExternal(ISelectable selectable) => Select(selectable);
-
-    void Deselect(ISelectable selectable)
-    {
-        selectedObjects.Remove(selectable);
-        selectable.OnDeselect();
-        GameEvents.SelectionChanged();
-    }
-
-    public void DeselectAll()
-    {
-        foreach (ISelectable selectable in selectedObjects)
-            selectable.OnDeselect();
-        selectedObjects.Clear();
-        GameEvents.Deselected();
-        GameEvents.SelectionChanged();
-    }
-    #endregion
-
-    #region Getters
-    public List<ISelectable> GetSelectedObjects() => selectedObjects;
-    #endregion
-
-    #region Rect / GUI
-    // Raw screen rect — no Y flip, used for Contains checks
-    Rect GetScreenRectRaw(Vector2 start, Vector2 end)
-    {
-        return Rect.MinMaxRect(
-            Mathf.Min(start.x, end.x),
-            Mathf.Min(start.y, end.y),
-            Mathf.Max(start.x, end.x),
-            Mathf.Max(start.y, end.y)
-        );
-    }
-
-    // Flipped Y rect — used for GUI.DrawTexture only
-    Rect GetScreenRectGUI(Vector2 start, Vector2 end)
-    {
-        Vector2 s = new Vector2(start.x, Screen.height - start.y);
-        Vector2 e = new Vector2(end.x, Screen.height - end.y);
-        return Rect.MinMaxRect(
-            Mathf.Min(s.x, e.x),
-            Mathf.Min(s.y, e.y),
-            Mathf.Max(s.x, e.x),
-            Mathf.Max(s.y, e.y)
-        );
-    }
-
-    void OnGUI()
-    {
-        if (!isDragging) return;
-        Rect screenRect = GetScreenRectGUI(dragStart, Input.mousePosition);
-        GUI.DrawTexture(screenRect, boxTexture);
-    }
-    #endregion
-
-    #region Placement Mode
-    void HandlePlacementModeChanged(bool isPlacing)
-    {
-        isPlacingBuilding = isPlacing;
-        if (!isPlacingBuilding)
-        {
-            // Reset drag state when placement ends to prevent phantom drag box
-            isDragging = false;
-            dragStart = Input.mousePosition;
-        }
-    }
-    #endregion
-}

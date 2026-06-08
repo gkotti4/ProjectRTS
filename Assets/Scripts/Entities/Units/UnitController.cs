@@ -14,7 +14,7 @@ public class UnitController : EntityController
     public UnitAnimator UnitAnimator => unitAnimator;
 
     // State
-    protected ControlState controlState = ControlState.AIControlled;
+    protected UnitControlState UnitControlState = UnitControlState.AIControlled;
 
     protected UnitState state = UnitState.Idle;
     public UnitState State => state;
@@ -114,7 +114,7 @@ public class UnitController : EntityController
     {
         unitAnimator.TriggerAttack();
         attackTimer = stats.attackInterval; // check
-        controlState = ControlState.Locked; 
+        UnitControlState = UnitControlState.Locked; 
         //Debug.Log("trigger attack");
     }
 
@@ -139,7 +139,7 @@ public class UnitController : EntityController
     //public virtual void OnAttackEnd() { /* Only Military Units need this for now */ }
     public virtual void OnAttackEnd()
     {
-        controlState = ControlState.AIControlled; // flow: if in Player control state attack -> TriggerAttack -> Locked control state -> now AI Controlled Attacking State
+        UnitControlState = UnitControlState.AIControlled; // flow: if in Player control state attack -> TriggerAttack -> Locked control state -> now AI Controlled Attacking State
     }
     #endregion
 
