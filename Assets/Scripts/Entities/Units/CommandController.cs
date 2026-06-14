@@ -28,10 +28,10 @@ public class CommandController : MonoBehaviour
     /// </summary>
     public void ExecuteHotkeyCommand(HotkeySlot slot, RaycastHit hit)
     {
-        if (stats == null || stats.baseData == null)
+        if (stats == null || stats.baseDetails == null)
             return;
 
-        foreach (CommandData command in stats.baseData.baseCommands)
+        foreach (CommandData command in stats.baseDetails.baseCommands)
         {
             if (command.hotkey != slot)
                 continue;
@@ -77,10 +77,10 @@ public class CommandController : MonoBehaviour
         List<CommandData> commands = new List<CommandData>();
         HashSet<HotkeySlot> usedSlots = new HashSet<HotkeySlot>();
 
-        if (stats == null || stats.baseData == null)
+        if (stats == null || stats.baseDetails == null)
             return commands;
 
-        foreach (CommandData command in stats.baseData.baseCommands)
+        foreach (CommandData command in stats.baseDetails.baseCommands)
         {
             if (command.hotkey != HotkeySlot.None && usedSlots.Contains(command.hotkey))
             {
@@ -151,19 +151,19 @@ public class CommandController : MonoBehaviour
                 return;
 
             case CommandType.Aggressive:
-                military.OrderSetStance(CombatStance.Aggressive);
+                military.OrderSetStance(SquadStance.Aggressive);
                 return;
 
             case CommandType.Defensive:
-                military.OrderSetStance(CombatStance.Defensive);
+                military.OrderSetStance(SquadStance.Defensive);
                 return;
 
             case CommandType.StandGround:
-                military.OrderSetStance(CombatStance.StandGround);
+                military.OrderSetStance(SquadStance.StandGround);
                 return;
 
             case CommandType.NoAttack:
-                military.OrderSetStance(CombatStance.NoAttack);
+                military.OrderSetStance(SquadStance.NoAttack);
                 return;
 
             case CommandType.Patrol:

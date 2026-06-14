@@ -1,12 +1,13 @@
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.Serialization;
 
 // TODO: pass stats.faction directly, remove GameManager wrappers
 
 public class EntityStats : MonoBehaviour
 {
-    [SerializeField] public EntityData baseData;
+    [FormerlySerializedAs("baseData")] [SerializeField] public EntityDetails baseDetails;
     
     // Runtime faction instance — set at spawn by spawner
     [HideInInspector] public FactionInstance faction;
@@ -65,45 +66,45 @@ public class EntityStats : MonoBehaviour
 
     void OnDestroy()
     {
-        if (faction == null)
-        {
-            //Debug.LogWarning(gameObject.name + " destroyed with no faction"); // Check (ghost buildings call this)
-            return;
-        }
-        GameManager.Instance.UnregisterEntity(this);
+        // if (faction == null)
+        // {
+        //     //Debug.LogWarning(gameObject.name + " destroyed with no faction"); // Check (ghost buildings call this)
+        //     return;
+        // }
+        //GameManager.Instance.UnregisterEntity(this); // Called in Die?
     }
 
     // Copies base values from EntityData into runtime fields
     public void InitializeFromBaseData()
     {
-        if (baseData == null)
+        if (baseDetails == null)
         {
             Debug.LogError("baseData is null - set in editor");
             return;
         }
         
-        entityTag = baseData.entityTag;
+        entityTag = baseDetails.entityTag;
 
-        currentHealth = baseData.maxHealth;
+        currentHealth = baseDetails.maxHealth;
         
-        maxHealth = baseData.maxHealth;
-        armor = baseData.armor;
-        lineOfSight = baseData.lineOfSight;
+        maxHealth = baseDetails.maxHealth;
+        armor = baseDetails.armor;
+        lineOfSight = baseDetails.lineOfSight;
 
-        moveSpeed = baseData.moveSpeed;
+        moveSpeed = baseDetails.moveSpeed;
 
-        attackDamage = baseData.attackDamage;
-        attackRange = baseData.attackRange;
-        attackInterval = baseData.attackInterval;
+        attackDamage = baseDetails.attackDamage;
+        attackRange = baseDetails.attackRange;
+        attackInterval = baseDetails.attackInterval;
         
-        defensiveChaseRange = baseData.defensiveChaseRange;
+        defensiveChaseRange = baseDetails.defensiveChaseRange;
 
-        gatherAmount = baseData.gatherAmount;
-        gatherRange = baseData.gatherRange;
-        gatherInterval = baseData.gatherInterval;
+        gatherAmount = baseDetails.gatherAmount;
+        gatherRange = baseDetails.gatherRange;
+        gatherInterval = baseDetails.gatherInterval;
 
-        productionSpeed = baseData.productionSpeed;
-        garrisonCapacity = baseData.garrisonCapacity;
+        productionSpeed = baseDetails.productionSpeed;
+        garrisonCapacity = baseDetails.garrisonCapacity;
     }
     
     // Health x IDamageable
@@ -137,8 +138,12 @@ public class EntityStats : MonoBehaviour
         if (TryGetComponent(out NavMeshAgent agent))
             agent.enabled = false;
 
-        // if (TryGetComponent(out Rigidbody rb)) // later
+        // if (TryGetComponent(out Rigidbody rb)) // TODO: add ragdoll death 
         //     rb.isKinematic = false;
+        
+        // SESSION: Squad Control Death
+        if (TryGetComponent(out SquadMemberController sm))
+            sm.NotifyDeath();
 
         SelectionManager.Instance.UnregisterSelectable(ec); // changed to ec to account for buildings
         
@@ -166,8 +171,8 @@ public class EntityStats : MonoBehaviour
 
         if (upgrade.upgradeType == UpgradeType.Unit)
         {
-            if (baseData != upgrade.fromUnit) return;
-            baseData = upgrade.toUnit;
+            if (baseDetails != upgrade.fromUnit) return;
+            baseDetails = upgrade.toUnit;
             InitializeFromBaseData();
             // Mesh swap handled by controller
         }
@@ -179,8 +184,8 @@ public class EntityStats : MonoBehaviour
         foreach (EntityTag tag in upgrade.affectedTags)
         {
             if (tag == EntityTag.All) return true;
-            if (tag == EntityTag.AllUnits && baseData.entityType == EntityType.Unit) return true;
-            if (tag == EntityTag.AllBuildings && baseData.entityType == EntityType.Building) return true;
+            if (tag == EntityTag.AllUnits && baseDetails.entityType == EntityType.Unit) return true;
+            if (tag == EntityTag.AllBuildings && baseDetails.entityType == EntityType.Building) return true;
             if (tag == entityTag) return true;
         }
         return false;

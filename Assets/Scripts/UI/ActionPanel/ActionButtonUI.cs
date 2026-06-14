@@ -14,7 +14,8 @@ public class ActionButtonUI : MonoBehaviour
     {
         None,
         Production,
-        UnitCommand,
+        //UnitCommand, // DEPRECIATED
+        VillagerCommand,
         SquadCommand,
         Build
     }
@@ -41,7 +42,7 @@ public class ActionButtonUI : MonoBehaviour
     private BuildOptionData buildOption;
 
     private BuildingController targetBuilding;
-    private UnitController targetUnit;
+    private VillagerController targetVillager;
     private SquadController targetSquad;
 
     private bool canAfford = false;
@@ -76,7 +77,7 @@ public class ActionButtonUI : MonoBehaviour
     {
         Clear();
 
-        if (option == null || building == null)
+        if (!option || !building)
             return;
 
         mode = ButtonMode.Production;
@@ -94,19 +95,19 @@ public class ActionButtonUI : MonoBehaviour
 
         SetButtonColor(canAfford ? affordableColor : unaffordableColor);
     }
-
-    public void InitializeFromUnitCommand(
+    
+    public void InitializeFromVillagerCommand(
         CommandData command,
-        UnitController unit)
+        VillagerController villager)
     {
         Clear();
 
-        if (command == null || unit == null)
+        if (!command || !villager)
             return;
 
-        mode = ButtonMode.UnitCommand;
+        mode = ButtonMode.VillagerCommand;
         commandData = command;
-        targetUnit = unit;
+        targetVillager = villager;
 
         SetVisuals(
             command.icon,
@@ -121,8 +122,8 @@ public class ActionButtonUI : MonoBehaviour
         SquadController squad)
     {
         Clear();
-
-        if (command == null || squad == null)
+        Debug.Log("InitializeFromSquadCommand");
+        if (!command || !squad)
             return;
 
         mode = ButtonMode.SquadCommand;
@@ -139,16 +140,16 @@ public class ActionButtonUI : MonoBehaviour
 
     public void InitializeFromBuildOption(
         BuildOptionData option,
-        UnitController unit)
+        VillagerController villager)
     {
         Clear();
 
-        if (option == null || unit == null)
+        if (!option || !villager)
             return;
 
         mode = ButtonMode.Build;
         buildOption = option;
-        targetUnit = unit;
+        targetVillager = villager;
 
         SetVisuals(
             option.icon,
@@ -167,18 +168,18 @@ public class ActionButtonUI : MonoBehaviour
         buildOption = null;
 
         targetBuilding = null;
-        targetUnit = null;
+        targetVillager = null;
         targetSquad = null;
 
         canAfford = false;
 
-        if (iconImage != null)
+        if (iconImage)
             iconImage.sprite = null;
 
-        if (label != null)
+        if (label)
             label.text = string.Empty;
 
-        if (hotkeyLabel != null)
+        if (hotkeyLabel)
             hotkeyLabel.text = string.Empty;
     }
 
@@ -194,8 +195,8 @@ public class ActionButtonUI : MonoBehaviour
                 HandleProductionClick();
                 return;
 
-            case ButtonMode.UnitCommand:
-                HandleUnitCommandClick();
+            case ButtonMode.VillagerCommand:
+                HandleVillagerCommandClick();
                 return;
 
             case ButtonMode.SquadCommand:
@@ -228,15 +229,15 @@ public class ActionButtonUI : MonoBehaviour
             building.EnqueueProduction(productionOption);
         }
     }
-
-    void HandleUnitCommandClick()
+    
+    void HandleVillagerCommandClick()
     {
         if (commandData == null) return;
 
         if (commandData.commandType == CommandType.Build)
         {
-            if (targetUnit != null)
-                UIManager.Instance.ShowActionPanelBuildSubmenu(targetUnit);
+            if (targetVillager != null)
+                UIManager.Instance.ShowActionPanelBuildSubmenu(targetVillager);
 
             return;
         }
@@ -246,6 +247,9 @@ public class ActionButtonUI : MonoBehaviour
         foreach (ISelectable selectable in selected)
         {
             if (selectable == null || selectable.GetGameObject() == null)
+                continue;
+
+            if (!selectable.GetGameObject().TryGetComponent(out VillagerController _))
                 continue;
 
             if (selectable.GetGameObject().TryGetComponent(out CommandController commandController))
@@ -275,10 +279,10 @@ public class ActionButtonUI : MonoBehaviour
     {
         if (faction != GameManager.Instance.PlayerFaction) return;
         if (mode != ButtonMode.Production) return;
-        if (productionOption == null) return;
+        if (!productionOption) return;
 
         CanvasGroup canvasGroup = GetComponent<CanvasGroup>();
-        if (canvasGroup != null && canvasGroup.alpha == 0f)
+        if (canvasGroup && canvasGroup.alpha == 0f)
             return;
 
         canAfford = GameManager.Instance.CanAfford(
@@ -294,13 +298,13 @@ public class ActionButtonUI : MonoBehaviour
 
     void SetVisuals(Sprite icon, string text, HotkeySlot hotkey)
     {
-        if (iconImage != null)
+        if (iconImage)
             iconImage.sprite = icon;
 
-        if (label != null)
+        if (label)
             label.text = text;
 
-        if (hotkeyLabel != null)
+        if (hotkeyLabel)
             hotkeyLabel.text = hotkey == HotkeySlot.None
                 ? string.Empty
                 : hotkey.ToString();
@@ -308,222 +312,10 @@ public class ActionButtonUI : MonoBehaviour
 
     void SetButtonColor(Color color)
     {
-        if (button != null && button.image != null)
+        if (button && button.image)
             button.image.color = color;
     }
 
     #endregion
 }
 
-
-// using System;
-// using System.Collections.Generic;
-// using UnityEngine;
-// using UnityEngine.UI;
-// using TMPro;
-// using UnityEngine.Serialization;
-//
-// [RequireComponent(typeof(Button))]
-//
-//
-// /*
-//  * Action Panel:
-//  *  - Handles bottom left panel of screen when selecting either a Unit or Building (Entity)
-//  * 
-//  *  - For Units:
-//  *   - Show Commands
-//  * 
-//  *  - For Buildings:
-//  *   - Show ProductionOptions
-//  */
-//
-// public class ActionButtonUI : MonoBehaviour
-// {
-//     // Data
-//     private ProductionOptionData productionOption; // Building
-//     private CommandData commandData; // Unit
-//     private BuildOptionData buildOption; // Villager
-//     private BuildingController targetBuilding;
-//     private UnitController targetUnit;
-//
-//     // UI refs
-//     private Button button;
-//     [SerializeField] private Image iconImage;
-//     [SerializeField] private TextMeshProUGUI label;
-//     [SerializeField] private TextMeshProUGUI hotkeyLabel;
-//     
-//     [SerializeField] private Color affordableColor = Color.lightBlue; // Production button
-//     [SerializeField] private Color unaffordableColor = Color.red; // Production button
-//
-//     private bool canAfford = false;
-//     private enum ButtonMode { Production, Command, Build } // Based on selection, Action panel can contain one of these types of buttons
-//     private ButtonMode mode;
-//
-//     void Awake()
-//     {
-//         button = GetComponent<Button>();
-//         button.onClick.AddListener(OnClick);
-//     }
-//
-//     void Start()
-//     {
-//         GameEvents.OnResourcesChanged += UpdateAffordability;
-//     }
-//
-//     void OnDestroy()
-//     {
-//         GameEvents.OnResourcesChanged -= UpdateAffordability;
-//     }
-//
-//     // Initialize for building production option
-//     public void InitializeFromProductionOption(ProductionOptionData option, BuildingController building)
-//     {
-//         mode = ButtonMode.Production;
-//         productionOption = option;
-//         commandData = null;
-//         buildOption = null;
-//         targetBuilding = building;
-//         targetUnit = null;
-//
-//         if (iconImage != null)
-//             iconImage.sprite = option.icon != null ? option.icon : null;
-//
-//         if (label != null)
-//             label.text = option.productionName;
-//         
-//         if (hotkeyLabel != null)
-//             hotkeyLabel.text = option.hotkey.ToString();
-//
-//         canAfford = GameManager.Instance.CanAfford(productionOption.cost, GameManager.Instance.PlayerFaction);
-//         button.image.color = canAfford ? affordableColor : unaffordableColor;
-//     }
-//
-//     // Initialize for unit command
-//     public void InitializeFromCommand(CommandData cmd, UnitController unit)
-//     {
-//         if (cmd == null) return;
-//         mode = ButtonMode.Command;
-//         commandData = cmd;
-//         productionOption = null;
-//         buildOption = null;
-//         targetUnit = unit;
-//         targetBuilding = null;
-//
-//         if (iconImage != null && cmd.icon != null)
-//             iconImage.sprite = cmd.icon;
-//
-//         if (label != null)
-//             label.text = cmd.commandName;
-//         
-//         if (hotkeyLabel != null)
-//             hotkeyLabel.text = cmd.hotkey.ToString();
-//
-//         button.image.color = affordableColor;
-//     }
-//
-//     public void InitializeFromBuildOption(BuildOptionData option, UnitController unit)
-//     {
-//         if (option == null) return;
-//         mode = ButtonMode.Build;
-//         buildOption = option;
-//         productionOption = null;
-//         commandData = null;
-//         targetUnit = unit;
-//         targetBuilding = null;
-//         
-//         if (iconImage != null && option.icon != null)
-//             iconImage.sprite = option.icon;
-//
-//         if (label != null)
-//             label.text = option.buildingName;
-//         
-//         if (hotkeyLabel != null)
-//             hotkeyLabel.text = option.hotkey.ToString();
-//         
-//         button.image.color = affordableColor;
-//
-//     }
-//
-//     void OnClick()
-//     {
-//         // ProductionButtonUI
-//         if (mode == ButtonMode.Production)
-//         {
-//             if (productionOption == null) return;
-//             if (!canAfford) return;
-//
-//             List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
-//
-//             // Enqueue production on ALL selected buildings
-//             foreach (ISelectable s in selected)
-//             {
-//                 if (!canAfford) return;
-//                 if (s is BuildingController bc)
-//                 {
-//                     bc.EnqueueProduction(productionOption);
-//                 }
-//             }     
-//         }
-//         // CommandButtonUI
-//         else if (mode == ButtonMode.Command)
-//         {
-//             if (commandData == null) return;
-//
-//             if (commandData.commandType == CommandType.Build) // Opens build submenu!
-//             {
-//                 if (targetUnit != null)
-//                     UIManager.Instance.ShowActionPanelBuildSubmenu(targetUnit);
-//                 return;
-//             }
-//
-//             
-//             // New - Group type Command (Formations currently)
-//             if (commandData.commandScope == CommandScope.Squad)
-//             {
-//                 PlayerInputHandler.Instance.ExecuteGroupCommand(commandData.commandType);
-//                 return;
-//             }
-//             
-//             // Execute command on ALL selected units
-//             List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
-//             foreach (ISelectable s in selected)
-//             {
-//                 if (s.GetGameObject().TryGetComponent(out CommandController cc))
-//                     cc.ExecuteCommand(commandData.commandType);
-//             }
-//         }
-//         // BuildOptionButtonUI
-//         else if (mode == ButtonMode.Build) // Builds a build option from button!
-//         {
-//             if (buildOption == null) return;
-//             BuildingPlacer.Instance.StartPlacing(buildOption);
-//         }
-//     }
-//
-//     void UpdateAffordability(FactionInstance f)
-//     {
-//         if (f != GameManager.Instance.PlayerFaction) return;
-//         if (mode != ButtonMode.Production || productionOption == null) return; // removed activeSelf check
-//         if (GetComponent<CanvasGroup>().alpha == 0f) return; // hidden check
-//         canAfford = GameManager.Instance.CanAfford(productionOption.cost, GameManager.Instance.PlayerFaction);
-//         button.image.color = canAfford ? affordableColor : unaffordableColor;
-//     }
-//     
-//     
-// }
-//
-//
-//
-// // public void ShowSubmenu(CommandSubmenu type, UnitController unit)
-// // {
-// //     switch (type)
-// //     {
-// //         case CommandSubmenu.Build:
-// //             actionPanelUI.ShowBuildSubmenu(unit);
-// //             PlayerInputHandler.Instance.SetBuildSubmenuActive(true);
-// //             break;
-// //         // Future:
-// //         // case CommandSubmenu.Stance: actionPanelUI.ShowStanceSubmenu(unit); break;
-// //         // case CommandSubmenu.Formation: actionPanelUI.ShowFormationSubmenu(unit); break;
-// //     }
-// // }

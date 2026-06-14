@@ -8,40 +8,56 @@ using UnityEngine.AI;
 [RequireComponent(typeof(NavMeshAgent))]
 public class SquadController : MonoBehaviour, ISelectable
 {
-    #region Fields
+    [SerializeField] private SquadData squadData;
 
-    [Header("Identity")]
-    [SerializeField] private SquadCategory squadCategory = SquadCategory.Infantry;
-    [SerializeField] private int maxMembers = 20;
-
+    [Header("Identity")] 
+    private SquadCategory squadCategory;
+    [SerializeField] private int maxMembers = 50; // TODO: max members to be based off squad category rather than initial squad
+    
     [Header("Formation")]
-    [SerializeField] private SquadFormation formation = SquadFormation.Line;
+    private SquadFormation formation = SquadFormation.Line;
     [SerializeField] private float formationWidth = -1f;
     [SerializeField] private float defaultSpacing = 2f;
+    [SerializeField] private int defaultUnitsPerRow = 10;
     [SerializeField] private float slotUpdateThreshold = 0.25f;
 
     [Header("Movement")]
-    [SerializeField] private SquadMoveMode moveMode = SquadMoveMode.IdleFormed;
+    private SquadMoveMode moveMode = SquadMoveMode.IdleFormed;
     [SerializeField] private float turnSpeed = 540f;
 
+    [Header("Slot Reassignment")]
+    [SerializeField] private bool reassignSlotsOnLargeFacingChange = true;
+    [SerializeField] private float reassignFacingAngle = 100f;
+
+    [Header("Cohesion / Catch Up")]
+    [SerializeField] private bool useCatchupSpeed = true;
+    [SerializeField] private float catchupStartDistance = 2f;
+    [SerializeField] private float catchupMaxDistance = 10f;
+    [SerializeField] private float maxCatchupMultiplier = 1.45f;
+
+    [SerializeField] private bool slowSquadAnchorForCohesion = true;
+    [SerializeField] private float anchorSlowDistance = 4f;
+    [SerializeField] private float anchorHeavySlowDistance = 8f;
+    [SerializeField] private float minAnchorSpeedMultiplier = 0.65f;
+    
     [Header("Slot Validity")]
-    [SerializeField] private LayerMask obstacleLayers;
+    // [SerializeField] private LayerMask obstacleLayers;
     [SerializeField] private float slotCheckRadius = 0.45f;
     [SerializeField] private float navMeshSampleRadius = 0.75f;
     [SerializeField] private float slotValidationInterval = 0.15f;
     [SerializeField] private int badSlotCountToBreak = 2;
     [SerializeField] private float badSlotRatioToBreak = 0.25f;
-
+    
     [Header("Loose / Reform")]
     [SerializeField] private float reformCheckInterval = 0.25f;
     [SerializeField] private float reformMemberDistance = 1.25f;
     [SerializeField] private float reformRatioRequired = 0.75f;
 
     [Header("Behavior")]
-    [SerializeField] private CombatStance stance = CombatStance.Aggressive;
+    private SquadStance stance = SquadStance.Aggressive;
 
     [Header("Members")]
-    [SerializeField] private List<SquadMemberController> members = new List<SquadMemberController>();
+    private List<SquadMemberController> members = new List<SquadMemberController>();
 
     private NavMeshAgent squadAgent;
     private List<Vector2> formationOffsets = new List<Vector2>();
@@ -57,13 +73,14 @@ public class SquadController : MonoBehaviour, ISelectable
     private bool isSelected = false;
     private bool isInitialized = false;
 
-    #endregion
-
+    private float baseSquadAgentSpeed = 0f;
+    
     #region Properties
-
+    
+    public SquadData SquadData => squadData;
     public SquadCategory Category => squadCategory;
     public SquadFormation Formation => formation;
-    public CombatStance Stance => stance;
+    public SquadStance Stance => stance;
     public SquadMoveMode MoveMode => moveMode;
 
     public IReadOnlyList<SquadMemberController> Members => members;
@@ -90,11 +107,22 @@ public class SquadController : MonoBehaviour, ISelectable
 
     #endregion
 
+    
     #region Unity Lifecycle
 
     void Awake()
     {
         squadAgent = GetComponent<NavMeshAgent>();
+
+        // Squad Data Assignment
+        if (Verify.IsNull(squadData, "SquadData", this))
+            return;
+        squadCategory = squadData.category;
+        formation = squadData.defaultFormation;
+        stance = squadData.defaultStance;
+        
+        
+        baseSquadAgentSpeed = squadAgent.speed;
 
         squadAgent.updateRotation = false;
         squadAgent.angularSpeed = 99999f;
@@ -159,7 +187,7 @@ public class SquadController : MonoBehaviour, ISelectable
     public void InitializeSquad(
         List<SquadMemberController> startingMembers,
         SquadFormation startingFormation = SquadFormation.Line,
-        CombatStance startingStance = CombatStance.Aggressive)
+        SquadStance startingStance = SquadStance.Aggressive)
     {
         if (startingMembers == null)
         {
@@ -192,7 +220,10 @@ public class SquadController : MonoBehaviour, ISelectable
             member.JoinSquad(this, members.Count - 1);
         }
 
+        
+        // SESSION: LoosenUp
         RebuildFormation();
+        RefreshSquadAgentSpeed();
 
         finalSlots = GetWorldSlots(transform.position, facing);
         PlaceMembersInInitialSlots();
@@ -252,6 +283,32 @@ public class SquadController : MonoBehaviour, ISelectable
         return gameObject;
     }
 
+
+    #region Hover
+
+    public void OnHoverEnter()
+    {
+        foreach (SquadMemberController member in members)
+        {
+            if (member == null) continue;
+            member.ShowHoverVisual();
+        }
+    }
+
+    public void OnHoverExit()
+    {
+        // If the squad is actually selected, leave the selected visuals alone.
+        if (isSelected)
+            return;
+
+        foreach (SquadMemberController member in members)
+        {
+            if (member == null) continue;
+            member.HideHoverVisual();
+        }
+    }
+
+    #endregion
     #endregion
 
     #region Orders
@@ -262,12 +319,40 @@ public class SquadController : MonoBehaviour, ISelectable
         OrderMove(destination, resolvedFacing);
     }
 
+    // public void OrderMove(
+    //     Vector3 destination,
+    //     Vector3 orderedFacing,
+    //     float requestedFormationWidth = -1f)
+    // {
+    //     if (members.Count == 0) return;
+    //
+    //     if (requestedFormationWidth > 0f)
+    //         formationWidth = requestedFormationWidth;
+    //
+    //     finalDestination = destination;
+    //     desiredFacing = NormalizeFacing(orderedFacing);
+    //
+    //     RebuildFormation();
+    //     finalSlots = GetWorldSlots(finalDestination, desiredFacing);
+    //
+    //     squadAgent.isStopped = false;
+    //     squadAgent.stoppingDistance = 0.2f;
+    //     squadAgent.SetDestination(finalDestination);
+    //
+    //     moveMode = SquadMoveMode.FormedMove;
+    //     slotValidationTimer = 0f;
+    //
+    //     FormationVisualizer.Instance?.ShowSlots(finalSlots);
+    // }
+    
     public void OrderMove(
         Vector3 destination,
         Vector3 orderedFacing,
         float requestedFormationWidth = -1f)
     {
         if (members.Count == 0) return;
+
+        Vector3 previousFacing = facing;
 
         if (requestedFormationWidth > 0f)
             formationWidth = requestedFormationWidth;
@@ -276,7 +361,25 @@ public class SquadController : MonoBehaviour, ISelectable
         desiredFacing = NormalizeFacing(orderedFacing);
 
         RebuildFormation();
+        RefreshSquadAgentSpeed();
+
+        // finalSlots = GetWorldSlots(finalDestination, desiredFacing);
+        //
+        // if (ShouldReassignSlotsForNewOrder(previousFacing, desiredFacing))
+        //     ReassignMembersToNearestSlots(finalSlots);
+        
         finalSlots = GetWorldSlots(finalDestination, desiredFacing);
+
+        bool reassignedForBigTurn = ShouldReassignSlotsForNewOrder(previousFacing, desiredFacing);
+
+        if (reassignedForBigTurn)
+        {
+            ReassignMembersToNearestSlots(finalSlots);
+
+            // Big reverses look bad if the formation slowly rotates while members chase slots.
+            // Snap the squad facing instead.
+            facing = desiredFacing;
+        }
 
         squadAgent.isStopped = false;
         squadAgent.stoppingDistance = 0.2f;
@@ -290,8 +393,11 @@ public class SquadController : MonoBehaviour, ISelectable
 
     public void OrderStop()
     {
-        if (squadAgent != null && squadAgent.enabled)
+        if (squadAgent && squadAgent.enabled)
+        {
+            squadAgent.speed = baseSquadAgentSpeed;
             squadAgent.ResetPath();
+        }
 
         foreach (SquadMemberController member in members)
         {
@@ -320,7 +426,7 @@ public class SquadController : MonoBehaviour, ISelectable
         FormationVisualizer.Instance?.ShowSlots(currentSlots);
     }
 
-    public void SetStance(CombatStance newStance)
+    public void SetStance(SquadStance newStance)
     {
         stance = newStance;
     }
@@ -426,13 +532,26 @@ public class SquadController : MonoBehaviour, ISelectable
 
         List<Vector3> currentSlots = GetWorldSlots(transform.position, facing);
 
+        UpdateSquadAnchorSpeedForCohesion(currentSlots);
+
         for (int i = 0; i < members.Count && i < currentSlots.Count; i++)
         {
             SquadMemberController member = members[i];
             if (member == null) continue;
 
             Vector3 slot = GetNearestValidPointForSlot(currentSlots[i]);
-            member.MoveToSlot(slot, slotUpdateThreshold);
+
+            float distanceToSlot = Vector3.Distance(
+                member.transform.position,
+                slot);
+
+            float speedMultiplier = GetCatchupSpeedMultiplier(distanceToSlot);
+
+            member.MoveToSlot(
+                slot,
+                slotUpdateThreshold,
+                0.1f,
+                speedMultiplier);
         }
     }
 
@@ -483,7 +602,7 @@ public class SquadController : MonoBehaviour, ISelectable
 
     void SwitchToLooseMove()
     {
-        if (squadAgent != null && squadAgent.enabled)
+        if (squadAgent && squadAgent.enabled)
             squadAgent.ResetPath();
 
         moveMode = SquadMoveMode.LooseMove;
@@ -495,7 +614,11 @@ public class SquadController : MonoBehaviour, ISelectable
             if (member == null) continue;
 
             Vector3 target = GetNearestValidPointForSlot(finalSlots[i]);
-            member.MoveToPoint(target);
+            
+            float distanceToTarget = Vector3.Distance(member.transform.position, target);
+            float speedMultiplier = GetCatchupSpeedMultiplier(distanceToTarget);
+
+            member.MoveToPoint(target, 0.1f, speedMultiplier);
         }
 
         FormationVisualizer.Instance?.ShowSlots(finalSlots);
@@ -587,13 +710,13 @@ public class SquadController : MonoBehaviour, ISelectable
         return Physics.CheckSphere(
             slot + Vector3.up * 0.3f,
             slotCheckRadius,
-            obstacleLayers,
+            GameLayers.Instance.ObstacleLayers,
             QueryTriggerInteraction.Ignore);
     }
 
     bool CanMemberPathToCurrentSlot(SquadMemberController member, Vector3 slot)
     {
-        if (member == null || member.Agent == null || !member.Agent.enabled)
+        if (!member || !member.Agent || !member.Agent.enabled)
             return false;
 
         Vector3 validSlot = GetNearestValidPointForSlot(slot);
@@ -673,12 +796,17 @@ public class SquadController : MonoBehaviour, ISelectable
 
     float GetDefaultFormationWidth()
     {
-        if (FormationCalculator.Instance != null)
-            return Mathf.Max(1, members.Count) * FormationCalculator.Instance.DefaultSpacing;
+        float spacing = FormationCalculator.Instance
+            ? FormationCalculator.Instance.DefaultSpacing
+            : defaultSpacing;
 
-        return Mathf.Max(1, members.Count) * defaultSpacing;
+        int unitsPerRow = Mathf.Clamp(
+            defaultUnitsPerRow,
+            1,
+            Mathf.Max(1, members.Count));
+
+        return unitsPerRow * spacing;
     }
-
     List<Vector2> BuildFallbackLineOffsets(int count)
     {
         List<Vector2> offsets = new List<Vector2>();
@@ -850,17 +978,23 @@ public class SquadController : MonoBehaviour, ISelectable
 
     void UpdateFacingFromAgent()
     {
-        if (squadAgent == null) return;
-
+        // Optional:
+        // Do not continuously derive formation facing from the squad agent velocity.
+        // That causes the slot layout to rotate during movement, which makes members twirl/cross.
+        // Facing is chosen at order time from click/drag input.
+        //SmoothFacingToward(desiredFacing);
+        
+        if (!squadAgent) return;
+        
         if (squadAgent.velocity.sqrMagnitude > 0.1f)
         {
             Vector3 dir = squadAgent.velocity;
             dir.y = 0f;
-
+        
             if (dir != Vector3.zero)
                 desiredFacing = dir.normalized;
         }
-
+        
         SmoothFacingToward(desiredFacing);
     }
 
@@ -883,6 +1017,254 @@ public class SquadController : MonoBehaviour, ISelectable
             return Vector3.forward;
 
         return dir.normalized;
+    }
+
+    #endregion
+
+    #region Member Death
+
+    public void HandleMemberDeath(SquadMemberController member)
+    {
+        if (!member) return;
+        if (!members.Remove(member)) return;
+        
+        ReassignSlotIndices();
+        RebuildFormation();
+        RefreshSquadAgentSpeed();
+
+        if (members.Count == 0)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        if (moveMode == SquadMoveMode.IdleFormed)
+            moveMode = SquadMoveMode.Reforming;
+    }
+
+    #endregion
+    
+    #region Slot Reassignment / Cohesion
+
+    bool ShouldReassignSlotsForNewOrder(Vector3 oldFacing, Vector3 newFacing)
+    {
+        if (!reassignSlotsOnLargeFacingChange)
+            return false;
+
+        oldFacing = NormalizeFacing(oldFacing);
+        newFacing = NormalizeFacing(newFacing);
+
+        float angle = Vector3.Angle(oldFacing, newFacing);
+
+        return angle >= reassignFacingAngle;
+    }
+
+    void ReassignMembersToNearestSlots(List<Vector3> targetSlots)
+    {
+        if (members.Count <= 1) return;
+        if (targetSlots == null || targetSlots.Count == 0) return;
+    
+        List<SquadMemberController> unassignedMembers =
+            members.Where(m => m != null).ToList();
+    
+        List<SquadMemberController> reorderedMembers =
+            new List<SquadMemberController>();
+    
+        int slotCount = Mathf.Min(targetSlots.Count, unassignedMembers.Count);
+    
+        for (int slotIndex = 0; slotIndex < slotCount; slotIndex++)
+        {
+            Vector3 slot = targetSlots[slotIndex];
+    
+            SquadMemberController nearest = null;
+            float nearestDistance = float.MaxValue;
+    
+            foreach (SquadMemberController member in unassignedMembers)
+            {
+                float distance = Vector3.SqrMagnitude(
+                    member.transform.position - slot);
+    
+                if (distance < nearestDistance)
+                {
+                    nearestDistance = distance;
+                    nearest = member;
+                }
+            }
+    
+            if (!nearest)
+                continue;
+    
+            reorderedMembers.Add(nearest);
+            unassignedMembers.Remove(nearest);
+        }
+    
+        foreach (SquadMemberController leftover in unassignedMembers)
+            reorderedMembers.Add(leftover);
+    
+        members = reorderedMembers;
+        ReassignSlotIndices();
+    }
+    
+    // void ReassignMembersToNearestSlots(List<Vector3> targetSlots)
+    // {
+    //     if (members.Count <= 1) return;
+    //     if (targetSlots == null || targetSlots.Count == 0) return;
+    //
+    //     List<SquadMemberController> validMembers =
+    //         members.Where(m => m != null).ToList();
+    //
+    //     int count = Mathf.Min(validMembers.Count, targetSlots.Count);
+    //
+    //     List<(SquadMemberController member, int slotIndex, float distance)> pairs =
+    //         new List<(SquadMemberController member, int slotIndex, float distance)>();
+    //
+    //     for (int memberIndex = 0; memberIndex < validMembers.Count; memberIndex++)
+    //     {
+    //         SquadMemberController member = validMembers[memberIndex];
+    //
+    //         for (int slotIndex = 0; slotIndex < targetSlots.Count; slotIndex++)
+    //         {
+    //             float distance = Vector3.SqrMagnitude(
+    //                 member.transform.position - targetSlots[slotIndex]);
+    //
+    //             pairs.Add((member, slotIndex, distance));
+    //         }
+    //     }
+    //
+    //     pairs.Sort((a, b) => a.distance.CompareTo(b.distance));
+    //
+    //     SquadMemberController[] assignedBySlot = new SquadMemberController[targetSlots.Count];
+    //     HashSet<SquadMemberController> assignedMembers = new HashSet<SquadMemberController>();
+    //
+    //     foreach (var pair in pairs)
+    //     {
+    //         if (assignedMembers.Contains(pair.member))
+    //             continue;
+    //
+    //         if (assignedBySlot[pair.slotIndex] != null)
+    //             continue;
+    //
+    //         assignedBySlot[pair.slotIndex] = pair.member;
+    //         assignedMembers.Add(pair.member);
+    //
+    //         if (assignedMembers.Count >= count)
+    //             break;
+    //     }
+    //
+    //     List<SquadMemberController> reorderedMembers = new List<SquadMemberController>();
+    //
+    //     for (int i = 0; i < assignedBySlot.Length; i++)
+    //     {
+    //         if (assignedBySlot[i] != null)
+    //             reorderedMembers.Add(assignedBySlot[i]);
+    //     }
+    //
+    //     foreach (SquadMemberController member in validMembers)
+    //     {
+    //         if (!assignedMembers.Contains(member))
+    //             reorderedMembers.Add(member);
+    //     }
+    //
+    //     members = reorderedMembers;
+    //     ReassignSlotIndices();
+    // }
+
+    float GetCatchupSpeedMultiplier(float distanceToSlot)
+    {
+        if (!useCatchupSpeed)
+            return 1f;
+
+        if (distanceToSlot <= catchupStartDistance)
+            return 1f;
+
+        float t = Mathf.InverseLerp(
+            catchupStartDistance,
+            catchupMaxDistance,
+            distanceToSlot);
+
+        // SmoothStep makes the speedup less twitchy than raw linear.
+        t = t * t * (3f - 2f * t);
+
+        return Mathf.Lerp(
+            1f,
+            maxCatchupMultiplier,
+            t);
+    }
+
+    void RefreshSquadAgentSpeed()
+    {
+        if (squadAgent == null)
+            return;
+
+        float speed = 0f; // NEW: was float.maxvalue
+
+        foreach (SquadMemberController member in members)
+        {
+            if (member == null || member.Stats == null)
+                continue;
+
+            speed = Mathf.Max(speed, member.Stats.moveSpeed);
+        }
+
+        if (speed == 0f)
+            speed = baseSquadAgentSpeed;
+
+        baseSquadAgentSpeed = speed;
+        squadAgent.speed = baseSquadAgentSpeed;
+    }
+
+    void UpdateSquadAnchorSpeedForCohesion(List<Vector3> currentSlots)
+    {
+        if (!slowSquadAnchorForCohesion)
+            return;
+
+        if (squadAgent == null)
+            return;
+
+        if (moveMode != SquadMoveMode.FormedMove)
+        {
+            squadAgent.speed = baseSquadAgentSpeed;
+            return;
+        }
+
+        if (members.Count == 0 || currentSlots == null || currentSlots.Count == 0)
+        {
+            squadAgent.speed = baseSquadAgentSpeed;
+            return;
+        }
+
+        float worstDistance = 0f;
+
+        for (int i = 0; i < members.Count && i < currentSlots.Count; i++)
+        {
+            SquadMemberController member = members[i];
+            if (member == null) continue;
+
+            float distance = Vector3.Distance(
+                member.transform.position,
+                currentSlots[i]);
+
+            if (distance > worstDistance)
+                worstDistance = distance;
+        }
+
+        if (worstDistance <= anchorSlowDistance)
+        {
+            squadAgent.speed = baseSquadAgentSpeed;
+            return;
+        }
+
+        float t = Mathf.InverseLerp(
+            anchorSlowDistance,
+            anchorHeavySlowDistance,
+            worstDistance);
+
+        float multiplier = Mathf.Lerp(
+            1f,
+            minAnchorSpeedMultiplier,
+            t);
+
+        squadAgent.speed = baseSquadAgentSpeed * multiplier;
     }
 
     #endregion

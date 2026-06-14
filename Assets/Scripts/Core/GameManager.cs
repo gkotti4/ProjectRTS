@@ -102,7 +102,7 @@ public class GameManager : MonoBehaviour
     }
 
     // Population — routed through faction
-    public bool CanSpawn(FactionInstance faction = null)
+    public bool CanSpawn(FactionInstance faction = null, int count = 1)
     {
         faction ??= PlayerFaction;
         return faction.CanSpawn();

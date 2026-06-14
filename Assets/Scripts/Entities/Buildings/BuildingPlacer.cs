@@ -64,8 +64,8 @@ public class BuildingPlacer : MonoBehaviour
         GameEvents.PlacementModeChanged(isPlacing);
         
         // Spawn ghost preview
-        ghostObject = Instantiate(selectedBuildOption.buildingData.ghostPrefab); 
-        if (ghostObject == null) { Debug.LogWarning("Ghost Object is null in BuildingPlacer."); return; }
+        ghostObject = Instantiate(selectedBuildOption.buildingDetails.ghostPrefab); 
+        if (!ghostObject) { Debug.LogWarning("Ghost Object is null in BuildingPlacer."); return; }
 
         // Disable all colliders on ghost and children so it doesn't interact with physics
         foreach (Collider col in ghostObject.GetComponentsInChildren<Collider>()) // Note: Might be a little overboard
@@ -129,12 +129,12 @@ public class BuildingPlacer : MonoBehaviour
 
     private void PlaceBuilding(Vector3 position, Vector2Int cell) // SPAWN building and marks grid cells
     {
-        if (selectedBuildOption.buildingData.prefab == null) return;
+        if (!selectedBuildOption.buildingPrefab.gameObject) return;
         
         // Place building (Todo: Building construction)
-        EntityFactory.Spawn(selectedBuildOption.buildingData.prefab, position, Quaternion.identity, GameManager.Instance.PlayerFaction);
+        EntityFactory.Spawn(selectedBuildOption.buildingPrefab.gameObject, position, Quaternion.identity, GameManager.Instance.PlayerFaction);
         
-        GridManager.Instance.SetOccupied(cell, selectedBuildOption.buildingData.gridWidth, selectedBuildOption.buildingData.gridHeight);
+        GridManager.Instance.SetOccupied(cell, selectedBuildOption.buildingDetails.gridWidth, selectedBuildOption.buildingDetails.gridHeight);
         //GameManager.Instance.SpendResources(selectedBuildOption.buildingCost, GameManager.Instance.PlayerFaction); // spent at start 
         
         ExitPlacementMode(); // No refund, resources stay spent
@@ -153,12 +153,12 @@ public class BuildingPlacer : MonoBehaviour
         selectedBuildOption = null;
         if (!isSwapping)
             GameEvents.PlacementModeChanged(false);
-        if (ghostObject != null) { Destroy(ghostObject); ghostObject = null; }
+        if (ghostObject) { Destroy(ghostObject); ghostObject = null; }
     }
     
     private void SetGhostMaterial(Material mat)
     {
-        if (ghostObject == null || mat == null) return;
+        if (!ghostObject || !mat) return;
         foreach (Renderer r in ghostObject.GetComponentsInChildren<Renderer>())
         {
             // Handle multiple materials per renderer (submeshes)
@@ -176,7 +176,7 @@ public class BuildingPlacer : MonoBehaviour
         // Is grid space free?
         // Is building placement over object?
         
-        return GridManager.Instance.IsFree(cell, selectedBuildOption.buildingData.gridWidth, selectedBuildOption.buildingData.gridHeight) &&
+        return GridManager.Instance.IsFree(cell, selectedBuildOption.buildingDetails.gridWidth, selectedBuildOption.buildingDetails.gridHeight) &&
                !IsPlacementBlockedByObject(position);
         // Add cost check?
     }
@@ -186,9 +186,9 @@ public class BuildingPlacer : MonoBehaviour
     private bool IsPlacementBlockedByObject(Vector3 position)
     {
         Vector3 halfExtents = new Vector3(
-            selectedBuildOption.buildingData.gridWidth * GridManager.Instance.GetCellSize() / 2f,
+            selectedBuildOption.buildingDetails.gridWidth * GridManager.Instance.GetCellSize() / 2f,
             1f,
-            selectedBuildOption.buildingData.gridHeight * GridManager.Instance.GetCellSize() / 2f
+            selectedBuildOption.buildingDetails.gridHeight * GridManager.Instance.GetCellSize() / 2f
         );
 
         int hitCount = Physics.OverlapBoxNonAlloc(position, halfExtents, overlapResults, Quaternion.identity, placementBlockingLayers);

@@ -39,8 +39,8 @@ public class InfoPanelUI : MonoBehaviour
     {
         gameObject.SetActive(true);
         string txt = 
-                "Name: " + stats.baseData.entityName + "\n" +
-                "ID: " + stats.baseData.GetEntityId().ToString() + "\n" +
+                "Name: " + stats.baseDetails.entityName + "\n" +
+                "ID: " + stats.baseDetails.GetEntityId().ToString() + "\n" +
                 "Health: " + stats.CurrentHealth.ToString();
         
         entityText.text = txt;

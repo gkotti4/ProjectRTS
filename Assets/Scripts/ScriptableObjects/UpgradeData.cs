@@ -18,8 +18,8 @@ public class UpgradeData : ScriptableObject
     
     // Unit evolution
     [Header("Unit Evolution Upgrade")]
-    public EntityData fromUnit;
-    public EntityData toUnit;
+    public EntityDetails fromUnit;
+    public EntityDetails toUnit;
     
     // Prerequisites (later)
     // public UpgradeSO[] prerequisites;

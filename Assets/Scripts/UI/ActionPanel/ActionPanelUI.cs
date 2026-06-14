@@ -12,11 +12,9 @@ public class ActionPanelUI : MonoBehaviour
     [SerializeField] private int maxButtons = 15;
 
     [Header("Squad Commands")]
-    [SerializeField] private List<CommandData> squadCommands = new List<CommandData>();
-
     private readonly List<ActionButtonUI> buttons = new List<ActionButtonUI>();
 
-    private UnitController currentUnit;
+    private VillagerController currentVillager;
     private SquadController currentSquad;
 
     private bool inBuildSubmenu = false;
@@ -42,7 +40,7 @@ public class ActionPanelUI : MonoBehaviour
 
     public void ShowProductionPanel(BuildingController building)
     {
-        currentUnit = null;
+        currentVillager = null;
         currentSquad = null;
         inBuildSubmenu = false;
 
@@ -50,10 +48,10 @@ public class ActionPanelUI : MonoBehaviour
 
         if (building == null) return;
         if (building.Stats == null) return;
-        if (building.Stats.baseData == null) return;
-        if (building.Stats.baseData.productionOptions == null) return;
+        if (building.Stats.baseDetails == null) return;
+        if (building.Stats.baseDetails.productionOptions == null) return;
 
-        List<ProductionOptionData> options = building.Stats.baseData.productionOptions;
+        List<ProductionOptionData> options = building.Stats.baseDetails.productionOptions;
 
         for (int i = 0; i < options.Count && i < maxButtons; i++)
         {
@@ -65,38 +63,48 @@ public class ActionPanelUI : MonoBehaviour
         }
     }
 
-    public void ShowUnitPanel(UnitController unit)
+    // public void ShowUnitPanel(UnitController unit) // DEPRECIATED: Replacing with Villager specific panel (Squad panel (military) and Villager panel, rather than Unit)
+    // {
+    //     currentUnit = unit;
+    //     currentSquad = null;
+    //     inBuildSubmenu = false;
+    //
+    //     ShowUnitCommands(unit);
+    // }
+
+    public void ShowVillagerPanel(VillagerController villager)
     {
-        currentUnit = unit;
+        currentVillager = villager;
         currentSquad = null;
         inBuildSubmenu = false;
-
-        ShowUnitCommands(unit);
+        
+        // ShowUnitCommands(villager);
+        ShowVillagerCommands(villager);
     }
 
     public void ShowSquadPanel(SquadController squad)
     {
-        currentUnit = null;
+        currentVillager = null;
         currentSquad = squad;
         inBuildSubmenu = false;
 
         ShowSquadCommands(squad);
     }
 
-    public void ShowBuildPanel(UnitController unit)
+    public void ShowBuildPanel(VillagerController villager)
     {
-        currentUnit = unit;
+        currentVillager = villager;
         currentSquad = null;
         inBuildSubmenu = true;
 
         HidePanel();
 
-        if (unit == null) return;
-        if (unit.Stats == null) return;
-        if (unit.Stats.baseData == null) return;
-        if (unit.Stats.baseData.buildOptions == null) return;
+        if (villager == null) return;
+        if (villager.Stats == null) return;
+        if (villager.Stats.baseDetails == null) return;
+        if (villager.Stats.baseDetails.buildOptions == null) return;
 
-        foreach (BuildOptionData option in unit.Stats.baseData.buildOptions)
+        foreach (BuildOptionData option in villager.Stats.baseDetails.buildOptions)
         {
             if (option == null) continue;
             if (option.hotkey == HotkeySlot.None) continue;
@@ -105,7 +113,7 @@ public class ActionPanelUI : MonoBehaviour
 
             FillSlot(slotIndex, button =>
             {
-                button.InitializeFromBuildOption(option, unit);
+                button.InitializeFromBuildOption(option, villager);
             });
         }
     }
@@ -116,8 +124,9 @@ public class ActionPanelUI : MonoBehaviour
 
         inBuildSubmenu = false;
 
-        if (currentUnit != null)
-            ShowUnitCommands(currentUnit);
+        if (currentVillager != null)
+            ShowVillagerCommands(currentVillager);
+            // ShowUnitCommands(currentUnit);
         else if (currentSquad != null)
             ShowSquadCommands(currentSquad);
         else
@@ -134,12 +143,34 @@ public class ActionPanelUI : MonoBehaviour
 
     #region Show Commands
 
-    void ShowUnitCommands(UnitController unit)
+    // void ShowUnitCommands(UnitController unit) // DEPRECIATED
+    // {
+    //     HidePanel();
+    //
+    //     if (unit == null) return;
+    //     if (!unit.TryGetComponent(out CommandController commandController)) return;
+    //
+    //     foreach (CommandData command in commandController.GetAllCommands())
+    //     {
+    //         if (command == null) continue;
+    //         if (!command.showButton) continue;
+    //         if (command.hotkey == HotkeySlot.None) continue;
+    //
+    //         int slotIndex = GetSlotIndex(command.hotkey);
+    //
+    //         FillSlot(slotIndex, button =>
+    //         {
+    //             button.InitializeFromUnitCommand(command, unit);
+    //         });
+    //     }
+    // }
+    
+    void ShowVillagerCommands(VillagerController villager)
     {
         HidePanel();
 
-        if (unit == null) return;
-        if (!unit.TryGetComponent(out CommandController commandController)) return;
+        if (villager == null) return;
+        if (!villager.TryGetComponent(out CommandController commandController)) return;
 
         foreach (CommandData command in commandController.GetAllCommands())
         {
@@ -151,18 +182,19 @@ public class ActionPanelUI : MonoBehaviour
 
             FillSlot(slotIndex, button =>
             {
-                button.InitializeFromUnitCommand(command, unit);
+                button.InitializeFromVillagerCommand(command, villager);
             });
         }
     }
 
     void ShowSquadCommands(SquadController squad)
     {
+        Debug.Log("Show Squad Commands");
         HidePanel();
 
         if (squad == null) return;
 
-        foreach (CommandData command in squadCommands)
+        foreach (CommandData command in currentSquad.SquadData.commandSet.GetAllCommands())
         {
             if (command == null) continue;
             if (!command.showButton) continue;
@@ -266,140 +298,3 @@ public class ActionPanelUI : MonoBehaviour
     #endregion
 }
 
-// using System.Collections.Generic;
-// using UnityEngine;
-//
-// public class ActionPanelUI : MonoBehaviour
-// {
-//     [SerializeField] private GameObject actionButtonPrefab;
-//     [SerializeField] private int maxButtons = 15;
-//
-//     private List<ActionButtonUI> buttons = new List<ActionButtonUI>();
-//     private UnitController currentUnit;
-//     private bool inBuildSubmenu = false;
-//
-//     void Start()
-//     {
-//         for (int i = 0; i < maxButtons; i++)
-//         {
-//             GameObject btn = Instantiate(actionButtonPrefab, transform);
-//             var cg = btn.AddComponent<CanvasGroup>();
-//             cg.alpha = 0f;
-//             cg.blocksRaycasts = false;
-//             buttons.Add(btn.GetComponent<ActionButtonUI>());
-//         }
-//
-//         GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
-//     }
-//
-//     void OnDestroy()
-//     {
-//         GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
-//     }
-//
-//     // Shows production options for a selected building
-//     public void ShowProductionPanel(BuildingController building)
-//     {
-//         currentUnit = null;
-//         inBuildSubmenu = false;
-//         HidePanel();
-//
-//         if (building.Stats.baseData.productionOptions == null ||
-//             building.Stats.baseData.productionOptions.Count == 0) return;
-//
-//         for (int i = 0; i < building.Stats.baseData.productionOptions.Count && i < maxButtons; i++)
-//         {
-//             int index = i; // capture local copy
-//             FillSlot(index, btn => btn.InitializeFromProductionOption(building.Stats.baseData.productionOptions[index], building));
-//         }    
-//     }
-//
-//     // Shows command buttons for a selected unit
-//     public void ShowUnitPanel(UnitController unit)
-//     {
-//         currentUnit = unit;
-//         inBuildSubmenu = false;
-//         ShowUnitCommands(unit);
-//     }
-//
-//     // Shows build options submenu for villager
-//     public void ShowBuildPanel(UnitController unit)
-//     {
-//         currentUnit = unit;
-//         inBuildSubmenu = true;
-//         HidePanel();
-//
-//         if (unit.Stats.baseData.buildOptions == null ||
-//             unit.Stats.baseData.buildOptions.Count == 0) return;
-//
-//         foreach (BuildOptionData option in unit.Stats.baseData.buildOptions)
-//         {
-//             if (option.hotkey == HotkeySlot.None) continue;
-//             int slotIndex = (int)option.hotkey - 1;
-//             FillSlot(slotIndex, btn => btn.InitializeFromBuildOption(option, unit));
-//         }
-//     }
-//     
-//
-//     // Returns to base unit commands from build submenu
-//     public void ExitBuildPanel()
-//     {
-//         if (currentUnit == null) return;
-//         inBuildSubmenu = false;
-//         ShowUnitCommands(currentUnit);
-//     }
-//
-//     public void HidePanel()
-//     {
-//         for (int i = 0; i < buttons.Count; i++)
-//             HideSlot(i);
-//     }
-//
-//     // Fills a specific slot with a button — generic for all button types
-//     void FillSlot(int index, System.Action<ActionButtonUI> initialize)
-//     {
-//         if (index < 0 || index >= maxButtons) return;
-//         initialize(buttons[index]);
-//         ShowSlot(index);
-//     }
-//
-//     // Shows base unit commands in hotkey slot positions
-//     void ShowUnitCommands(UnitController unit)
-//     {
-//         HidePanel();
-//         if (!unit.TryGetComponent(out CommandController cc)) return;
-//
-//         foreach (CommandData cmd in cc.GetAllCommands())
-//         {
-//             if (!cmd.showButton || cmd.hotkey == HotkeySlot.None) continue;
-//             int slotIndex = (int)cmd.hotkey - 1;
-//             FillSlot(slotIndex, btn => btn.InitializeFromCommand(cmd, unit));
-//         }
-//     }
-//
-//     void ShowSlot(int index)
-//     {
-//         var cg = buttons[index].GetComponent<CanvasGroup>();
-//         cg.alpha = 1f;
-//         cg.blocksRaycasts = true;
-//     }
-//
-//     void HideSlot(int index)
-//     {
-//         if (!buttons[index]) // CHECK: started after squad control was implemented for the first time, possible connection? - sinlge button was referencing as null (implying it was destroyed first)
-//         {
-//             Debug.Log("Trying to access buttons[" + index + "] to hide slot but is NULL");
-//             return;
-//         }
-//         
-//         var cg = buttons[index].GetComponent<CanvasGroup>();
-//         cg.alpha = 0f;
-//         cg.blocksRaycasts = false;
-//     }
-//
-//     void HandlePlacementModeChanged(bool isPlacing)
-//     {
-//         if (!isPlacing && inBuildSubmenu)
-//             ExitBuildPanel();
-//     }
-// }

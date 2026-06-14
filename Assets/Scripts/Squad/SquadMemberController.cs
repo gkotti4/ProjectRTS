@@ -1,14 +1,14 @@
 // SESSION: Squad Control Refactor
+// SESSION: Squad Control Refactor - Loosen Up
 
 using UnityEngine;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(MilitaryController))]
 [RequireComponent(typeof(NavMeshAgent))]
+
 public class SquadMemberController : MonoBehaviour
 {
-    #region Fields
-
     [Header("Rotation")]
     [SerializeField] private float rotationSpeed = 900f;
 
@@ -24,7 +24,15 @@ public class SquadMemberController : MonoBehaviour
     public bool IsInSquad => Squad != null;
     public bool IsAlive => Stats == null || Stats.IsAlive;
 
-    #endregion
+    private float baseMoveSpeed = 0f;
+    
+    
+    // SESSION: Squad Combat
+    // Section: Combat
+    private EntityController attackTarget;
+    private float attackTimer = 0f;
+    
+
 
     #region Unity Lifecycle
 
@@ -32,26 +40,30 @@ public class SquadMemberController : MonoBehaviour
     {
         Unit = GetComponent<MilitaryController>();
         Agent = GetComponent<NavMeshAgent>();
+
+        if (Agent != null)
+            baseMoveSpeed = Agent.speed;
     }
-
-    void Update()
-    {
-        if (!IsInSquad) return;
-        if (!IsAlive) return;
-
-        RotateTowardVelocity();
-    }
-
+    
     void OnDestroy()
     {
         if (Squad != null)
         {
             SquadController oldSquad = Squad;
             Squad = null;
-            oldSquad.RemoveMember(this);
+            oldSquad.RemoveMember(this); // Needed with current death logic?
         }
     }
 
+    void Update()
+    {
+        if (!IsInSquad) return;
+        if (!IsAlive) return;
+        
+        TickCombat();
+        RotateTowardVelocity();
+    }
+    
     #endregion
 
     #region Squad Membership
@@ -68,18 +80,16 @@ public class SquadMemberController : MonoBehaviour
         SlotIndex = slotIndex;
         LastSlotPosition = transform.position;
 
-        // Members are logically owned by the squad but must stay unparented in world space.
-        // This prevents parent movement + member NavMeshAgent movement from double-applying.
         transform.SetParent(null, true);
 
         if (Agent != null)
         {
+            baseMoveSpeed = Stats != null ? Stats.moveSpeed : Agent.speed;
+
             Agent.isStopped = false;
-            Agent.speed = Stats != null ? Stats.moveSpeed : Agent.speed;
+            Agent.speed = baseMoveSpeed;
         }
 
-        // MilitaryController is the old independent military brain.
-        // SquadController now owns high-level military behavior.
         if (Unit != null)
         {
             Unit.SetSquadMember(this);
@@ -111,30 +121,53 @@ public class SquadMemberController : MonoBehaviour
         LastSlotPosition = position;
     }
 
+    #region Squad Death
+
+    public void NotifyDeath()
+    {
+        if (Squad != null)
+        {
+            SquadController oldSquad = Squad;
+            Squad = null;
+            oldSquad.HandleMemberDeath(this);
+        }
+
+        Stop(); // maybe remove when we add ragdoll?
+    }
+
     #endregion
+    #endregion
+
 
     #region Movement
 
     public void MoveToSlot(
         Vector3 slotPosition,
         float updateThreshold,
-        float stoppingDistance = 0.1f)
+        float stoppingDistance = 0.1f,
+        float speedMultiplier = 1f)
     {
         if (!CanMove()) return;
+
+        ApplySpeedMultiplier(speedMultiplier);
 
         if (!Calc.OutOfRange(LastSlotPosition, slotPosition, updateThreshold))
             return;
 
-        MoveToPoint(slotPosition, stoppingDistance);
+        MoveToPoint(slotPosition, stoppingDistance, speedMultiplier);
         LastSlotPosition = slotPosition;
     }
 
-    public void MoveToPoint(Vector3 position, float stoppingDistance = 0.1f)
+    public void MoveToPoint(
+        Vector3 position,
+        float stoppingDistance = 0.1f,
+        float speedMultiplier = 1f)
     {
         if (!CanMove()) return;
 
+        ApplySpeedMultiplier(speedMultiplier);
+
         Agent.isStopped = false;
-        Agent.speed = Stats != null ? Stats.moveSpeed : Agent.speed;
         Agent.stoppingDistance = stoppingDistance;
         Agent.SetDestination(position);
     }
@@ -146,8 +179,32 @@ public class SquadMemberController : MonoBehaviour
         if (!Agent.isActiveAndEnabled) return;
         if (!Agent.isOnNavMesh) return;
 
+        ResetMoveSpeed();
+
         Agent.ResetPath();
         Agent.isStopped = false;
+    }
+
+    public void ResetMoveSpeed()
+    {
+        if (Agent == null) return;
+
+        float speed = Stats != null ? Stats.moveSpeed : baseMoveSpeed;
+
+        if (speed > 0f)
+            Agent.speed = speed;
+    }
+
+    void ApplySpeedMultiplier(float multiplier)
+    {
+        if (Agent == null) return;
+
+        float speed = Stats != null ? Stats.moveSpeed : baseMoveSpeed;
+
+        if (speed <= 0f)
+            speed = Agent.speed;
+
+        Agent.speed = speed * Mathf.Max(0.1f, multiplier);
     }
 
     public bool IsNear(Vector3 position, float range)
@@ -180,18 +237,82 @@ public class SquadMemberController : MonoBehaviour
         if (Unit == null) return;
         Unit.OnDeselect();
     }
+    
+    #region Hover
+
+    public void ShowHoverVisual()
+    {
+        if (Unit == null) return;
+
+        Unit.OnHoverEnter();
+    }
+
+    public void HideHoverVisual()
+    {
+        if (Unit == null) return;
+
+        Unit.OnHoverExit();
+    }
 
     #endregion
+    #endregion
 
-    #region Combat Hooks
+    // SESSION: Squad Combat
+    #region Combat
 
-    // Future:
-    // SquadController will assign targets.
-    // SquadMemberController will execute low-level attack behavior.
-    //
-    // public void AssignAttackTarget(EntityController target) {}
-    // public void ClearAttackTarget() {}
-    // public bool IsInAttackRange(EntityController target) {}
+    public void AssignAttackTarget(EntityController target)
+    {
+        attackTarget = target;
+    }
+
+    public void ClearAttackTarget()
+    {
+        attackTarget = null;
+    }
+
+    void TickCombat()
+    {
+        if (attackTimer > 0f)
+            attackTimer -= Time.deltaTime;
+
+        if (attackTarget == null)
+            return;
+
+        if (attackTarget.Stats == null || !attackTarget.Stats.IsAlive)
+        {
+            ClearAttackTarget();
+            return;
+        }
+
+        if (Stats == null)
+            return;
+
+        float range = Stats.attackRange;
+
+        if (!Calc.WithinRange(transform.position, attackTarget.transform.position, range))
+        {
+            MoveToPoint(attackTarget.transform.position, range * 0.85f);
+            return;
+        }
+
+        Stop();
+
+        if (attackTimer <= 0f)
+            PerformAttack();
+    }
+
+    void PerformAttack()
+    {
+        attackTimer = Stats.attackInterval;
+
+        if (Unit != null && Unit.UnitAnimator != null)
+            Unit.UnitAnimator.TriggerAttack();
+
+        // First pass: apply damage immediately.
+        // Later we can sync this to animation/projectile impact.
+        if (attackTarget != null)
+            attackTarget.TakeDamage(Stats.attackDamage);
+    }
 
     #endregion
 

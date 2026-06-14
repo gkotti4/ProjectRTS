@@ -1,15 +1,15 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "EntityData", menuName = "Scriptable Objects/Entity")]
-public class EntityData : ScriptableObject
+[CreateAssetMenu(fileName = "EntityDetails_", menuName = "Scriptable Objects/EntityDetails")]
+public class EntityDetails : ScriptableObject
 {
     // Identity
     public string entityName = "Entity";
     //public int entityID = 0; // use GetEntityID() built-in instead
     public EntityTag entityTag = EntityTag.None;
     public EntityType entityType; // Unit, Building
-    public GameObject prefab;
+    //public GameObject prefab; // Circular design - was set here and on unit prefab, only need one
     public GameObject ghostPrefab; // Mainly for buildings (placement)
 
     // Shared Stats

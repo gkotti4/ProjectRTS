@@ -32,23 +32,19 @@ public static class SquadFactory
 {
     // SESSION: Squad Control
     public static SquadController SpawnSquadWithMembers(
-        GameObject squadPrefab,
-        GameObject memberPrefab,
-        int memberCount,
+        SquadData squadData,
         Vector3 position,
         Quaternion rotation,
         FactionInstance faction,
-        SquadFormation formation = SquadFormation.Line,
-        CombatStance stance = CombatStance.Aggressive,
         float spawnRadius = 2f)
     {
-        if (squadPrefab == null || memberPrefab == null)
+        if (!squadData || !squadData.memberPrefab)
         {
-            Debug.LogError("SpawnSquadWithMembers failed: prefab is null.");
+            Debug.LogError("SpawnSquadWithMembers failed: squadData is null or empty.");
             return null;
         }
 
-        GameObject squadGO = Object.Instantiate(squadPrefab, position, rotation);
+        GameObject squadGO = Object.Instantiate(squadData.squadPrefab.gameObject, position, rotation);
 
         if (!squadGO.TryGetComponent(out SquadController squad))
         {
@@ -59,13 +55,13 @@ public static class SquadFactory
 
         List<SquadMemberController> members = new List<SquadMemberController>();
 
-        for (int i = 0; i < memberCount; i++)
+        for (int i = 0; i < squadData.startingMemberCount; i++)
         {
-            Vector3 memberPos = position + GetSpawnOffset(i, memberCount, spawnRadius);
+            Vector3 memberPos = position + GetSpawnOffset(i, squadData.startingMemberCount, spawnRadius);
 
             // Members are real faction-owned entities.
             GameObject memberGO = EntityFactory.Spawn(
-                memberPrefab,
+                squadData.memberPrefab.gameObject,
                 memberPos,
                 rotation,
                 faction);
@@ -80,7 +76,7 @@ public static class SquadFactory
             members.Add(member);
         }
 
-        squad.InitializeSquad(members, formation, stance);
+        squad.InitializeSquad(members, squadData.defaultFormation, squadData.defaultStance);
         return squad;
     }
 
@@ -90,7 +86,7 @@ public static class SquadFactory
         Vector3 position,
         Quaternion rotation,
         SquadFormation formation = SquadFormation.Line,
-        CombatStance stance = CombatStance.Aggressive)
+        SquadStance stance = SquadStance.Aggressive)
     {
         if (squadPrefab == null)
         {

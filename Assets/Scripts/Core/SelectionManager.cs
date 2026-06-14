@@ -11,7 +11,7 @@ public class SelectionManager : MonoBehaviour
     #region Fields
 
     [Header("Selection")]
-    [SerializeField] private LayerMask selectableLayers;
+    // [SerializeField] private LayerMask selectableLayers;
     [SerializeField] private float dragThreshold = 5f;
 
     [Header("Double Click")]
@@ -33,6 +33,9 @@ public class SelectionManager : MonoBehaviour
     private ISelectable lastClicked = null;
 
     private bool isPlacingBuilding = false;
+    
+    private readonly HashSet<ISelectable> dragHoveredObjects = new HashSet<ISelectable>();
+    private SquadController hoveredSquad = null;
     private EntityStats hoveredES = null;
 
     #endregion
@@ -117,42 +120,239 @@ public class SelectionManager : MonoBehaviour
         return selectable;
     }
 
+    ISelectable ResolveSelectableFromHit(RaycastHit hit)
+    {
+        // 1. If we hit any child/body/collider belonging to a squad member,
+        // select the owning SquadController.
+        SquadMemberController squadMember =
+            hit.collider.GetComponentInParent<SquadMemberController>();
+
+        if (squadMember != null && squadMember.Squad != null)
+            return squadMember.Squad;
+
+        // 2. If we hit the SquadController's own collision box,
+        // select the SquadController directly.
+        SquadController squad =
+            hit.collider.GetComponentInParent<SquadController>();
+
+        if (squad != null)
+            return squad;
+
+        // 3. Otherwise, normal entities: villagers, buildings, legacy units.
+        EntityController entity =
+            hit.collider.GetComponentInParent<EntityController>();
+
+        if (entity != null)
+            return entity;
+
+        return null;
+    }
+    
+    SquadController ResolveSquadFromHit(RaycastHit hit)
+    {
+        SquadMemberController squadMember =
+            hit.collider.GetComponentInParent<SquadMemberController>();
+
+        if (squadMember != null && squadMember.Squad != null)
+            return squadMember.Squad;
+
+        SquadController squad =
+            hit.collider.GetComponentInParent<SquadController>();
+
+        return squad;
+    }
     #endregion
 
     #region Hover
 
     void HandleHover()
     {
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-
-        if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
+        if (isDragging)
         {
-            EntityStats entity = hit.collider.GetComponentInParent<EntityStats>();
-
-            if (entity == hoveredES)
-                return;
-
-            HideHoveredHealthBarIfNeeded();
-
-            hoveredES = entity;
-
-            if (hoveredES != null && hoveredES.HealthBar != null)
-                hoveredES.HealthBar.Show();
-
+            ClearNormalHover();
+            HandleDragHover();
             return;
         }
 
-        HideHoveredHealthBarIfNeeded();
-        hoveredES = null;
+        ClearDragHover();
+
+        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+
+        if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, GameLayers.Instance.SelectableLayers))
+        {
+            SquadController squad = ResolveSquadFromHit(hit);
+
+            if (squad != null)
+            {
+                SetHoveredSquad(squad);
+                return;
+            }
+
+            EntityStats entity = hit.collider.GetComponentInParent<EntityStats>();
+            SetHoveredEntity(entity);
+            return;
+        }
+
+        ClearNormalHover();
+    }
+    
+    void HandleDragHover()
+    {
+        Rect selectionRect = GetScreenRectRaw(dragStart, Input.mousePosition);
+
+        HashSet<ISelectable> newHovered = new HashSet<ISelectable>();
+
+        foreach (ISelectable rawSelectable in allSelectables)
+        {
+            ISelectable selectable = ResolveSelectable(rawSelectable);
+            if (selectable == null) continue;
+            if (!selectable.IsDragSelectable) continue;
+
+            GameObject rawGO = rawSelectable.GetGameObject();
+            if (rawGO == null) continue;
+
+            Vector3 screenPos = mainCamera.WorldToScreenPoint(rawGO.transform.position);
+
+            if (screenPos.z > 0 && selectionRect.Contains(screenPos, true))
+                newHovered.Add(selectable);
+        }
+
+        // Remove hover from objects that left the drag rectangle.
+        List<ISelectable> toRemove = new List<ISelectable>();
+
+        foreach (ISelectable oldHovered in dragHoveredObjects)
+        {
+            if (!newHovered.Contains(oldHovered))
+                toRemove.Add(oldHovered);
+        }
+
+        foreach (ISelectable selectable in toRemove)
+        {
+            ApplyHoverExit(selectable);
+            dragHoveredObjects.Remove(selectable);
+        }
+
+        // Add hover to objects that entered the drag rectangle.
+        foreach (ISelectable selectable in newHovered)
+        {
+            if (dragHoveredObjects.Contains(selectable))
+                continue;
+
+            dragHoveredObjects.Add(selectable);
+            ApplyHoverEnter(selectable);
+        }
     }
 
-    void HideHoveredHealthBarIfNeeded()
+    void SetHoveredSquad(SquadController squad)
     {
-        if (hoveredES == null) return;
-        if (hoveredES.HealthBar == null) return;
-        if (hoveredES.HealthBar.IsSelected) return;
+        if (hoveredSquad == squad)
+            return;
 
-        hoveredES.HealthBar.Hide();
+        ClearHover();
+
+        hoveredSquad = squad;
+        hoveredSquad.OnHoverEnter();
+    }
+
+    void SetHoveredEntity(EntityStats entity)
+    {
+        if (hoveredES == entity)
+            return;
+
+        ClearHover();
+
+        hoveredES = entity;
+
+        if (hoveredES == null)
+            return;
+
+        if (hoveredES.TryGetComponent(out EntityController controller))
+            controller.OnHoverEnter();
+        else if (hoveredES.HealthBar)
+            hoveredES.HealthBar.Show();
+    }
+
+    void ClearHover()
+    {
+        if (hoveredSquad)
+        {
+            hoveredSquad.OnHoverExit();
+            hoveredSquad = null;
+        }
+
+        if (hoveredES)
+        {
+            if (hoveredES.TryGetComponent(out EntityController controller))
+                controller.OnHoverExit();
+            else if (hoveredES.HealthBar && !hoveredES.HealthBar.IsSelected)
+                hoveredES.HealthBar.Hide();
+
+            hoveredES = null;
+        }
+    }
+    
+    void ClearNormalHover()
+    {
+        if (hoveredSquad)
+        {
+            hoveredSquad.OnHoverExit();
+            hoveredSquad = null;
+        }
+
+        if (hoveredES)
+        {
+            if (hoveredES.TryGetComponent(out EntityController controller))
+                controller.OnHoverExit();
+            else if (hoveredES.HealthBar && !hoveredES.HealthBar.IsSelected)
+                hoveredES.HealthBar.Hide();
+
+            hoveredES = null;
+        }
+    }
+    
+    void ClearDragHover()
+    {
+        if (dragHoveredObjects.Count == 0)
+            return;
+
+        foreach (ISelectable selectable in dragHoveredObjects)
+            ApplyHoverExit(selectable);
+
+        dragHoveredObjects.Clear();
+    }
+    
+    void ApplyHoverEnter(ISelectable selectable)
+    {
+        if (selectable == null) return;
+
+        if (selectable is SquadController squad)
+        {
+            squad.OnHoverEnter();
+            return;
+        }
+
+        GameObject go = selectable.GetGameObject();
+        if (go == null) return;
+
+        if (go.TryGetComponent(out EntityController entity))
+            entity.OnHoverEnter();
+    }
+
+    void ApplyHoverExit(ISelectable selectable)
+    {
+        if (selectable == null) return;
+
+        if (selectable is SquadController squad)
+        {
+            squad.OnHoverExit();
+            return;
+        }
+
+        GameObject go = selectable.GetGameObject();
+        if (go == null) return;
+
+        if (go.TryGetComponent(out EntityController entity))
+            entity.OnHoverExit();
     }
 
     #endregion
@@ -197,6 +397,7 @@ public class SelectionManager : MonoBehaviour
             }
 
             isDragging = false;
+            ClearDragHover();
         }
     }
 
@@ -204,7 +405,7 @@ public class SelectionManager : MonoBehaviour
     {
         Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
 
-        if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
+        if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, GameLayers.Instance.SelectableLayers))
         {
             if (!Input.GetKey(KeyCode.LeftShift))
                 DeselectAll();
@@ -212,16 +413,15 @@ public class SelectionManager : MonoBehaviour
             return;
         }
 
-        if (!hit.collider.TryGetComponent(out ISelectable rawSelectable))
+        ISelectable selectable = ResolveSelectableFromHit(hit);
+
+        if (selectable == null)
         {
             if (!Input.GetKey(KeyCode.LeftShift))
                 DeselectAll();
 
             return;
         }
-
-        ISelectable selectable = ResolveSelectable(rawSelectable);
-        if (selectable == null) return;
 
         bool isDoubleClick =
             Time.time - lastClickTime < doubleClickTime &&
@@ -259,7 +459,7 @@ public class SelectionManager : MonoBehaviour
             if (!selectable.IsDragSelectable) continue;
 
             GameObject rawGO = rawSelectable.GetGameObject();
-            if (rawGO == null) continue;
+            if (!rawGO) continue;
 
             Vector3 screenPos = mainCamera.WorldToScreenPoint(rawGO.transform.position);
 
@@ -288,13 +488,13 @@ public class SelectionManager : MonoBehaviour
         if (!selectable.GetGameObject().TryGetComponent(out EntityStats stats))
             return;
 
-        if (stats.baseData.entityType == EntityType.Unit)
+        if (stats.baseDetails.entityType == EntityType.Unit)
         {
             SelectSameUnitTypeInRange(selectable, stats);
             return;
         }
 
-        if (stats.baseData.entityType == EntityType.Building)
+        if (stats.baseDetails.entityType == EntityType.Building)
         {
             SelectSameBuildingTypeInRange(selectable, stats);
         }
@@ -320,7 +520,7 @@ public class SelectionManager : MonoBehaviour
 
     void SelectSameUnitTypeInRange(ISelectable sourceSelectable, EntityStats sourceStats)
     {
-        UnitType unitType = sourceStats.baseData.unitType;
+        UnitType unitType = sourceStats.baseDetails.unitType;
         Vector3 sourcePos = sourceSelectable.GetGameObject().transform.position;
 
         foreach (ISelectable rawSelectable in allSelectables)
@@ -332,7 +532,7 @@ public class SelectionManager : MonoBehaviour
             GameObject go = selectable.GetGameObject();
             if (go == null) continue;
             if (!go.TryGetComponent(out EntityStats otherStats)) continue;
-            if (otherStats.baseData.unitType != unitType) continue;
+            if (otherStats.baseDetails.unitType != unitType) continue;
 
             if (Calc.OutOfRange(sourcePos, go.transform.position, sameTypeUnitRange))
                 continue;
@@ -343,7 +543,7 @@ public class SelectionManager : MonoBehaviour
 
     void SelectSameBuildingTypeInRange(ISelectable sourceSelectable, EntityStats sourceStats)
     {
-        BuildingType buildingType = sourceStats.baseData.buildingType;
+        BuildingType buildingType = sourceStats.baseDetails.buildingType;
         Vector3 sourcePos = sourceSelectable.GetGameObject().transform.position;
 
         foreach (ISelectable rawSelectable in allSelectables)
@@ -354,7 +554,7 @@ public class SelectionManager : MonoBehaviour
             GameObject go = selectable.GetGameObject();
             if (go == null) continue;
             if (!go.TryGetComponent(out EntityStats otherStats)) continue;
-            if (otherStats.baseData.buildingType != buildingType) continue;
+            if (otherStats.baseDetails.buildingType != buildingType) continue;
 
             if (Calc.OutOfRange(sourcePos, go.transform.position, sameTypeBuildingRange))
                 continue;
@@ -529,435 +729,3 @@ public class SelectionManager : MonoBehaviour
 }
 
 
-
-
-// using System.Collections.Generic;
-// using UnityEngine;
-// using UnityEngine.EventSystems;
-//
-// public class SelectionManager : MonoBehaviour
-// {
-//     public static SelectionManager Instance { get; private set; }
-//
-//     [SerializeField] private LayerMask selectableLayers;
-//     private List<ISelectable> selectedObjects = new List<ISelectable>();
-//     private List<ISelectable> allSelectables = new List<ISelectable>();
-//     private Camera mainCamera;
-//
-//     // Drag select
-//     private Vector2 dragStart;
-//     private bool isDragging = false;
-//     private Texture2D boxTexture;
-//     [SerializeField] private float dragThreshold = 5f;
-//
-//     // Double click
-//     private readonly float doubleClickTime = 0.3f;
-//     private float lastClickTime = 0f;
-//     private ISelectable lastClicked = null;
-//
-//     // Placement mode
-//     private bool isPlacingBuilding = false;
-//
-//     // Hover
-//     private EntityStats hoveredES = null;
-//
-//     #region Unity Lifecycle
-//     void Awake()
-//     {
-//         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-//         Instance = this;
-//
-//         boxTexture = new Texture2D(1, 1);
-//         boxTexture.SetPixel(0, 0, new Color(0.6f, 0.8f, 1f, 0.25f));
-//         boxTexture.Apply();
-//     }
-//
-//     void Start()
-//     {
-//         mainCamera = Camera.main;
-//         GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
-//     }
-//
-//     void OnDestroy()
-//     {
-//         GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
-//     }
-//
-//     void Update()
-//     {
-//         HandleSelectionInput();
-//         HandleHover();
-//     }
-//     #endregion
-//
-//     #region Registration
-//     public void RegisterSelectable(ISelectable selectable)
-//     {
-//         allSelectables.Add(selectable);
-//     }
-//
-//     public void UnregisterSelectable(ISelectable selectable)
-//     {
-//         // Called by EntityStats.Die() — cleans all lists and fires SelectionChanged
-//         selectable.OnDeselect();
-//         selectedObjects.Remove(selectable);
-//         allSelectables.Remove(selectable);
-//         // SESSION: Squad Control
-//         // ControlGroupManager.Instance.RemoveFromGroup(selectable); // Move to another class later
-//         GameEvents.SelectionChanged();
-//     }
-//     #endregion
-//
-//     
-//     // SESSION: Squad Control
-//     ISelectable ResolveSelectable(ISelectable selectable)
-//     {
-//         if (selectable == null) return null;
-//
-//         GameObject go = selectable.GetGameObject();
-//         if (go == null) return null;
-//
-//         // If clicking a squad member, select the squad instead.
-//         if (go.TryGetComponent(out SquadMemberController member) &&
-//             member.Squad != null)
-//         {
-//             return member.Squad;
-//         }
-//
-//         return selectable;
-//     }
-//     
-//     
-//     #region Hover
-//     void HandleHover()
-//     {
-//         Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-//
-//         if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
-//         {
-//             EntityStats entity = hit.collider.GetComponentInParent<EntityStats>();
-//
-//             if (entity != hoveredES)
-//             {
-//                 // Only hide previous if it isn't selected — selected units keep their health bar
-//                 if (hoveredES != null && hoveredES.HealthBar != null && !hoveredES.HealthBar.IsSelected)
-//                     hoveredES.HealthBar.Hide();
-//
-//                 hoveredES = entity;
-//                 if (hoveredES != null && hoveredES.HealthBar != null)
-//                     hoveredES.HealthBar.Show();
-//             }
-//         }
-//         else if (hoveredES != null)
-//         {
-//             if (hoveredES.HealthBar != null && !hoveredES.HealthBar.IsSelected)
-//                 hoveredES.HealthBar.Hide();
-//             hoveredES = null;
-//         }
-//     }
-//     #endregion
-//
-//     #region Selection Input
-//     void HandleSelectionInput()
-//     {
-//         if (isPlacingBuilding) return;
-//
-//         if (Input.GetKeyDown(KeyCode.Escape))
-//         {
-//             DeselectAll();
-//             return;
-//         }
-//
-//         // Record drag start position on mouse down
-//         if (Input.GetMouseButtonDown(0))
-//         {
-//             if (EventSystem.current.IsPointerOverGameObject()) return;
-//             dragStart = Input.mousePosition;
-//         }
-//
-//         // Check if mouse has moved enough to start a drag
-//         if (Input.GetMouseButton(0))
-//         {
-//             if (EventSystem.current.IsPointerOverGameObject()) return;
-//             if (Vector2.Distance(dragStart, Input.mousePosition) > dragThreshold)
-//                 isDragging = true;
-//         }
-//
-//         if (Input.GetMouseButtonUp(0))
-//         {
-//             if (isDragging)
-//                 HandleDragSelect();
-//             else if (!EventSystem.current.IsPointerOverGameObject())
-//                 HandleClickSelect();
-//
-//             isDragging = false;
-//         }
-//     }
-//
-//     void HandleClickSelect()
-//     {
-//         Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-//
-//         if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, selectableLayers))
-//         {
-//             // if (hit.collider.TryGetComponent(out ISelectable selectable))
-//             // {
-//             //     bool isDoubleClick = (Time.time - lastClickTime) < doubleClickTime &&
-//             //                          lastClicked == selectable;
-//
-//             // SESSION: Squad Control
-//             if (hit.collider.TryGetComponent(out ISelectable rawSelectable))
-//             {
-//                 ISelectable selectable = ResolveSelectable(rawSelectable);
-//                 if (selectable == null) return;
-//
-//                 bool isDoubleClick = (Time.time - lastClickTime) < doubleClickTime &&
-//                                      lastClicked == selectable;
-//                 
-//                 if (isDoubleClick)
-//                     SelectSameTypeInRange(selectable);
-//                 else if (Input.GetKey(KeyCode.LeftShift))
-//                 {
-//                     // Shift click — toggle this selectable in current selection
-//                     if (selectedObjects.Contains(selectable))
-//                         Deselect(selectable);
-//                     else
-//                         Select(selectable);
-//                 }
-//                 else
-//                 {
-//                     // Normal click — clear and select
-//                     DeselectAll();
-//                     Select(selectable);
-//                 }
-//
-//                 lastClickTime = Time.time;
-//                 lastClicked = selectable;
-//             }
-//             else
-//             {
-//                 if (!Input.GetKey(KeyCode.LeftShift))
-//                     DeselectAll();
-//             }
-//         }
-//         else
-//         {
-//             if (!Input.GetKey(KeyCode.LeftShift))
-//                 DeselectAll();
-//         }
-//     }
-//
-//     void HandleDragSelect()
-//     {
-//         if (!Input.GetKey(KeyCode.LeftShift))
-//             DeselectAll();
-//
-//         Rect selectionRect = GetScreenRectRaw(dragStart, Input.mousePosition);
-//
-//         // Select all selectables whose screen position falls inside the drag rect
-//         // foreach (ISelectable selectable in allSelectables)
-//         // {
-//         //     Vector3 screenPos = mainCamera.WorldToScreenPoint(
-//         //         selectable.GetGameObject().transform.position);
-//         //     if (screenPos.z > 0 && selectionRect.Contains(screenPos, true) &&
-//         //         selectable.IsDragSelectable)
-//         //         Select(selectable);
-//         // }
-//         
-//         // SESSION: Squad Control
-//         foreach (ISelectable rawSelectable in allSelectables)
-//         {
-//             ISelectable selectable = ResolveSelectable(rawSelectable);
-//             if (selectable == null) continue;
-//             if (!selectable.IsDragSelectable) continue;
-//
-//             Vector3 screenPos = mainCamera.WorldToScreenPoint(
-//                 rawSelectable.GetGameObject().transform.position);
-//
-//             if (screenPos.z > 0 && selectionRect.Contains(screenPos, true))
-//                 Select(selectable);
-//         }
-//     }
-//
-//     void SelectSameTypeInRange(ISelectable selectable)
-//     {
-//         if (!selectable.GetGameObject().TryGetComponent(out EntityStats stats)) return;
-//         
-//         // SESSION: Squad Control
-//         selectable = ResolveSelectable(selectable);
-//         if (selectable == null) return;
-//
-//         if (selectable is SquadController)
-//         {
-//             DeselectAll();
-//             Select(selectable);
-//             return;
-//         }
-//
-//         DeselectAll();
-//
-//         // Units — select same UnitType within range
-//         if (stats.baseData.entityType == EntityType.Unit)
-//         {
-//             UnitType unitType = stats.baseData.unitType;
-//             float range = 20f;
-//
-//             foreach (ISelectable other in allSelectables)
-//             {
-//                 if (!other.GetGameObject().TryGetComponent(out EntityStats otherStats)) continue;
-//                 if (otherStats.baseData.unitType != unitType) continue;
-//                 if (Calc.OutOfRange(selectable.GetGameObject().transform.position,
-//                         other.GetGameObject().transform.position, range)) continue;
-//                 Select(other);
-//             }
-//         }
-//         // Buildings — select same BuildingType within range
-//         else if (stats.baseData.entityType == EntityType.Building)
-//         {
-//             BuildingType buildingType = stats.baseData.buildingType;
-//             float range = 40f;
-//
-//             foreach (ISelectable other in allSelectables)
-//             {
-//                 if (!other.GetGameObject().TryGetComponent(out EntityStats otherStats)) continue;
-//                 if (otherStats.baseData.buildingType != buildingType) continue;
-//                 if (Calc.OutOfRange(selectable.GetGameObject().transform.position,
-//                         other.GetGameObject().transform.position, range)) continue;
-//                 Select(other);
-//             }
-//         }
-//     }
-//     #endregion
-//
-//     
-//     #region Select / Deselect
-//     void Select(ISelectable selectable)
-//     {
-//         if (selectedObjects.Contains(selectable)) return;
-//
-//         // Mixed selection prevention — units and buildings can't be selected together
-//         // Every selection path — click, drag, shift click, double click — goes through here
-//         if (selectedObjects.Count > 0)
-//         {
-//             // bool incomingIsUnit = selectable.GetGameObject().TryGetComponent(out UnitController _);
-//             // bool existingIsUnit = selectedObjects[0].GetGameObject().TryGetComponent(out UnitController _);
-//             //
-//             // if (incomingIsUnit != existingIsUnit)
-//             //     DeselectAll();
-//             
-//             // SESSION: Squad Control
-//             SelectionKind incomingKind = GetSelectionKind(selectable);
-//             SelectionKind existingKind = GetSelectionKind(selectedObjects[0]);
-//
-//             if (incomingKind != existingKind)
-//                 DeselectAll();
-//         }
-//
-//         selectedObjects.Add(selectable);
-//         selectable.OnSelect();
-//         GameEvents.SelectionChanged();
-//     }
-//
-//     /// External selection entry point — used by ControlGroupManager
-//     public void SelectExternal(ISelectable selectable) => Select(selectable);
-//
-//     void Deselect(ISelectable selectable)
-//     {
-//         selectedObjects.Remove(selectable);
-//         selectable.OnDeselect();
-//         GameEvents.SelectionChanged();
-//     }
-//
-//     public void DeselectAll()
-//     {
-//         foreach (ISelectable selectable in selectedObjects)
-//             selectable.OnDeselect();
-//         selectedObjects.Clear();
-//         GameEvents.Deselected();
-//         GameEvents.SelectionChanged();
-//     }
-//     #endregion
-//
-//     #region Getters
-//     public List<ISelectable> GetSelectedObjects() => selectedObjects;
-//     #endregion
-//
-//     #region Rect / GUI
-//     // Raw screen rect — no Y flip, used for Contains checks
-//     Rect GetScreenRectRaw(Vector2 start, Vector2 end)
-//     {
-//         return Rect.MinMaxRect(
-//             Mathf.Min(start.x, end.x),
-//             Mathf.Min(start.y, end.y),
-//             Mathf.Max(start.x, end.x),
-//             Mathf.Max(start.y, end.y)
-//         );
-//     }
-//
-//     // Flipped Y rect — used for GUI.DrawTexture only
-//     Rect GetScreenRectGUI(Vector2 start, Vector2 end)
-//     {
-//         Vector2 s = new Vector2(start.x, Screen.height - start.y);
-//         Vector2 e = new Vector2(end.x, Screen.height - end.y);
-//         return Rect.MinMaxRect(
-//             Mathf.Min(s.x, e.x),
-//             Mathf.Min(s.y, e.y),
-//             Mathf.Max(s.x, e.x),
-//             Mathf.Max(s.y, e.y)
-//         );
-//     }
-//
-//     void OnGUI()
-//     {
-//         if (!isDragging) return;
-//         Rect screenRect = GetScreenRectGUI(dragStart, Input.mousePosition);
-//         GUI.DrawTexture(screenRect, boxTexture);
-//     }
-//     #endregion
-//
-//     #region Placement Mode
-//     void HandlePlacementModeChanged(bool isPlacing)
-//     {
-//         isPlacingBuilding = isPlacing;
-//         if (!isPlacingBuilding)
-//         {
-//             // Reset drag state when placement ends to prevent phantom drag box
-//             isDragging = false;
-//             dragStart = Input.mousePosition;
-//         }
-//     }
-//     #endregion
-//     
-//     
-//     
-//     
-//     enum SelectionKind
-//     {
-//         None,
-//         Unit,
-//         Building,
-//         Squad
-//     }
-//
-//     SelectionKind GetSelectionKind(ISelectable selectable)
-//     {
-//         if (selectable == null || selectable.GetGameObject() == null)
-//             return SelectionKind.None;
-//
-//         GameObject go = selectable.GetGameObject();
-//
-//         if (go.TryGetComponent(out SquadController _))
-//             return SelectionKind.Squad;
-//
-//         if (go.TryGetComponent(out BuildingController _))
-//             return SelectionKind.Building;
-//
-//         if (go.TryGetComponent(out UnitController _))
-//             return SelectionKind.Unit;
-//
-//         return SelectionKind.None;
-//     }
-//     
-//     
-//     
-// }

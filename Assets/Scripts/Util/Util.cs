@@ -98,3 +98,26 @@ public static class Calc
         return sorted;
     }
 }
+
+
+public static class Verify
+{
+    public static bool IsNull(object obj, string label = "Object", Object context = null)
+    {
+        bool isNull = obj == null;
+
+        // Unity "fake null" check for destroyed UnityEngine.Objects.
+        if (!isNull && obj is Object unityObject)
+            isNull = unityObject == null;
+
+        if (isNull)
+            Debug.LogWarning($"{label} is null.", context);
+
+        return isNull;
+    }
+
+    public static bool NotNull(object obj, string label = "Object", Object context = null)
+    {
+        return !IsNull(obj, label, context);
+    }
+}

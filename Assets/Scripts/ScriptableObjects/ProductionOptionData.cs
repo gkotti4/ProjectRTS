@@ -13,20 +13,12 @@ public class ProductionOptionData : ScriptableObject
     
     public ProductionType productionType; // Unit or Upgrade 
 
-    [Header("Squad (Military)")] // Military
-    public bool producesSquad;
-    public GameObject squadPrefab;
-    public GameObject memberPrefab;
-    public int squadMemberCount = 1;
-    public SquadFormation startingFormation = SquadFormation.Line;
-    public CombatStance startingStance = CombatStance.Aggressive;
+    [Header("Squad Production")] // Military
+    public SquadData squadData;
     
-    // Unit Production
     [Header("Unit Production")]
-    public GameObject prefab;
-    //public UnitType unitType;
+    public UnitController unitPrefab; // just for villagers for now
     
-    // Upgrade Production
     [Header("Upgrade Production")]
     public UpgradeData upgradeData;
     

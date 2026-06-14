@@ -42,12 +42,13 @@ public class QueuePanelUI : MonoBehaviour
 
     public void HidePanel() 
     {
-        currentBuilding = null; // CHECK - undid to get 
+        currentBuilding = null; // check?
+        if (slots.Count <= 0) return;
         foreach (QueueButtonUI slot in slots)
         {
+            if (slot == null) Debug.LogError(slot.gameObject.name + "is null");
             slot.gameObject.SetActive(false);
         }
-        //Debug.Log("Hiding queue");
     }
     
     public void Refresh() // Refreshes all queue slots from current building queue

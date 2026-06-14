@@ -43,6 +43,28 @@ public abstract class EntityController : MonoBehaviour, ISelectable, IDamageable
         if (gameObject == null) return null;
         return gameObject;
     }
+    
+    public virtual void OnHoverEnter()
+    {
+        if (selectionDecal != null)
+            selectionDecal.enabled = true;
+
+        if (healthBar != null)
+            healthBar.Show();
+    }
+
+    public virtual void OnHoverExit()
+    {
+        // Do not remove selected visuals just because hover ended.
+        if (isSelected)
+            return;
+
+        if (selectionDecal != null)
+            selectionDecal.enabled = false;
+
+        if (healthBar != null && !healthBar.IsSelected)
+            healthBar.Hide();
+    }
 
     protected virtual void Awake()
     {

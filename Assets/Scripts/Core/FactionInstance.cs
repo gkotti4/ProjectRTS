@@ -97,13 +97,13 @@ public class FactionInstance
     
     
     // Population
-    public bool CanSpawn() => currentPopulation < populationCap;
+    public bool CanSpawn(int count = 1) => currentPopulation + count < populationCap;
     
     // Entities
     public void RegisterEntity(EntityStats stats)
     {
         ownedEntities.Add(stats);
-        if (stats.baseData.entityType == EntityType.Unit) // Only change pop for units
+        if (stats.baseDetails.entityType == EntityType.Unit) // Only change pop for units
         {
             currentPopulation++;
             GameEvents.PopulationChanged(stats.faction);
@@ -117,7 +117,7 @@ public class FactionInstance
     public void UnregisterEntity(EntityStats stats)
     {
         ownedEntities.Remove(stats);
-        if (stats.baseData.entityType == EntityType.Unit) // Only change pop for units
+        if (stats.baseDetails.entityType == EntityType.Unit) // Only change pop for units
         {
             currentPopulation--;
             GameEvents.PopulationChanged(stats.faction);

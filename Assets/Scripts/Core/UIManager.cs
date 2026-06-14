@@ -116,15 +116,17 @@ public class UIManager : MonoBehaviour
 
         if (selectable.GetGameObject().TryGetComponent(out VillagerController villager))
         {
-            ShowUnitPanel(villager);
+            // ShowUnitPanel DEPRECIATED
+            ShowVillagerPanel(villager);
             return true;
         }
 
-        if (selectable.GetGameObject().TryGetComponent(out UnitController unit))
-        {
-            ShowUnitPanel(unit);
-            return true;
-        }
+        // REFACTOR: Only Squad (military) and Villager selection (not using general Unit anymore)
+        // if (selectable.GetGameObject().TryGetComponent(out UnitController unit))
+        // {
+        //     ShowUnitPanel(unit);
+        //     return true;
+        // }
 
         return false;
     }
@@ -137,15 +139,21 @@ public class UIManager : MonoBehaviour
             return true;
         }
 
-        if (AllSquads(selected, out SquadController firstSquad))
+        if (AllSquadType(selected, out SquadController firstSquad))
         {
             ShowSquadPanel(firstSquad);
             return true;
         }
 
-        if (AllSameUnitType(selected, out UnitController firstUnit))
+        // if (AllSameUnitType(selected, out UnitController firstUnit)) // DEPRECIATED
+        // {
+        //     ShowUnitPanel(firstUnit);
+        //     return true;
+        // }
+
+        if (AllSameVillagerType(selected, out VillagerController firstVillager))
         {
-            ShowUnitPanel(firstUnit);
+            ShowVillagerPanel(firstVillager);
             return true;
         }
 
@@ -170,12 +178,20 @@ public class UIManager : MonoBehaviour
         queuePanelUI.HidePanel();
     }
 
-    void ShowUnitPanel(UnitController unit)
+    // void ShowUnitPanel(UnitController unit) // DEPRECIATED: Replacing with Villager specific panel (Squad panel (military) and Villager panel, rather than Unit)
+    // {
+    //     HideAllPanels();
+    //
+    //     actionPanelUI.ShowUnitPanel(unit);
+    //     queuePanelUI.HidePanel();
+    // }
+
+    void ShowVillagerPanel(VillagerController villager)
     {
         HideAllPanels();
-
-        actionPanelUI.ShowUnitPanel(unit);
-        queuePanelUI.HidePanel();
+        
+        actionPanelUI.ShowVillagerPanel(villager);
+        queuePanelUI.HidePanel(); 
     }
 
     void ShowSquadPanel(SquadController squad)
@@ -202,19 +218,50 @@ public class UIManager : MonoBehaviour
 
             if (type == BuildingType.None)
             {
-                type = building.Stats.baseData.buildingType;
+                type = building.Stats.baseDetails.buildingType;
                 first = building;
                 continue;
             }
 
-            if (building.Stats.baseData.buildingType != type)
+            if (building.Stats.baseDetails.buildingType != type)
                 return false;
         }
 
         return first != null;
     }
 
-    bool AllSameUnitType(List<ISelectable> selected, out UnitController first)
+    // bool AllSameUnitType(List<ISelectable> selected, out UnitController first) // DEPRECIATED: Moving to Villager specific
+    // {
+    //     first = null;
+    //     UnitType type = UnitType.None;
+    //
+    //     foreach (ISelectable selectable in selected)
+    //     {
+    //         if (selectable == null || selectable.GetGameObject() == null)
+    //             return false;
+    //
+    //         // Do not treat squads as units.
+    //         if (selectable is SquadController)
+    //             return false;
+    //
+    //         if (!selectable.GetGameObject().TryGetComponent(out UnitController unit))
+    //             return false;
+    //
+    //         if (type == UnitType.None)
+    //         {
+    //             type = unit.Stats.baseData.unitType;
+    //             first = unit;
+    //             continue;
+    //         }
+    //
+    //         if (unit.Stats.baseData.unitType != type)
+    //             return false;
+    //     }
+    //
+    //     return first != null;
+    // }
+    
+    bool AllSameVillagerType(List<ISelectable> selected, out VillagerController first)
     {
         first = null;
         UnitType type = UnitType.None;
@@ -224,28 +271,24 @@ public class UIManager : MonoBehaviour
             if (selectable == null || selectable.GetGameObject() == null)
                 return false;
 
-            // Do not treat squads as units.
-            if (selectable is SquadController)
-                return false;
-
-            if (!selectable.GetGameObject().TryGetComponent(out UnitController unit))
+            if (!selectable.GetGameObject().TryGetComponent(out VillagerController villager))
                 return false;
 
             if (type == UnitType.None)
             {
-                type = unit.Stats.baseData.unitType;
-                first = unit;
+                type = villager.Stats.baseDetails.unitType;
+                first = villager;
                 continue;
             }
 
-            if (unit.Stats.baseData.unitType != type)
+            if (villager.Stats.baseDetails.unitType != type)
                 return false;
         }
 
         return first != null;
     }
 
-    bool AllSquads(List<ISelectable> selected, out SquadController first)
+    bool AllSquadType(List<ISelectable> selected, out SquadController first)
     {
         first = null;
 
@@ -294,9 +337,9 @@ public class UIManager : MonoBehaviour
 
     #region Build Submenu
 
-    public void ShowActionPanelBuildSubmenu(UnitController unit)
+    public void ShowActionPanelBuildSubmenu(VillagerController villager)
     {
-        actionPanelUI.ShowBuildPanel(unit);
+        actionPanelUI.ShowBuildPanel(villager);
         PlayerInputHandler.Instance.SetBuildSubmenuActive(true);
     }
 
@@ -309,192 +352,3 @@ public class UIManager : MonoBehaviour
     #endregion
 }
 
-
-// using System.Collections.Generic;
-// using UnityEngine;
-//
-// public class UIManager : MonoBehaviour
-// {
-//     public static UIManager Instance { get; private set; }
-//
-//     [Header("Cursor")]
-//     [SerializeField] private Texture2D defaultCursor;
-//
-//     [Header("Panels")]
-//     [SerializeField] private ActionPanelUI actionPanelUI;
-//     [SerializeField] private QueuePanelUI queuePanelUI;
-//
-//     void Awake()
-//     {
-//         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-//         Instance = this;
-//     }
-//
-//     void Start()
-//     {
-//         SetCursor(defaultCursor);
-//         GameEvents.OnSelectionChanged += HandleSelectionChanged;
-//         GameEvents.OnPlacementModeChanged += HandlePlacementModeChanged;
-//         GameEvents.OnProductionQueueChanged += HandleProductionQueueChanged;
-//     }
-//
-//     void OnDestroy()
-//     {
-//         GameEvents.OnSelectionChanged -= HandleSelectionChanged;
-//         GameEvents.OnProductionQueueChanged -= HandleProductionQueueChanged;
-//         GameEvents.OnPlacementModeChanged -= HandlePlacementModeChanged;
-//     }
-//
-//     // Cursor
-//     public void SetCursor(Texture2D cursor, Vector2 hotspot = default)
-//     {
-//         Cursor.SetCursor(cursor, hotspot, CursorMode.Auto);
-//     }
-//
-//     public void SetDefaultCursor() => SetCursor(defaultCursor);
-//
-//     void HandlePlacementModeChanged(bool isPlacing)
-//     {
-//         Cursor.visible = !isPlacing;
-//         if (!isPlacing)
-//         {
-//             SetDefaultCursor();
-//             ExitBuildSubmenu();
-//         }
-//     }
-//
-//     // Selection routing
-//     void HandleSelectionChanged()
-//     {
-//         List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
-//
-//         if (selected.Count == 0) { HideAllPanels(); return; }
-//
-//         // Single selection
-//         if (selected.Count == 1)
-//         {
-//             if (selected[0] is BuildingController building)
-//             {
-//                 HideAllPanels();
-//                 actionPanelUI.ShowProductionPanel(building);
-//                 queuePanelUI.ShowPanel(building);
-//                 return;
-//             }
-//
-//             if (selected[0] is UnitController unit)
-//             {
-//                 HideAllPanels();
-//                 actionPanelUI.ShowUnitPanel(unit);
-//                 return;
-//             }
-//
-//         }
-//         
-//         // Multiple selection - check if all same type
-//         // Multiple buildings - same type
-//         if (AllSameBuildingType(selected, out BuildingController firstBuilding))
-//         {
-//             HideAllPanels();
-//             actionPanelUI.ShowProductionPanel(firstBuilding); // use first as template
-//             // no queue panel for multi-select
-//             return;
-//         }
-//         
-//         // Multiple units - same type
-//         if (AllSameUnitType(selected, out UnitController firstUnit))
-//         {
-//             HideAllPanels();
-//             actionPanelUI.ShowUnitPanel(firstUnit); // use first as template
-//             return;
-//         }
-//         
-//         // Mixed unit types
-//         // if (AllUnits(selected, out UnitController anyUnit))
-//         // {
-//         //     HideAllPanels();
-//         //     actionPanelUI.ShowSharedUnitCommands(anyUnit);
-//         //     return;
-//         // }
-//         
-//         HideAllPanels();
-//     }
-//
-//     bool AllSameBuildingType(List<ISelectable> selected, out BuildingController first)
-//     {
-//         first = null;
-//         BuildingType type = BuildingType.None;
-//
-//         foreach (ISelectable s in selected)
-//         {
-//             if (s is not BuildingController bc) return false;
-//             if (type == BuildingType.None)
-//             {
-//                 type = bc.Stats.baseData.buildingType;
-//                 first = bc;
-//             }
-//             else if (bc.Stats.baseData.buildingType != type) return false;
-//         }
-//
-//         return first != null;
-//     }
-//
-//     bool AllSameUnitType(List<ISelectable> selected, out UnitController first)
-//     {
-//         first = null;
-//         UnitType type = UnitType.None;
-//
-//         foreach (ISelectable s in selected)
-//         {
-//             if (s is not UnitController uc) return false;
-//             if (type == UnitType.None)
-//             {
-//                 type = uc.Stats.baseData.unitType;
-//                 first = uc;
-//             }
-//             else if (uc.Stats.baseData.unitType != type) return false;
-//         }
-//
-//         return first != null;
-//     }
-//     
-//     bool AllUnits(List<ISelectable> selected, out UnitController first)
-//     {
-//         first = null;
-//         foreach (ISelectable s in selected)
-//         {
-//             if (s is not UnitController uc) return false;
-//             first ??= uc;
-//         }
-//         return first != null;
-//     }
-//     // Listens to production changes — only refreshes if firing building is selected
-//     void HandleProductionQueueChanged(BuildingController building)
-//     {
-//         List<ISelectable> selected = SelectionManager.Instance.GetSelectedObjects();
-//         if (selected.Count == 1 && selected[0] is BuildingController selectedBuilding
-//             && selectedBuilding == building)
-//         {
-//             queuePanelUI.Refresh();
-//         }
-//     }
-//
-//     void HideAllPanels()
-//     {
-//         actionPanelUI.HidePanel();
-//         queuePanelUI.HidePanel();
-//     }
-//
-//     // Build submenu
-//     // TODO: Replace with event if more systems need to react to build submenu state
-//     public void ShowActionPanelBuildSubmenu(UnitController unit)
-//     {
-//         actionPanelUI.ShowBuildPanel(unit);
-//         PlayerInputHandler.Instance.SetBuildSubmenuActive(true);
-//     }
-//
-//     public void ExitBuildSubmenu()
-//     {
-//         actionPanelUI.ExitBuildPanel();
-//         PlayerInputHandler.Instance.SetBuildSubmenuActive(false);
-//     }
-// }

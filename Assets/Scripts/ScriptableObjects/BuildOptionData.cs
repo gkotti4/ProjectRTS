@@ -5,7 +5,8 @@ using UnityEngine.Serialization;
 public class BuildOptionData : ScriptableObject
 {
     public string buildingName = "Building";
-    public EntityData buildingData;
+    [FormerlySerializedAs("buildingData")] public EntityDetails buildingDetails;
+    public BuildingController buildingPrefab; 
     public Sprite icon;
     public HotkeySlot hotkey = HotkeySlot.None;
     public ResourceCost cost;
