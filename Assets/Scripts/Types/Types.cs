@@ -106,7 +106,9 @@ public enum SquadState
 {
     Idle,
     Moving,
-    InCombat
+    InCombat,
+    AttackMoving,
+    Routing
 }
 
 public enum SquadMoveMode

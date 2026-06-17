@@ -291,11 +291,39 @@ public class SquadMemberController : MonoBehaviour
 
         if (!Calc.WithinRange(transform.position, attackTarget.transform.position, range))
         {
+            SquadStance stance = Squad != null
+                ? Squad.Stance
+                : SquadStance.Aggressive;
+
+            if (stance == SquadStance.NoAttack)
+            {
+                ClearAttackTarget();
+                Stop();
+                return;
+            }
+
+            if (stance == SquadStance.StandGround)
+            {
+                ClearAttackTarget();
+                Stop();
+                return;
+            }
+
+            if (stance == SquadStance.Defensive &&
+                Squad != null &&
+                !Squad.CanMemberChaseTarget(this, attackTarget))
+            {
+                ClearAttackTarget();
+                Stop();
+                return;
+            }
+
             MoveToPoint(attackTarget.transform.position, range * 0.85f);
             return;
         }
 
         Stop();
+        RotateTowardTarget(attackTarget.transform.position);
 
         if (attackTimer <= 0f)
             PerformAttack();
@@ -339,147 +367,25 @@ public class SquadMemberController : MonoBehaviour
             rotationSpeed * Time.deltaTime);
     }
 
+    void RotateTowardTarget(Vector3 targetPosition)
+    {
+        Vector3 dir = targetPosition - transform.position;
+        dir.y = 0f;
+
+        if (dir == Vector3.zero)
+            return;
+
+        Quaternion targetRotation = Quaternion.LookRotation(
+            dir.normalized,
+            Vector3.up);
+
+        transform.rotation = Quaternion.RotateTowards(
+            transform.rotation,
+            targetRotation,
+            rotationSpeed * Time.deltaTime);
+    }
     #endregion
+    
+    
 }
 
-
-// // SESSION: Squad Control
-//
-// using UnityEngine;
-// using UnityEngine.AI;
-//
-// [RequireComponent(typeof(MilitaryController))]
-// [RequireComponent(typeof(NavMeshAgent))]
-//
-//
-// public class SquadMemberController : MonoBehaviour
-// {
-//     public SquadController Squad { get; private set; }
-//     public MilitaryController Unit { get; private set; }
-//     public EntityStats Stats => Unit != null ? Unit.Stats : null;
-//     public NavMeshAgent Agent { get; private set; }
-//
-//     public int SlotIndex { get; private set; } = -1;
-//     public Vector3 LastSlotPosition { get; private set; }
-//
-//     public bool IsInSquad => Squad != null;
-//
-//     [SerializeField] private float rotationSpeed = 900f;
-//
-//     
-//     void Awake()
-//     {
-//         Unit = GetComponent<MilitaryController>();
-//         Agent = GetComponent<NavMeshAgent>();
-//     }
-//     
-//
-//     void OnDestroy()
-//     {
-//         if (Squad != null)
-//             Squad.RemoveMember(this);
-//     }
-//     
-//     
-//     void Update()
-//     {
-//         if (!IsInSquad) return;
-//         RotateTowardVelocity();
-//     }
-//     
-//
-//     public void JoinSquad(SquadController squad, int slotIndex)
-//     {
-//         Squad = squad;
-//         SlotIndex = slotIndex;
-//         LastSlotPosition = transform.position;
-//
-//         // SESSION: Squad Control
-//         // Members are logically owned by the squad but must stay unparented in world space.
-//         // This prevents parent movement + member NavMeshAgent movement from double-applying.
-//         transform.SetParent(null, true);
-//
-//         if (Unit != null)
-//         {
-//             Unit.SetSquadMember(this);
-//             Unit.enabled = false;
-//         }
-//     }
-//     
-//
-//     public void LeaveSquad()
-//     {
-//         Squad = null;
-//         SlotIndex = -1;
-//
-//         if (Unit != null)
-//         {
-//             Unit.ClearSquadMember(this);
-//             Unit.enabled = true;
-//         }
-//     }
-//
-//     
-//     public void SetSlotIndex(int slotIndex)
-//     {
-//         SlotIndex = slotIndex;
-//     }
-//
-//     
-//     public void MoveToSlot(Vector3 slotPosition, float updateThreshold, float stoppingDistance = 0.1f)
-//     {
-//         if (Agent == null || !Agent.enabled) return;
-//
-//         if (!Calc.OutOfRange(LastSlotPosition, slotPosition, updateThreshold))
-//             return;
-//
-//         MoveToPoint(slotPosition, stoppingDistance);
-//         LastSlotPosition = slotPosition;
-//     }
-//
-//     
-//     public void MoveToPoint(Vector3 position, float stoppingDistance = 0.1f)
-//     {
-//         if (Agent == null || !Agent.enabled) return;
-//
-//         Agent.speed = Stats != null ? Stats.moveSpeed : Agent.speed;
-//         Agent.stoppingDistance = stoppingDistance;
-//         Agent.SetDestination(position);
-//     }
-//
-//     
-//     public void Stop()
-//     {
-//         if (Agent == null || !Agent.enabled) return;
-//         Agent.ResetPath();
-//     }
-//
-//     
-//     public bool IsNear(Vector3 position, float range)
-//     {
-//         return Calc.WithinRange(transform.position, position, range);
-//     }
-//     
-//     
-//     void RotateTowardVelocity()
-//     {
-//         if (Agent == null) return;
-//         if (Agent.velocity.sqrMagnitude < 0.1f) return;
-//
-//         Vector3 dir = Agent.velocity;
-//         dir.y = 0f;
-//         if (dir == Vector3.zero) return;
-//
-//         Quaternion targetRot = Quaternion.LookRotation(dir.normalized, Vector3.up);
-//
-//         transform.rotation = Quaternion.RotateTowards(
-//             transform.rotation,
-//             targetRot,
-//             rotationSpeed * Time.deltaTime);
-//     }
-//
-//     
-//
-//     
-//     
-// }

@@ -122,7 +122,6 @@ public class ActionButtonUI : MonoBehaviour
         SquadController squad)
     {
         Clear();
-        Debug.Log("InitializeFromSquadCommand");
         if (!command || !squad)
             return;
 

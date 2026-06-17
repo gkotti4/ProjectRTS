@@ -218,7 +218,9 @@ public class PlayerInputHandler : MonoBehaviour
                 isDragOrdering = true;
             }
 
-            if (isDragOrdering)
+            if (Input.GetKey(KeyCode.LeftAlt) && isDragOrdering) // NEW: alt drag
+                UpdateDragSquadPreview(true);
+            else 
                 UpdateDragSquadPreview();
         }
 
@@ -276,26 +278,36 @@ public class PlayerInputHandler : MonoBehaviour
         // Villagers keep normal right-click behavior.
     }
 
+    #region Squad Right Click
+    
     void HandleSquadRightClick(List<SquadController> squads, RaycastHit hit)
     {
-        bool hitEnemy = hit.collider.TryGetComponent(out EntityController hitEntity) &&
-                        IsEnemyToSquads(squads, hitEntity);
+        if (squads == null || squads.Count == 0)
+            return;
 
-        if (hitEnemy)
+        if (TryResolveEnemySquadFromHit(squads, hit, out SquadController enemySquad))
         {
             foreach (SquadController squad in squads)
-                squad.OrderAttack(hitEntity);
+            {
+                if (squad == null) continue;
+                squad.OrderAttackSquad(enemySquad);
+            }
 
             return;
         }
 
-        Vector3 groupFacing = ResolveFacingForSquads(squads, hit.point);
-
-        for (int i = 0; i < squads.Count; i++)
+        if (TryResolveEnemyEntityFromHit(squads, hit, out EntityController enemyEntity))
         {
-            Vector3 offset = GetSquadMoveOffset(i, squads.Count, groupFacing);
-            squads[i].OrderMove(hit.point + offset);
+            foreach (SquadController squad in squads)
+            {
+                if (squad == null) continue;
+                squad.OrderAttackEntity(enemyEntity);
+            }
+
+            return;
         }
+
+        MoveSquadsToPoint(squads, hit.point);
     }
 
     void HandleSquadDragRightClick(List<SquadController> squads)
@@ -308,7 +320,10 @@ public class PlayerInputHandler : MonoBehaviour
 
         Vector3 destination = startHit.point;
         Vector3 facing = Calc.DirectionFlat(startHit.point, endHit.point);
-        float width = Calc.RealDistance(startHit.point, endHit.point);
+
+        float width = -1F; // NEW: alt drag
+        if (Input.GetKey(KeyCode.LeftAlt)) // NEW: fix for no Alt-Drag
+            width = Calc.RealDistance(startHit.point, endHit.point);
 
         if (facing == Vector3.zero)
             facing = ResolveFacingForSquads(squads, destination);
@@ -320,7 +335,7 @@ public class PlayerInputHandler : MonoBehaviour
         }
     }
 
-    void UpdateDragSquadPreview()
+    void UpdateDragSquadPreview(bool isHoldingAlt = false)
     {
         List<SquadController> squads = GetCurrentSelectedSquads();
         if (squads.Count == 0) return;
@@ -333,7 +348,10 @@ public class PlayerInputHandler : MonoBehaviour
 
         Vector3 destination = startHit.point;
         Vector3 facing = Calc.DirectionFlat(startHit.point, endHit.point);
-        float width = Calc.RealDistance(startHit.point, endHit.point);
+
+        float width = -1F; // NEW: alt drag
+        if (isHoldingAlt) // NEW: alt drag
+            width = Calc.RealDistance(startHit.point, endHit.point);
 
         if (facing == Vector3.zero)
             facing = ResolveFacingForSquads(squads, destination);
@@ -353,7 +371,6 @@ public class PlayerInputHandler : MonoBehaviour
 
         FormationVisualizer.Instance?.ShowSlots(previewSlots, persistent: true);
     }
-
     #endregion
 
     #region Unit Right Click
@@ -389,6 +406,8 @@ public class PlayerInputHandler : MonoBehaviour
     }
 
     #endregion
+    #endregion
+
 
     #region Hotkeys
 
@@ -566,10 +585,10 @@ public class PlayerInputHandler : MonoBehaviour
 
     // Keep this public method for ActionButtonUI compatibility.
     // Internally, this is squad-first now.
-    public void ExecuteGroupCommand(CommandType commandType)
-    {
-        ExecuteSquadCommand(commandType);
-    }
+    // public void ExecuteGroupCommand(CommandType commandType)
+    // {
+    //     ExecuteSquadCommand(commandType);
+    // }
 
     public void ExecuteSquadCommand(CommandType commandType)
     {
@@ -676,7 +695,8 @@ public class PlayerInputHandler : MonoBehaviour
     }
 
     #endregion
-
+    
+    
     #region Helpers
 
     List<SquadController> GetCurrentSelectedSquads()
@@ -708,23 +728,6 @@ public class PlayerInputHandler : MonoBehaviour
         return currentSelected
             .OfType<BuildingController>()
             .ToList();
-    }
-
-    bool IsEnemyToSquads(List<SquadController> squads, EntityController target)
-    {
-        if (target == null || target.Stats == null)
-            return false;
-
-        foreach (SquadController squad in squads)
-        {
-            if (squad == null || squad.Faction == null) continue;
-            if (target.Stats.faction == null) continue;
-
-            if (target.Stats.faction.teamId != squad.Faction.teamId)
-                return true;
-        }
-
-        return false;
     }
 
     Vector3 ResolveFacingForSquads(List<SquadController> squads, Vector3 destination)
@@ -783,6 +786,112 @@ public class PlayerInputHandler : MonoBehaviour
         float z = -row * multiSquadSpacing;
 
         return right * x + facing * z;
+    }
+    
+        bool TryResolveEnemySquadFromHit(
+        List<SquadController> selectedSquads,
+        RaycastHit hit,
+        out SquadController enemySquad)
+    {
+        enemySquad = null;
+
+        if (hit.collider == null)
+            return false;
+
+        // Case 1: clicked the squad root / squad collider.
+        enemySquad = hit.collider.GetComponentInParent<SquadController>();
+
+        // Case 2: clicked an individual squad member.
+        if (enemySquad == null)
+        {
+            SquadMemberController member =
+                hit.collider.GetComponentInParent<SquadMemberController>();
+
+            if (member != null)
+                enemySquad = member.Squad;
+        }
+
+        if (enemySquad == null)
+            return false;
+
+        return IsEnemySquadToAnySelectedSquad(selectedSquads, enemySquad);
+    }
+    
+    bool TryResolveEnemyEntityFromHit(
+        List<SquadController> selectedSquads,
+        RaycastHit hit,
+        out EntityController enemyEntity)
+    {
+        enemyEntity = null;
+
+        if (hit.collider == null)
+            return false;
+
+        enemyEntity = hit.collider.GetComponentInParent<EntityController>();
+
+        if (enemyEntity == null)
+            return false;
+
+        return IsEnemyEntityToAnySelectedSquad(selectedSquads, enemyEntity);
+    }
+    
+    bool IsEnemySquadToAnySelectedSquad(
+        List<SquadController> selectedSquads,
+        SquadController targetSquad)
+    {
+        if (targetSquad == null)
+            return false;
+
+        FactionInstance targetFaction = targetSquad.Faction;
+
+        if (targetFaction == null)
+            return false;
+
+        foreach (SquadController selectedSquad in selectedSquads)
+        {
+            if (selectedSquad == null) continue;
+            if (selectedSquad.Faction == null) continue;
+
+            if (selectedSquad.Faction.teamId != targetFaction.teamId)
+                return true;
+        }
+
+        return false;
+    }
+    
+    bool IsEnemyEntityToAnySelectedSquad(
+        List<SquadController> selectedSquads,
+        EntityController targetEntity)
+    {
+        if (targetEntity == null)
+            return false;
+
+        if (targetEntity.Stats == null || targetEntity.Stats.faction == null)
+            return false;
+
+        foreach (SquadController selectedSquad in selectedSquads)
+        {
+            if (selectedSquad == null) continue;
+            if (selectedSquad.Faction == null) continue;
+
+            if (selectedSquad.Faction.teamId != targetEntity.Stats.faction.teamId)
+                return true;
+        }
+
+        return false;
+    }
+    
+    void MoveSquadsToPoint(List<SquadController> squads, Vector3 point)
+    {
+        Vector3 groupFacing = ResolveFacingForSquads(squads, point);
+
+        for (int i = 0; i < squads.Count; i++)
+        {
+            if (squads[i] == null) continue;
+
+            Vector3 offset = GetSquadMoveOffset(i, squads.Count, groupFacing);
+            squads[i].OrderMove(point + offset);
+        }
     }
 
     #endregion

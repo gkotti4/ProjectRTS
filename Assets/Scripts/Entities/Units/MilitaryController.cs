@@ -36,8 +36,8 @@ public class MilitaryController : UnitController
             if (selectionDecal != null)
                 selectionDecal.enabled = true;
 
-            if (healthBar != null)
-                healthBar.OnSelected();
+            // if (healthBar != null)
+            //     healthBar.OnSelected();
 
             return;
         }
@@ -54,8 +54,8 @@ public class MilitaryController : UnitController
             if (selectionDecal != null)
                 selectionDecal.enabled = false;
 
-            if (healthBar != null)
-                healthBar.OnDeselected();
+            // if (healthBar != null)
+            //     healthBar.OnDeselected();
 
             return;
         }

@@ -11,15 +11,29 @@ public class SquadData : ScriptableObject
     public SquadCategory category;
 
     [Header("Prefabs")]
-    public SquadController squadPrefab; // CHECK: GameObject type?
+    [Tooltip("The squad gameObject/prefab containing SquadController")]
+    public SquadController squadPrefab;
+    [Tooltip("The squad member gameObject/prefab containing SquadMemberController")]
     public SquadMemberController memberPrefab;
     
     [Header("Members")] 
     [Min(1)] public int startingMemberCount = 5;
         
-    [Header("Formation and Stance")]
+    [Header("Formation")]
     public SquadFormation defaultFormation = SquadFormation.Line;
+    [Min(1)] public int defaultUnitsPerRow = 10;
+    [Min(1)] public float defaultSpacing = 2f;
+    
+    [Header("Stance")]
     public SquadStance defaultStance = SquadStance.Aggressive;
+    
+    [Header("Combat Behavior")]
+    [Space(10), Header("Auto Combat Scan Ranges")]
+    [Min(0)] public float aggressiveAutoScanRange = 14f;
+    [Min(0)] public float defensiveAutoScanRange = 8f;
+    [Min(0)] public float standGroundScanPadding = 0.5f;
+    [Space(10), Header("Combat Leash Ranges")]
+    [Min(0)] public float combatDefensiveLeashRange = 8f;
     
     [Header("Commands")]
     public SquadCommandSet commandSet;

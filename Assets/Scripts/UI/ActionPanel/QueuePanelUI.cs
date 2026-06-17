@@ -46,7 +46,7 @@ public class QueuePanelUI : MonoBehaviour
         if (slots.Count <= 0) return;
         foreach (QueueButtonUI slot in slots)
         {
-            if (slot == null) Debug.LogError(slot.gameObject.name + "is null");
+            if (slot == null) Debug.LogError(slot.gameObject.name + "is null"); // BUG HERE
             slot.gameObject.SetActive(false);
         }
     }
