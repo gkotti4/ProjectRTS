@@ -91,10 +91,25 @@ public static class Calc
 
     /// Sorts a list of units by their GameObject instanceID.
     /// Ensures consistent and deterministic formation slot assignment.
-    public static List<UnitController> SortByID(List<UnitController> units)
+    public static List<T> SortByID<T>(List<T> items) where T : Component
     {
-        List<UnitController> sorted = new List<UnitController>(units);
-        sorted.Sort((a, b) => a.gameObject.GetInstanceID().CompareTo(b.gameObject.GetInstanceID()));
+        List<T> sorted = new List<T>(items);
+
+        sorted.Sort((a, b) =>
+        {
+            if (a == null && b == null)
+                return 0;
+
+            if (a == null)
+                return 1;
+
+            if (b == null)
+                return -1;
+
+            return a.gameObject.GetInstanceID()
+                .CompareTo(b.gameObject.GetInstanceID());
+        });
+
         return sorted;
     }
 }

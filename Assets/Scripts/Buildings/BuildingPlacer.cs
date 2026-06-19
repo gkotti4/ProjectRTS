@@ -1,0 +1,485 @@
+using UnityEngine;
+using UnityEngine.AI;
+
+public class BuildingPlacer : MonoBehaviour
+{
+    public static BuildingPlacer Instance { get; private set; }
+
+    [Header("Placement")]
+    [SerializeField] private LayerMask placementBlockingLayers;
+
+    [Header("Ghost Materials")]
+    [SerializeField] private Material validMaterial;
+    [SerializeField] private Material invalidMaterial;
+
+    private BuildOptionData selectedBuildOption;
+    private GameObject ghostObject;
+    private Camera mainCamera;
+
+    private bool isPlacing = false;
+    private bool isSwapping = false;
+
+    private readonly Collider[] overlapResults = new Collider[16];
+
+    public bool IsPlacing => isPlacing;
+
+    void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+    }
+
+    void Start()
+    {
+        mainCamera = Camera.main;
+    }
+
+    void Update()
+    {
+        if (!isPlacing)
+            return;
+
+        UpdateGhost();
+        HandlePlacementInput();
+    }
+
+    public void StartPlacing(BuildOptionData buildOption)
+    {
+        if (buildOption == null || buildOption.buildingData == null)
+        {
+            Debug.LogWarning("StartPlacing failed: BuildOptionData or BuildingData is null.");
+            return;
+        }
+        if (isPlacing)
+        {
+            isSwapping = true;
+            CancelPlacement();
+            isSwapping = false;
+        }
+
+        if (!GameManager.Instance.CanAfford(buildOption.cost, GameManager.Instance.PlayerFaction))
+        {
+            Debug.Log("Can't afford building.");
+            return;
+        }
+
+        selectedBuildOption = buildOption;
+        isPlacing = true;
+
+        GameManager.Instance.SpendResources(selectedBuildOption.cost, GameManager.Instance.PlayerFaction);
+        GameEvents.PlacementModeChanged(true);
+
+        SpawnGhost();
+    }
+
+    void SpawnGhost()
+    {
+        GameObject ghostPrefab = selectedBuildOption.buildingData.ghostPrefab;
+
+        if (ghostPrefab == null)
+        {
+            Debug.LogWarning($"{selectedBuildOption.name}: BuildingData has no ghostPrefab.");
+            return;
+        }
+
+        ghostObject = Instantiate(ghostPrefab);
+
+        foreach (Collider col in ghostObject.GetComponentsInChildren<Collider>())
+            col.enabled = false;
+
+        foreach (NavMeshObstacle obstacle in ghostObject.GetComponentsInChildren<NavMeshObstacle>())
+            obstacle.enabled = false;
+
+        SetGhostMaterial(validMaterial);
+    }
+
+    void HandlePlacementInput()
+    {
+        if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
+        {
+            CancelPlacement();
+            return;
+        }
+
+        if (!Input.GetMouseButtonDown(0))
+            return;
+
+        if (!TryGetSnappedMousePosition(out Vector3 snappedPosition, out Vector2Int cell))
+            return;
+
+        if (CanPlace(snappedPosition, cell))
+            PlaceBuilding(snappedPosition, cell);
+    }
+
+    void UpdateGhost()
+    {
+        if (ghostObject == null)
+            return;
+
+        if (!TryGetSnappedMousePosition(out Vector3 snappedPosition, out Vector2Int cell))
+            return;
+
+        ghostObject.transform.position = snappedPosition;
+
+        bool canPlace = CanPlace(snappedPosition, cell);
+        SetGhostMaterial(canPlace ? validMaterial : invalidMaterial);
+    }
+
+    bool TryGetSnappedMousePosition(out Vector3 snappedPosition, out Vector2Int cell)
+    {
+        snappedPosition = Vector3.zero;
+        cell = default;
+
+        if (mainCamera == null)
+            return false;
+
+        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+
+        if (!Physics.Raycast(ray, out RaycastHit hit))
+            return false;
+
+        snappedPosition = GridManager.Instance.SnapToGrid(hit.point);
+        cell = GridManager.Instance.WorldToCell(snappedPosition);
+
+        return true;
+    }
+
+    void PlaceBuilding(Vector3 position, Vector2Int cell)
+    {
+        BuildingData buildingData = selectedBuildOption.buildingData;
+
+        if (buildingData == null || buildingData.prefab == null)
+            return;
+
+        BuildingController building = Instantiate(
+            buildingData.prefab,
+            position,
+            Quaternion.identity).GetComponent<BuildingController>();
+
+        if (building == null)
+        {
+            Debug.LogError($"{buildingData.name}: building prefab missing BuildingController.");
+            return;
+        }
+
+        FactionOwner factionOwner = building.GetComponent<FactionOwner>();
+        if (factionOwner == null)
+            factionOwner = building.gameObject.AddComponent<FactionOwner>();
+
+        factionOwner.Initialize(GameManager.Instance.PlayerFaction);
+
+        GridManager.Instance.SetOccupied(
+            cell,
+            buildingData.gridWidth,
+            buildingData.gridHeight);
+
+        ExitPlacementMode();
+    }
+
+    public void CancelPlacement()
+    {
+        if (selectedBuildOption != null)
+            GameManager.Instance.AddResources(selectedBuildOption.cost, GameManager.Instance.PlayerFaction);
+
+        ExitPlacementMode();
+    }
+
+    void ExitPlacementMode()
+    {
+        isPlacing = false;
+        selectedBuildOption = null;
+
+        if (!isSwapping)
+            GameEvents.PlacementModeChanged(false);
+
+        if (ghostObject != null)
+        {
+            Destroy(ghostObject);
+            ghostObject = null;
+        }
+    }
+
+    void SetGhostMaterial(Material material)
+    {
+        if (ghostObject == null || material == null)
+            return;
+
+        foreach (Renderer renderer in ghostObject.GetComponentsInChildren<Renderer>())
+        {
+            Material[] materials = new Material[renderer.materials.Length];
+
+            for (int i = 0; i < materials.Length; i++)
+                materials[i] = material;
+
+            renderer.materials = materials;
+        }
+    }
+
+    bool CanPlace(Vector3 position, Vector2Int cell)
+    {
+        BuildingData buildingData = selectedBuildOption.buildingData;
+
+        return GridManager.Instance.IsFree(
+                   cell,
+                   buildingData.gridWidth,
+                   buildingData.gridHeight) &&
+               !IsPlacementBlockedByObject(position);
+    }
+
+    bool IsPlacementBlockedByObject(Vector3 position)
+    {
+        BuildingData buildingData = selectedBuildOption.buildingData;
+
+        Vector3 halfExtents = new Vector3(
+            buildingData.gridWidth * GridManager.Instance.GetCellSize() * 0.5f,
+            1f,
+            buildingData.gridHeight * GridManager.Instance.GetCellSize() * 0.5f);
+
+        int hitCount = Physics.OverlapBoxNonAlloc(
+            position,
+            halfExtents,
+            overlapResults,
+            Quaternion.identity,
+            placementBlockingLayers);
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider hit = overlapResults[i];
+
+            if (hit == null)
+                continue;
+
+            if (ghostObject != null && hit.transform.IsChildOf(ghostObject.transform))
+                continue;
+
+            if (hit.GetComponentInParent<WorkerController>() != null)
+                return true;
+
+            if (hit.GetComponentInParent<SquadController>() != null)
+                return true;
+
+            if (hit.GetComponentInParent<SoldierController>() != null)
+                return true;
+
+            if (hit.GetComponentInParent<BuildingController>() != null)
+                return true;
+
+            if (hit.GetComponentInParent<ResourceNode>() != null)
+                return true;
+        }
+
+        return false;
+    }
+}
+
+// using System;
+// using System.Collections.Generic;
+// using UnityEngine;
+// using UnityEngine.AI;
+//
+// public class BuildingPlacer : MonoBehaviour
+// {
+//     public static BuildingPlacer Instance { get; private set; }
+//
+//     [SerializeField] private LayerMask placementBlockingLayers;
+//     
+//     private BuildOptionData selectedBuildOption;
+//     private GameObject ghostObject;
+//     private bool isPlacing = false; // placement mode
+//     private bool isSwapping = false;
+//     public bool IsPlacing => isPlacing;
+//     private Camera mainCamera;
+//
+//     [SerializeField] private Material validMaterial;
+//     [SerializeField] private Material invalidMaterial;
+//
+//     void Awake()
+//     {
+//         if (Instance != null && Instance != this)
+//         {
+//             Destroy(this.gameObject);
+//             return;
+//         }
+//         Instance = this;
+//     }
+//     
+//     void Start()
+//     {
+//         mainCamera = Camera.main;
+//     }
+//
+//     void Update()
+//     {
+//         if (!isPlacing) return;
+//         UpdateGhost();
+//         HandlePlacementInput();
+//     }
+//
+//     public void StartPlacing(BuildOptionData buildOption) // Called by UI button or hotkey to enter placement mode (Entry Point)
+//     {
+//         if (isPlacing)
+//         {
+//             isSwapping = true;
+//             CancelPlacement();
+//             isSwapping = false;
+//         }
+//         
+//         // Check resource cost
+//         if (!GameManager.Instance.CanAfford(buildOption.cost, GameManager.Instance.PlayerFaction))
+//         {
+//             Debug.Log("Can't afford building");
+//             CancelPlacement();
+//             return;
+//         }
+//         
+//         // Enter Placement Mode
+//         selectedBuildOption = buildOption;
+//         isPlacing = true;
+//         GameEvents.PlacementModeChanged(isPlacing);
+//         
+//         // Spawn ghost preview
+//         ghostObject = Instantiate(selectedBuildOption.buildingDetails.ghostPrefab); 
+//         if (!ghostObject) { Debug.LogWarning("Ghost Object is null in BuildingPlacer."); return; }
+//
+//         // Disable all colliders on ghost and children so it doesn't interact with physics
+//         foreach (Collider col in ghostObject.GetComponentsInChildren<Collider>()) // Note: Might be a little overboard
+//             col.enabled = false;
+//         
+//         // Disable NavMesh Obstacle
+//         if (ghostObject.TryGetComponent(out NavMeshObstacle navObstacle))
+//             navObstacle.enabled = false;
+//
+//         SetGhostMaterial(validMaterial);
+//         
+//         // Spend Resources
+//         GameManager.Instance.SpendResources(selectedBuildOption.cost, GameManager.Instance.PlayerFaction);
+//     }
+//     
+//     private void HandlePlacementInput() // Placement mode // Handles confirm and cancel input during placement
+//     {
+//         // Cancel on right-click or escape
+//         if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape)) // also in PlayerInputHandler for escape
+//         {
+//             CancelPlacement();
+//             return;
+//         }
+//         
+//         // Confirm placement on left-click
+//         if (Input.GetMouseButtonDown(0))
+//         {
+//             Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+//             if (Physics.Raycast(ray, out RaycastHit hit))
+//             {
+//                 Vector3 snappedPos = GridManager.Instance.SnapToGrid(hit.point);
+//                 //snappedPos.y = 0; 
+//                 Vector2Int cell = GridManager.Instance.WorldToCell(snappedPos);
+//                 
+//                 if (CanPlace(snappedPos, cell))
+//                     PlaceBuilding(snappedPos, cell);
+//             }
+//         }
+//         
+//     }
+//     
+//     private void UpdateGhost() // Moves ghost to snapped grid position and updates valid/invalid material
+//     {
+//         if (ghostObject == null) return;
+//
+//         Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+//         if (Physics.Raycast(ray, out RaycastHit hit))
+//         {
+//             Vector3 snappedPos = GridManager.Instance.SnapToGrid(hit.point);
+//             //snappedPos.y = 0; 
+//             ghostObject.transform.position = snappedPos;
+//             
+//             Vector2Int cell = GridManager.Instance.WorldToCell(snappedPos);
+//             //bool canPlace = GridManager.Instance.IsFree(cell, selectedBuildOption.gridWidth, selectedBuildOption.gridHeight);
+//             bool canPlace = CanPlace(snappedPos, cell);
+//             
+//             SetGhostMaterial(canPlace ? validMaterial : invalidMaterial);
+//         }
+//     }
+//
+//
+//     private void PlaceBuilding(Vector3 position, Vector2Int cell) // SPAWN building and marks grid cells
+//     {
+//         if (!selectedBuildOption.buildingPrefab.gameObject) return;
+//         
+//         // Place building (Todo: Building construction)
+//         EntityFactory.Spawn(selectedBuildOption.buildingPrefab.gameObject, position, Quaternion.identity, GameManager.Instance.PlayerFaction);
+//         
+//         GridManager.Instance.SetOccupied(cell, selectedBuildOption.buildingDetails.gridWidth, selectedBuildOption.buildingDetails.gridHeight);
+//         //GameManager.Instance.SpendResources(selectedBuildOption.buildingCost, GameManager.Instance.PlayerFaction); // spent at start 
+//         
+//         ExitPlacementMode(); // No refund, resources stay spent
+//     }
+//     
+//     public void CancelPlacement() // cancel = refund
+//     {
+//         if (selectedBuildOption != null)
+//             GameManager.Instance.AddResources(selectedBuildOption.cost, GameManager.Instance.PlayerFaction);
+//         ExitPlacementMode();
+//     }
+//
+//     private void ExitPlacementMode() // shared cleanup
+//     {
+//         isPlacing = false;
+//         selectedBuildOption = null;
+//         if (!isSwapping)
+//             GameEvents.PlacementModeChanged(false);
+//         if (ghostObject) { Destroy(ghostObject); ghostObject = null; }
+//     }
+//     
+//     private void SetGhostMaterial(Material mat)
+//     {
+//         if (!ghostObject || !mat) return;
+//         foreach (Renderer r in ghostObject.GetComponentsInChildren<Renderer>())
+//         {
+//             // Handle multiple materials per renderer (submeshes)
+//             Material[] mats = new Material[r.materials.Length];
+//             for (int i = 0; i < mats.Length; i++)
+//                 mats[i] = mat;
+//             r.materials = mats;
+//         }
+//     }
+//
+//
+//
+//     private bool CanPlace(Vector3 position, Vector2Int cell)
+//     {
+//         // Is grid space free?
+//         // Is building placement over object?
+//         
+//         return GridManager.Instance.IsFree(cell, selectedBuildOption.buildingDetails.gridWidth, selectedBuildOption.buildingDetails.gridHeight) &&
+//                !IsPlacementBlockedByObject(position);
+//         // Add cost check?
+//     }
+//     
+//     
+//     private readonly Collider[] overlapResults = new Collider[16];
+//     private bool IsPlacementBlockedByObject(Vector3 position)
+//     {
+//         Vector3 halfExtents = new Vector3(
+//             selectedBuildOption.buildingDetails.gridWidth * GridManager.Instance.GetCellSize() / 2f,
+//             1f,
+//             selectedBuildOption.buildingDetails.gridHeight * GridManager.Instance.GetCellSize() / 2f
+//         );
+//
+//         int hitCount = Physics.OverlapBoxNonAlloc(position, halfExtents, overlapResults, Quaternion.identity, placementBlockingLayers);
+//     
+//         for (int i = 0; i < hitCount; i++)
+//         {
+//             if (overlapResults[i].gameObject == ghostObject) continue;
+//             if (overlapResults[i].TryGetComponent(out UnitController _)) return true;
+//             if (overlapResults[i].TryGetComponent(out BuildingController _)) return true;
+//             if (overlapResults[i].TryGetComponent(out ResourceNode _)) return true;
+//         }
+//         return false;
+//     }
+//     
+// }

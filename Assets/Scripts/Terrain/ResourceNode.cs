@@ -6,6 +6,7 @@ public class ResourceNode : MonoBehaviour, ISelectable
     public void OnDeselect() { isSelected = false; }
     public GameObject GetGameObject() { return gameObject; }
     public bool IsDragSelectable => false;
+    public SelectableKind SelectionKind { get; } = SelectableKind.Resource;
     
     
     public ResourceNodeData resourceNodeData;

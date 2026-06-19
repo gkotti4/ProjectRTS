@@ -1,0 +1,363 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+public class SquadFormationController : MonoBehaviour
+{
+    private SquadController squad;
+    private SquadRoster roster;
+    private SquadData data;
+
+    private List<Vector2> localOffsets = new List<Vector2>();
+    private List<Vector3> currentSlots = new List<Vector3>();
+
+    private SquadFormation currentFormation = SquadFormation.Line;
+
+    private float formationWidth = -1f;
+    private float spacing = 2f;
+    private int defaultUnitsPerRow = 10;
+
+    private Vector3 facing = Vector3.forward;
+
+    public SquadFormation CurrentFormation => currentFormation;
+    public Vector3 Facing => facing;
+    public IReadOnlyList<Vector2> LocalOffsets => localOffsets;
+    public IReadOnlyList<Vector3> CurrentSlots => currentSlots;
+
+    public void Initialize(
+        SquadController owner,
+        SquadRoster squadRoster,
+        SquadData squadData)
+    {
+        squad = owner;
+        roster = squadRoster;
+        data = squadData;
+
+        currentFormation = data.defaultFormation;
+        spacing = Mathf.Max(0.1f, data.defaultSpacing);
+        defaultUnitsPerRow = Mathf.Max(1, data.defaultUnitsPerRow);
+        facing = NormalizeFacing(transform.forward);
+
+        Rebuild();
+        UpdateSlots(transform.position, facing);
+    }
+
+    public void SetFormation(SquadFormation formation)
+    {
+        currentFormation = formation;
+        Rebuild();
+        UpdateSlots(transform.position, facing);
+    }
+
+    public void SetFacing(Vector3 newFacing)
+    {
+        facing = NormalizeFacing(newFacing);
+        UpdateSlots(transform.position, facing);
+    }
+
+    public void SetFormationWidth(float width)
+    {
+        if (width > 0f)
+            formationWidth = width;
+
+        Rebuild();
+        UpdateSlots(transform.position, facing);
+    }
+
+    public void Rebuild()
+    {
+        int count = roster != null ? roster.Count : 0;
+
+        float width = formationWidth > 0f
+            ? formationWidth
+            : GetDefaultWidth(count);
+
+        if (FormationCalculator.Instance != null)
+        {
+            localOffsets = FormationCalculator.Instance.CalculateOffsets(
+                count,
+                width,
+                currentFormation,
+                spacing); // NEW: spacing - spacingOverride - spacing vs units per row bug (different calculations in this vs FormationCalc)
+        }
+        else
+        {
+            localOffsets = BuildFallbackLineOffsets(count);
+        }
+
+        AssignSlotIndices();
+    }
+
+    public void UpdateSlots(Vector3 center, Vector3 slotFacing)
+    {
+        facing = NormalizeFacing(slotFacing);
+
+        if (FormationCalculator.Instance != null)
+        {
+            currentSlots = FormationCalculator.Instance.ConvertOffsetsToWorldPositions(
+                localOffsets,
+                center,
+                facing);
+        }
+        else
+        {
+            currentSlots = ConvertOffsetsFallback(center, facing);
+        }
+    }
+
+    public List<Vector3> GetWorldSlots(Vector3 center, Vector3 slotFacing)
+    {
+        slotFacing = NormalizeFacing(slotFacing);
+
+        if (FormationCalculator.Instance != null)
+        {
+            return FormationCalculator.Instance.ConvertOffsetsToWorldPositions(
+                localOffsets,
+                center,
+                slotFacing);
+        }
+
+        return ConvertOffsetsFallback(center, slotFacing);
+    }
+
+    public List<Vector3> GetPreviewSlots(
+        Vector3 center,
+        Vector3 slotFacing,
+        float requestedFormationWidth = -1f)
+    {
+        float oldWidth = formationWidth;
+
+        if (requestedFormationWidth > 0f)
+            formationWidth = requestedFormationWidth;
+
+        Rebuild();
+
+        List<Vector3> preview = GetWorldSlots(
+            center,
+            slotFacing);
+
+        formationWidth = oldWidth;
+        Rebuild();
+
+        return preview;
+    }
+
+    public List<SoldierController> GetLivingSoldiersInFrontRows(
+        Vector3 enemyCenter,
+        int rowDepth = 1)
+    {
+        List<SoldierController> result = new List<SoldierController>();
+
+        if (roster == null)
+            return result;
+
+        Vector3 toEnemy = enemyCenter - transform.position;
+        toEnemy.y = 0f;
+
+        if (toEnemy == Vector3.zero)
+            toEnemy = facing;
+
+        toEnemy.Normalize();
+
+        float bestFrontScore = float.NegativeInfinity;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            Vector3 local = soldier.transform.position - transform.position;
+            local.y = 0f;
+
+            float score = Vector3.Dot(local, toEnemy);
+
+            if (score > bestFrontScore)
+                bestFrontScore = score;
+        }
+
+        float rowDepthDistance = spacing * Mathf.Max(1, rowDepth);
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            Vector3 local = soldier.transform.position - transform.position;
+            local.y = 0f;
+
+            float score = Vector3.Dot(local, toEnemy);
+
+            if (bestFrontScore - score <= rowDepthDistance)
+                result.Add(soldier);
+        }
+
+        return result;
+    }
+
+    float GetDefaultWidth(int count)
+    {
+        int unitsPerRow = Mathf.Clamp(
+            defaultUnitsPerRow,
+            1,
+            Mathf.Max(1, count));
+
+        return Mathf.Max(spacing, unitsPerRow * spacing);
+    }
+
+    void AssignSlotIndices()
+    {
+        if (roster == null)
+            return;
+
+        int nextSlotIndex = 0;
+
+        for (int i = 0; i < roster.Soldiers.Count; i++)
+        {
+            SoldierController soldier = roster.Soldiers[i];
+
+            if (soldier == null)
+                continue;
+
+            if (!soldier.IsAlive)
+            {
+                soldier.SetSlotIndex(-1);
+                continue;
+            }
+
+            soldier.SetSlotIndex(nextSlotIndex);
+            nextSlotIndex++;
+        }
+    }
+
+    List<Vector2> BuildFallbackLineOffsets(int count)
+    {
+        List<Vector2> offsets = new List<Vector2>();
+
+        if (count <= 0)
+            return offsets;
+
+        float width = (count - 1) * spacing;
+
+        for (int i = 0; i < count; i++)
+        {
+            float x = i * spacing - width / 2f;
+            offsets.Add(new Vector2(x, 0f));
+        }
+
+        return offsets;
+    }
+
+    List<Vector3> ConvertOffsetsFallback(Vector3 center, Vector3 slotFacing)
+    {
+        List<Vector3> result = new List<Vector3>();
+
+        slotFacing = NormalizeFacing(slotFacing);
+        Vector3 right = new Vector3(slotFacing.z, 0f, -slotFacing.x).normalized;
+
+        foreach (Vector2 offset in localOffsets)
+            result.Add(center + right * offset.x + slotFacing * offset.y);
+
+        return result;
+    }
+
+    Vector3 NormalizeFacing(Vector3 value)
+    {
+        value.y = 0f;
+
+        if (value == Vector3.zero)
+            return Vector3.forward;
+
+        return value.normalized;
+    }
+    
+    public bool TryGetSlotForSoldier(
+        SoldierController soldier,
+        out Vector3 slot)
+    {
+        slot = transform.position;
+
+        if (soldier == null)
+            return false;
+
+        int index = soldier.SlotIndex;
+
+        if (index < 0 || index >= currentSlots.Count)
+            return false;
+
+        slot = currentSlots[index];
+        return true;
+    }
+    
+    /// Reassigns living soldiers to the nearest available slot for a new facing.
+    /// This is used when the squad receives a large turn-around order.
+    /// Instead of physically rotating the old front through the back, the squad
+    /// instantly declares the new facing and assigns soldiers to the closest slots.
+    public void ReassignLivingSoldiersToNearestSlots(
+        Vector3 center,
+        Vector3 slotFacing)
+    {
+        if (roster == null)
+            return;
+
+        UpdateSlots(center, slotFacing);
+
+        if (currentSlots == null || currentSlots.Count == 0)
+            return;
+
+        List<int> availableSlotIndices = new List<int>();
+
+        for (int i = 0; i < currentSlots.Count; i++)
+            availableSlotIndices.Add(i);
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            if (availableSlotIndices.Count == 0)
+                return;
+
+            int bestAvailableListIndex = -1;
+            int bestSlotIndex = -1;
+            float bestDistance = float.PositiveInfinity;
+
+            for (int i = 0; i < availableSlotIndices.Count; i++)
+            {
+                int slotIndex = availableSlotIndices[i];
+
+                float distance = Vector3.SqrMagnitude(
+                    soldier.transform.position - currentSlots[slotIndex]);
+
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestAvailableListIndex = i;
+                    bestSlotIndex = slotIndex;
+                }
+            }
+
+            if (bestSlotIndex < 0)
+                continue;
+
+            soldier.SetSlotIndex(bestSlotIndex);
+
+            // Force the next MoveToSlot call to issue a new destination.
+            soldier.SetLastSlotPosition(Vector3.positiveInfinity);
+
+            availableSlotIndices.RemoveAt(bestAvailableListIndex);
+        }
+    }
+    
+    
+    public Vector3 GetEngagementDirection(Vector3 enemyCenter)
+    {
+        Vector3 dir = enemyCenter - transform.position;
+        dir.y = 0f;
+
+        if (dir == Vector3.zero)
+            dir = facing;
+
+        return NormalizeFacing(dir);
+    }
+    
+    
+}

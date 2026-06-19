@@ -41,16 +41,21 @@ public class FormationCalculator : MonoBehaviour
     public List<Vector2> CalculateOffsets(
         int unitCount,
         float width,
-        SquadFormation formation = SquadFormation.Line)
+        SquadFormation formation = SquadFormation.Line,
+        float spacingOverride = -1)
     {
         if (unitCount <= 0)
             return new List<Vector2>();
 
-        width = Mathf.Max(width, defaultSpacing);
+        float spacing = spacingOverride > 0f
+            ? spacingOverride
+            : defaultSpacing;
+        
+        width = Mathf.Max(width, spacing);
 
         int unitsPerRow = Mathf.Max(
             1,
-            Mathf.FloorToInt(width / defaultSpacing));
+            Mathf.FloorToInt(width / spacing));
 
         List<Vector2> offsets = formation switch
         {
@@ -105,18 +110,18 @@ public class FormationCalculator : MonoBehaviour
     /// Assigns each squad member to the nearest available world slot.
     /// Useful later for reforming, merging, or smart slot reassignment.
     /// </summary>
-    public Dictionary<SquadMemberController, Vector3> AssignMembersToNearestSlots(
-        List<SquadMemberController> members,
+    public Dictionary<SoldierController, Vector3> AssignMembersToNearestSlots(
+        List<SoldierController> members,
         List<Vector3> slots)
     {
-        Dictionary<SquadMemberController, Vector3> result = new Dictionary<SquadMemberController, Vector3>();
+        Dictionary<SoldierController, Vector3> result = new Dictionary<SoldierController, Vector3>();
 
         if (members == null || slots == null)
             return result;
 
         List<Vector3> availableSlots = new List<Vector3>(slots);
 
-        foreach (SquadMemberController member in members)
+        foreach (SoldierController member in members)
         {
             if (member == null) continue;
             if (availableSlots.Count == 0) break;

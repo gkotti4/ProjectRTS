@@ -1,15 +1,18 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// Attached to FormationManager GameObject
 public class FormationVisualizer : MonoBehaviour
 {
     public static FormationVisualizer Instance { get ; private set; }
 
-    [SerializeField] private GameObject slotIndicatorPrefab; // simple flat cylinder or quad
+    [SerializeField] private GameObject slotIndicatorPrefab;
     [SerializeField] private int poolSize = 50;
-    [SerializeField] private float hideDelay = 1f;
-    
+    [SerializeField] private float hideDelay = 1.0f;
+
+    [Header("Placement")]
+    [SerializeField] private float indicatorHeightOffset = 0.05f;
+    [SerializeField] private bool alignToFacing = true;
+
     private List<GameObject> pool = new List<GameObject>();
     private float hideTimer = 0f;
     private bool isShowing = false;
@@ -19,7 +22,6 @@ public class FormationVisualizer : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
 
-        // Pre-spawn pool
         for (int i = 0; i < poolSize; i++)
         {
             GameObject go = Instantiate(slotIndicatorPrefab, transform);
@@ -27,39 +29,68 @@ public class FormationVisualizer : MonoBehaviour
             pool.Add(go);
         }
     }
-    
 
     void Update()
     {
-        if (!isShowing) return;
+        if (!isShowing)
+            return;
+
         hideTimer -= Time.deltaTime;
+
         if (hideTimer <= 0f)
             HideAll();
     }
 
+    public void ShowSlots(
+        List<Vector3> positions,
+        bool persistForDelay = false)
+    {
+        ShowSlots(positions, Vector3.forward, persistForDelay);
+    }
 
-    /// Shows slot indicators at given positions then fades after delay.
-    public void ShowSlots(List<Vector3> positions, bool persistent=false)
+    public void ShowSlots(
+        List<Vector3> positions,
+        Vector3 facing,
+        bool persistForDelay = false)
     {
         HideAll();
 
+        facing.y = 0f;
+
+        if (facing == Vector3.zero)
+            facing = Vector3.forward;
+
+        // Quaternion rotation = alignToFacing
+        //     ? Quaternion.LookRotation(facing.normalized, Vector3.up)
+        //     : Quaternion.identity;
+
+        float yaw = Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg;
+        
         for (int i = 0; i < positions.Count && i < pool.Count; i++)
         {
-            pool[i].transform.position = positions[i]; // + Vector3.up * 0.05f;
+            pool[i].transform.position =
+                positions[i] + Vector3.up * indicatorHeightOffset;
+            
+            pool[i].transform.rotation = Quaternion.Euler(
+                0f,
+                yaw,
+                0f);
+            
             pool[i].SetActive(true);
         }
 
-        if (!persistent)
+        if (!persistForDelay)
         {
-            hideTimer = hideDelay;
+            hideTimer = this.hideDelay;
             isShowing = true;
         }
     }
-    
+
     public void HideAll()
     {
         foreach (GameObject go in pool)
             go.SetActive(false);
+
         isShowing = false;
     }
 }

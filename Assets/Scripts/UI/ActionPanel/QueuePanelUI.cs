@@ -40,13 +40,14 @@ public class QueuePanelUI : MonoBehaviour
         Refresh();
     }
 
-    public void HidePanel() 
+    public void HidePanel()
     {
         currentBuilding = null; // check?
         if (slots.Count <= 0) return;
         foreach (QueueButtonUI slot in slots)
         {
-            if (slot == null) Debug.LogError(slot.gameObject.name + "is null"); // BUG HERE
+            if (!gameObject.activeInHierarchy) return; // DEBUG
+            if (!slot) Debug.LogError(slot.gameObject.name + "is null"); // BUG HERE
             slot.gameObject.SetActive(false);
         }
     }
