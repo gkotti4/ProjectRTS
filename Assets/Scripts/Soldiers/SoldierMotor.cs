@@ -1,6 +1,23 @@
 using UnityEngine;
 using UnityEngine.AI;
 
+
+/// -----------------------------------------------------------------------------
+/// SoldierMotor
+/// -----------------------------------------------------------------------------
+///
+/// Movement wrapper around the soldier NavMeshAgent.
+/// Provides MoveTo, Stop, Warp, speed setup, and velocity-based rotation.
+/// Respects SoldierController movement locks so committed actions like Attack,
+/// HitReact, and Death cannot be overridden by normal movement requests.
+///
+/// This class should not decide why the soldier moves. It only executes movement
+/// requests when movement is allowed.
+///
+/// Design role:
+/// Low-level soldier movement execution.
+///
+
 [RequireComponent(typeof(NavMeshAgent))]
 public class SoldierMotor : MonoBehaviour
 {
@@ -16,6 +33,7 @@ public class SoldierMotor : MonoBehaviour
     [SerializeField] private float defaultStoppingDistance = 0.1f;
 
     private NavMeshAgent agent;
+    private SoldierController soldierController;
 
     private float baseMoveSpeed = 4f;
     private float turnSpeed = 900f;
@@ -24,10 +42,16 @@ public class SoldierMotor : MonoBehaviour
     public NavMeshAgent Agent => agent;
     public bool HasPath => agent != null && agent.hasPath;
     public Vector3 Velocity => agent != null ? agent.velocity : Vector3.zero;
+    
+    public float CurrentMoveSpeedLimit =>
+        agent != null
+            ? Mathf.Max(0.001f, agent.speed)
+            : Mathf.Max(0.001f, baseMoveSpeed); // used in SoldierAnimator for calculating speed
 
     void Awake()
     {
         agent = GetComponent<NavMeshAgent>();
+        soldierController = GetComponent<SoldierController>();
 
         agent.radius = agentRadius;
         agent.height = agentHeight;
@@ -69,12 +93,16 @@ public class SoldierMotor : MonoBehaviour
         if (!CanMove())
             return;
 
+        if (soldierController != null && soldierController.IsMovementLocked)
+            return;
+
         agent.isStopped = false;
         agent.speed = baseMoveSpeed * Mathf.Max(0.1f, speedMultiplier);
         agent.stoppingDistance = stoppingDistance >= 0f
             ? stoppingDistance
             : defaultStoppingDistance;
 
+        Debug.Log("move to " + position);
         agent.SetDestination(position);
     }
 
@@ -122,6 +150,9 @@ public class SoldierMotor : MonoBehaviour
     void RotateTowardVelocity()
     {
         if (Time.time < velocityRotationSuppressedUntil)
+            return;
+
+        if (soldierController != null && soldierController.IsMovementLocked)
             return;
 
         if (agent == null)

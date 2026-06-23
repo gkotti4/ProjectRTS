@@ -2,6 +2,23 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
+/// -----------------------------------------------------------------------------
+/// SquadController
+/// -----------------------------------------------------------------------------
+///
+/// Root gameplay component for a controllable squad.
+/// Owns the squad's high-level state, selected command interface, faction identity,
+/// and references to the squad subsystems: roster, health, formation, movement,
+/// selection, and combat.
+///
+/// This class should coordinate orders and state transitions, but should not
+/// calculate formation geometry, move individual soldiers, resolve melee attacks,
+/// or play soldier animations directly.
+///
+/// Design role:
+/// Player/AI orders enter here, then get routed to SquadMovement, SquadCombat,
+/// SquadFormationController, or other squad-level systems.
+/// 
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(FactionOwner))]
 [RequireComponent(typeof(SquadRoster))]
@@ -106,6 +123,12 @@ public class SquadController : MonoBehaviour,
 
     public void Initialize(SquadData data, FactionInstance faction)
     {
+        if (isInitialized)
+        {
+            Debug.LogWarning($"{name}: Squad Initialize called more than once.");
+            return;
+        }
+
         if (data == null)
         {
             Debug.LogError($"{name}: Squad Initialize failed. SquadData is null.");
@@ -124,13 +147,19 @@ public class SquadController : MonoBehaviour,
         Stance = squadData.defaultStance;
         State = SquadState.Idle;
 
+        // 1. Build physical/gameplay body.
         Roster.Initialize(this, squadData, Faction);
+
+        // 2. Bind squad-level state systems that depend on roster/soldiers.
         Health.Initialize(Roster);
         Formation.Initialize(this, Roster, squadData);
         Movement.Initialize(this, Roster, Formation, squadData);
-        Selection.Initialize(this, Roster);
         Combat.Initialize(this, Roster, Formation, Movement, squadData);
 
+        // 3. Bind visuals last. Visuals can safely read Data/Faction/Health/Roster now.
+        Selection.Initialize(this, Roster);
+
+        // 4. The squad is now safe for external systems and Update ticks.
         isInitialized = true;
     }
 

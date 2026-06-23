@@ -102,6 +102,14 @@ public enum SoldierRole
     Routing
 }
 
+public enum SoldierActionState
+{
+    None,
+    Attack,
+    HitReact,
+    Death
+}
+
 // ============================================================
 // WORKERS
 // ============================================================
@@ -149,14 +157,13 @@ public enum CommandType
     HoldPosition,
 
     // Worker
-    Gather,
     Build,
     Repair,
 
     // Building
-    SetRallyPoint,
-    Produce,
-    Research,
+    //SetRallyPoint,
+    //Produce,
+    //Research,
 
     // Squad stances
     Aggressive,
@@ -247,81 +254,30 @@ public struct ResourceCost
 // UPGRADES / MODIFIERS
 // ============================================================
 
-public enum UpgradeType
-{
-    Global,
-    Unit,       // legacy
-    Squad,
-    Soldier,
-    Worker,
-    Building
-}
+// public enum UpgradeType
+// {
+//     Global,
+//     Unit,       // legacy
+//     Squad,
+//     Soldier,
+//     Worker,
+//     Building
+// }
+//
+// public enum ModifierType
+// {
+//     Flat,
+//     Percentage
+// }
 
-public enum ModifierType
-{
-    Flat,
-    Percentage
-}
 
-public enum StatType
-{
-    None,
-
-    // Health
-    MaxHealth,
-    HealRate,
-    Armor,
-
-    // Armor legacy splits
-    MeleeArmor,
-    PierceArmor,
-
-    // Movement
-    MoveSpeed,
-    Acceleration,
-    TurnSpeed,
-
-    // Vision
-    LineOfSight,
-
-    // Combat
-    Attack,
-    MeleeAttack,
-    MeleeDefense,
-    WeaponDamage,
-    ArmorPiercingDamage,
-    AttackDamage,
-    AttackSpeed,
-    AttackInterval,
-    AttackRange,
-
-    // Morale
-    Morale,
-    Leadership,
-
-    // Economy
-    GatherAmount,
-    GatherSpeed,
-    GatherInterval,
-    GatherRange,
-    CarryCapacity,
-    BuildSpeed,
-
-    // Production / population
-    ProductionSpeed,
-    PopulationCost,
-    PopulationCap,
-    GarrisonCapacity,
-    ResourceGenerationRate
-}
-
-[System.Serializable]
-public struct StatModifier
-{
-    public StatType stat;
-    public float value;
-    public ModifierType modifierType;
-}
+// [System.Serializable]
+// public struct StatModifier
+// {
+//     public StatType stat;
+//     public float value;
+//     public ModifierType modifierType;
+// }
 
 // ============================================================
 // INTERFACES
@@ -376,77 +332,244 @@ public class ControlGroup
     public List<ISelectable> members = new List<ISelectable>();
 }
 
+
+// ============================================================
+// Faction Visuals
+// ============================================================
+
+[System.Serializable]
+public struct TeamVisualSettings
+{
+    public Color teamColor;
+    public Color selectionColor;
+    public Color hoverColor;
+    public Color bannerColor;
+
+    public TeamVisualSettings(Color teamColor)
+    {
+        this.teamColor = teamColor;
+        selectionColor = teamColor;
+        hoverColor = teamColor;
+        bannerColor = teamColor;
+    }
+
+    public TeamVisualSettings(
+        Color teamColor,
+        Color selectionColor,
+        Color hoverColor,
+        Color bannerColor)
+    {
+        this.teamColor = teamColor;
+        this.selectionColor = selectionColor;
+        this.hoverColor = hoverColor;
+        this.bannerColor = bannerColor;
+    }
+
+    public static TeamVisualSettings Default => new TeamVisualSettings(Color.white);
+}
+
+
+
+
+
+
+#region StatBlocks
+
+[System.Serializable]
+public struct HealthStats
+{
+    [Min(1)] public int maxHealth;
+    [Min(0)] public int armor;
+
+    public static HealthStats Default => new HealthStats
+    {
+        maxHealth = 100,
+        armor = 0
+    };
+}
+
+[System.Serializable]
+public struct MovementStats
+{
+    [Min(0f)] public float moveSpeed;
+    [Min(0f)] public float acceleration;
+    [Min(0f)] public float turnSpeed;
+
+    public static MovementStats Default => new MovementStats
+    {
+        moveSpeed = 4f,
+        acceleration = 99999f,
+        turnSpeed = 900f
+    };
+}
+
+[System.Serializable]
+public struct MeleeCombatStats
+{
+    [Min(0)] public int meleeAttack;
+    [Min(0)] public int meleeDefense;
+
+    [Min(0)] public int weaponDamage;
+    [Min(0)] public int armorPiercingDamage;
+
+    [Min(0.05f)] public float attackInterval;
+    [Min(0f)] public float attackRange;
+
+    public static MeleeCombatStats Default => new MeleeCombatStats
+    {
+        meleeAttack = 20,
+        meleeDefense = 20,
+        weaponDamage = 20,
+        armorPiercingDamage = 0,
+        attackInterval = 1.5f,
+        attackRange = 1.5f
+    };
+}
+
+[System.Serializable]
+public struct RangedCombatStats
+{
+    [Min(0)] public int missileDamage;
+    [Min(0)] public int armorPiercingDamage;
+
+    [Min(0.05f)] public float attackInterval;
+    [Min(0f)] public float attackRange;
+    [Min(0f)] public float projectileSpeed;
+}
+
+[System.Serializable]
+public struct MoraleStats
+{
+    [Min(0f)] public float maxMorale;
+    [Min(0f)] public float leadership;
+
+    public static MoraleStats Default => new MoraleStats
+    {
+        maxMorale = 100f,
+        leadership = 50f
+    };
+}
+
+[System.Serializable]
+public struct FormationStats
+{
+    public SquadFormation defaultFormation;
+
+    [Min(1)] public int defaultUnitsPerRow;
+    [Min(0.1f)] public float spacing;
+
+    public static FormationStats Default => new FormationStats
+    {
+        defaultFormation = SquadFormation.Line,
+        defaultUnitsPerRow = 10,
+        spacing = 2f
+    };
+}
+
+[System.Serializable]
+public struct GatheringStats
+{
+    [Min(0)] public int gatherAmount;
+    [Min(0f)] public float gatherRange;
+    [Min(0.05f)] public float gatherInterval;
+}
+
+[System.Serializable]
+public struct ProductionStats
+{
+    [Min(0.05f)] public float productionSpeed;
+    [Min(0)] public int garrisonCapacity;
+
+    public static ProductionStats Default => new ProductionStats
+    {
+        productionSpeed = 1f,
+        garrisonCapacity = 0
+    };
+}
+
+#endregion
+
+
+
+
+
+
+
+
+
+
+
 // ============================================================
 // LEGACY COMPATIBILITY
 // ============================================================
 // Keep this until old EntityStats / UnitController / VillagerController /
 // MilitaryController / EntityDetails are fully deleted or rewritten.
 
-public enum EntityType
-{
-    None,
-    Unit,
-    Building
-}
-
-public enum EntityTag
-{
-    None = 0,
-
-    Villager,
-
-    Infantry,
-    Ranged,
-    Cavalry,
-    Siege,
-
-    TownCenter,
-    MilitaryBuilding,
-    ResourceBuilding,
-    ProductionBuilding,
-    DefenseBuilding,
-
-    AllUnits,
-    AllBuildings,
-    All
-}
-
-public enum UnitType
-{
-    None,
-    Villager,
-
-    Infantry,
-    Ranged,
-    Cavalry,
-    Siege,
-    Support,
-    Hero
-}
-
-public enum BuildingType
-{
-    None,
-    TownCenter,
-    Barracks,
-    Farm
-}
-
-public enum UnitState
-{
-    Idle,
-    Moving,
-    Attacking,
-    Returning,
-    Gathering,
-    Building,
-    Patrolling,
-    AttackMoving
-}
-
-public enum UnitControlState
-{
-    PlayerControlled,
-    AIControlled,
-    Locked
-}
+// public enum EntityType
+// {
+//     None,
+//     Unit,
+//     Building
+// }
+//
+// public enum EntityTag
+// {
+//     None = 0,
+//
+//     Villager,
+//
+//     Infantry,
+//     Ranged,
+//     Cavalry,
+//     Siege,
+//
+//     TownCenter,
+//     MilitaryBuilding,
+//     ResourceBuilding,
+//     ProductionBuilding,
+//     DefenseBuilding,
+//
+//     AllUnits,
+//     AllBuildings,
+//     All
+// }
+//
+// public enum UnitType
+// {
+//     None,
+//     Villager,
+//
+//     Infantry,
+//     Ranged,
+//     Cavalry,
+//     Siege,
+//     Support,
+//     Hero
+// }
+//
+// public enum BuildingType
+// {
+//     None,
+//     TownCenter,
+//     Barracks,
+//     Farm
+// }
+//
+// public enum UnitState
+// {
+//     Idle,
+//     Moving,
+//     Attacking,
+//     Returning,
+//     Gathering,
+//     Building,
+//     Patrolling,
+//     AttackMoving
+// }
+//
+// public enum UnitControlState
+// {
+//     PlayerControlled,
+//     AIControlled,
+//     Locked
+// }

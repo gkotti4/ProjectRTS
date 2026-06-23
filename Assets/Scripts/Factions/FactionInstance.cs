@@ -22,6 +22,9 @@ public class FactionInstance
     public readonly HashSet<UpgradeData> appliedUpgrades = new HashSet<UpgradeData>();
 
     public bool isEliminated = false;
+    
+    public TeamVisualSettings Visuals =>
+        baseData != null ? baseData.visuals : TeamVisualSettings.Default;
 
     public FactionInstance(
         FactionData baseData,

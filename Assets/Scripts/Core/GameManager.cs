@@ -8,6 +8,8 @@ public class GameManager : MonoBehaviour
     [Header("Faction Setup")]
     [SerializeField] private FactionData playerFactionData;
     [SerializeField] private FactionData enemyFactionData;
+    
+    [Header("Starting Values")]
     [SerializeField] private int startingResources = 1000;
     [SerializeField] private int startingPopulationCap = 1000;
 

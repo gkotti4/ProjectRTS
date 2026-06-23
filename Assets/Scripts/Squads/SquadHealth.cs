@@ -3,6 +3,23 @@ using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(SquadRoster))]
+
+
+/// -----------------------------------------------------------------------------
+/// SquadHealth
+/// -----------------------------------------------------------------------------
+///
+/// Aggregates individual SoldierHealth values into squad-level health and manpower.
+/// Subscribes to soldier health/death events, recalculates current squad health,
+/// living soldier count, health percentage, and manpower percentage.
+///
+/// The squad's maximum health and total soldier count are initialized from the
+/// starting roster and remain stable so deaths reduce manpower instead of shrinking
+/// the denominator.
+///
+/// Design role:
+/// Converts individual soldier health into squad UI/gameplay health state.
+///
 public class SquadHealth : MonoBehaviour
 {
     public event Action<SquadHealth> OnSquadHealthChanged;
@@ -56,6 +73,11 @@ public class SquadHealth : MonoBehaviour
 
         if (roster != null)
             roster.OnRosterChanged += HandleRosterChanged;
+        
+        TotalSoldiers = roster.Soldiers.Count;
+        MaxHealth = 0;
+        foreach (SoldierController soldier in roster.Soldiers)
+            MaxHealth += soldier.Health.MaxHealth;
 
         RefreshSubscriptions();
         Recalculate();
@@ -102,9 +124,9 @@ public class SquadHealth : MonoBehaviour
     void Recalculate()
     {
         CurrentHealth = 0;
-        MaxHealth = 0;
         LivingSoldiers = 0;
-        TotalSoldiers = 0;
+        // MaxHealth = 0;
+        // TotalSoldiers = 0;
 
         if (roster == null)
         {
@@ -117,9 +139,9 @@ public class SquadHealth : MonoBehaviour
             if (soldier == null || soldier.Health == null)
                 continue;
 
-            TotalSoldiers++;
-
-            MaxHealth += soldier.Health.MaxHealth;
+            // TotalSoldiers++;
+            // MaxHealth += soldier.Health.MaxHealth;
+            
             CurrentHealth += soldier.Health.CurrentHealth;
 
             if (soldier.Health.IsAlive)

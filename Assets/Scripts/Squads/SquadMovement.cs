@@ -2,6 +2,22 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
+/// -----------------------------------------------------------------------------
+/// SquadMovement
+/// -----------------------------------------------------------------------------
+///
+/// Handles squad-root movement and formation-follow behavior.
+/// Moves the squad NavMeshAgent toward ordered destinations, maintains desired
+/// facing, updates formation slots, sends soldiers toward their assigned slots,
+/// and manages reforming after movement or combat.
+///
+/// This class is responsible for organized formation movement outside combat.
+/// During melee, soldiers use softer combat-home/pressure logic from SquadCombat
+/// instead of strict slot following.
+///
+/// Design role:
+/// Squad marching, slot following, facing, and reforming.
+///
 [RequireComponent(typeof(NavMeshAgent))]
 public class SquadMovement : MonoBehaviour
 {
@@ -60,6 +76,8 @@ public class SquadMovement : MonoBehaviour
         formation = squadFormation;
         data = squadData;
 
+        ApplyProfile(data != null ? data.movementProfile : null);
+
         baseMoveSpeed = data.movement.moveSpeed > 0f
             ? data.movement.moveSpeed
             : 4f;
@@ -73,6 +91,26 @@ public class SquadMovement : MonoBehaviour
         desiredFacing = NormalizeFacing(transform.forward);
 
         PlaceSoldiersInCurrentFormation();
+    }
+
+    void ApplyProfile(SquadMovementProfile profile)
+    {
+        if (profile == null)
+            return;
+
+        slotUpdateThreshold = Mathf.Max(0f, profile.slotUpdateThreshold);
+        memberStoppingDistance = Mathf.Max(0f, profile.memberStoppingDistance);
+
+        catchupStartDistance = Mathf.Max(0f, profile.catchupStartDistance);
+        catchupMaxDistance = Mathf.Max(catchupStartDistance, profile.catchupMaxDistance);
+        catchupMaxMultiplier = Mathf.Max(0.1f, profile.catchupMaxMultiplier);
+
+        reformCheckInterval = Mathf.Max(0.01f, profile.reformCheckInterval);
+        reformMemberDistance = Mathf.Max(0f, profile.reformMemberDistance);
+        reformRatioRequired = Mathf.Clamp01(profile.reformRatioRequired);
+
+        reassignSlotsOnLargeFacingChange = profile.reassignSlotsOnLargeFacingChange;
+        reassignFacingAngle = Mathf.Clamp(profile.reassignFacingAngle, 0f, 180f);
     }
 
     /// Orders the squad root to move while soldiers follow formation slots.
@@ -109,7 +147,6 @@ public class SquadMovement : MonoBehaviour
         squadAgent.stoppingDistance = 0.2f;
         squadAgent.SetDestination(finalDestination);
 
-        // Only show on Drag Orders from now on.
         // FormationVisualizer.Instance?.ShowSlots(
         //     formation.GetWorldSlots(finalDestination, desiredFacing));
     }

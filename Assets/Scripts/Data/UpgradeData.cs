@@ -15,12 +15,12 @@ public class UpgradeData : ScriptableObject
     public float researchTime = 1f;
 
     [Header("Targeting")]
-    public UpgradeType upgradeType;
+    // public UpgradeType upgradeType;
     public SquadCategory[] affectedSquadCategories;
     public BuildingCategory[] affectedBuildingCategories;
 
-    [Header("Modifiers")]
-    public StatModifier[] statModifiers;
+    // [Header("Modifiers")]
+    // public StatModifier[] statModifiers;
 
     [Header("Future Evolution / Replacement")]
     public SoldierData fromSoldier;

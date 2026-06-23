@@ -1,6 +1,21 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+
+/// -----------------------------------------------------------------------------
+/// SquadFormationController
+/// -----------------------------------------------------------------------------
+///
+/// Owns the squad's current formation definition and slot layout.
+/// Stores formation type, facing, spacing, local offsets, world slots, and soldier
+/// slot assignments.
+///
+/// This class calculates where soldiers should be in formation, but does not move
+/// them. Movement execution belongs to SquadMovement/SoldierMotor.
+///
+/// Design role:
+/// Formation geometry and slot ownership.
+///
 public class SquadFormationController : MonoBehaviour
 {
     private SquadController squad;

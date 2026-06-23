@@ -2,6 +2,21 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// -----------------------------------------------------------------------------
+/// SquadRoster
+/// -----------------------------------------------------------------------------
+///
+/// Owns the runtime soldier list for a squad.
+/// Handles spawning starting soldiers from SquadData/SoldierData, assigning slot
+/// indices, tracking living/existing soldiers, and notifying the squad when
+/// members die or are removed.
+///
+/// This class is the authority for squad membership. Other systems may read the
+/// roster, but should not directly own or rebuild the soldier list.
+///
+/// Design role:
+/// The squad's "membership/body" system.
+///
 public class SquadRoster : MonoBehaviour
 {
     public event Action<SquadRoster> OnRosterChanged;

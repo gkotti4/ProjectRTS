@@ -1,6 +1,17 @@
 using System;
 using UnityEngine;
 
+/// -----------------------------------------------------------------------------
+/// SoldierHealth
+/// -----------------------------------------------------------------------------
+///
+/// Owns individual soldier health, armor, damage intake, healing, and death events.
+/// Does not know about squads, UI, animation, or combat behavior beyond applying
+/// damage and notifying listeners when health changes or death occurs.
+///
+/// Design role:
+/// Pure individual health/death state.
+///
 public class SoldierHealth : MonoBehaviour
 {
     public event Action<SoldierHealth> OnHealthChanged;

@@ -1,6 +1,22 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// -----------------------------------------------------------------------------
+/// SquadCombat
+/// -----------------------------------------------------------------------------
+///
+/// Squad-level combat coordinator.
+/// Handles attack orders, auto-scan, approaching enemy squads, beginning/ending
+/// engagements, assigning combat homes, calculating pressure goals, managing
+/// frontline/support participation, and ticking each SoldierCombat with a local
+/// combat context.
+///
+/// This class should decide squad engagement context, not individual attack
+/// results or animation playback.
+///
+/// Design role:
+/// Converts "this squad is fighting that squad" into per-soldier combat context.
+///
 public class SquadCombat : MonoBehaviour
 {
     [Header("Scanning")]
@@ -45,6 +61,7 @@ public class SquadCombat : MonoBehaviour
     private SquadFormationController formation;
     private SquadMovement movement;
     private SquadData data;
+    private SquadCombatProfile squadCombatProfile;
 
     private SquadController targetSquad;
 
@@ -70,6 +87,41 @@ public class SquadCombat : MonoBehaviour
         formation = squadFormation;
         movement = squadMovement;
         data = squadData;
+        squadCombatProfile = data != null ? data.squadCombatProfile : null;
+
+        ApplyProfile(squadCombatProfile);
+    }
+
+    void ApplyProfile(SquadCombatProfile profile)
+    {
+        if (profile == null)
+            return;
+
+        autoScanEnabled = profile.autoScanEnabled;
+        scanInterval = Mathf.Max(0.01f, profile.scanInterval);
+
+        combatStartRange = Mathf.Max(0f, profile.combatStartRange);
+        combatBreakRange = Mathf.Max(combatStartRange, profile.combatBreakRange);
+        approachRefreshInterval = Mathf.Max(0.01f, profile.approachRefreshInterval);
+        approachStopDistance = Mathf.Max(0f, profile.approachStopDistance);
+
+        soldierLocalTargetScanRange = Mathf.Max(0f, profile.soldierLocalTargetScanRange);
+        combatMoveSpeedMultiplier = Mathf.Max(0.1f, profile.combatMoveSpeedMultiplier);
+
+        combatPressureDistance = Mathf.Max(0f, profile.combatPressureDistance);
+        combatRearFreeEngageDistance = Mathf.Max(0f, profile.combatRearFreeEngageDistance);
+        combatFrontFreeEngageDistance = Mathf.Max(combatRearFreeEngageDistance, profile.combatFrontFreeEngageDistance);
+        combatDisengageExtraDistance = Mathf.Max(0f, profile.combatDisengageExtraDistance);
+        combatForceRejoinExtraDistance = Mathf.Max(combatDisengageExtraDistance, profile.combatForceRejoinExtraDistance);
+        combatPressureStoppingDistance = Mathf.Max(0f, profile.combatPressureStoppingDistance);
+
+        targetRefreshInterval = Mathf.Max(0.01f, profile.targetRefreshInterval);
+
+        useSoftEngagementBudget = profile.useSoftEngagementBudget;
+        activeEngagementRatio = Mathf.Clamp01(profile.activeEngagementRatio);
+        activeEngagementMinCount = Mathf.Max(0, profile.activeEngagementMinCount);
+        activeEngagementFrontlineOverflow = Mathf.Max(0, profile.activeEngagementFrontlineOverflow);
+        activeEngagementFrontlineThreshold = Mathf.Clamp01(profile.activeEngagementFrontlineThreshold);
     }
 
     /// Receives an explicit attack order.
@@ -759,25 +811,48 @@ public class SquadCombat : MonoBehaviour
     /// Gets stance-based auto-scan range.
     float GetScanRange()
     {
-        if (data == null)
+        if (squad == null)
             return 0f;
 
         switch (squad.Stance)
         {
             case SquadStance.Aggressive:
-                return data.aggressiveAutoScanRange;
+                return squadCombatProfile != null
+                    ? squadCombatProfile.aggressiveAutoScanRange
+                    : data != null ? data.aggressiveAutoScanRange : 0f;
 
             case SquadStance.Defensive:
-                return data.defensiveAutoScanRange;
+                return squadCombatProfile != null
+                    ? squadCombatProfile.defensiveAutoScanRange
+                    : data != null ? data.defensiveAutoScanRange : 0f;
 
             case SquadStance.StandGround:
-                return data.melee.attackRange + data.standGroundScanPadding;
+                return GetSquadAttackRange() + GetStandGroundScanPadding();
 
             case SquadStance.NoAttack:
                 return 0f;
         }
 
         return 0f;
+    }
+
+    float GetStandGroundScanPadding()
+    {
+        if (squadCombatProfile != null)
+            return Mathf.Max(0f, squadCombatProfile.standGroundScanPadding);
+
+        return data != null ? Mathf.Max(0f, data.standGroundScanPadding) : 0f;
+    }
+
+    float GetSquadAttackRange()
+    {
+        if (data != null && data.soldierData != null)
+            return Mathf.Max(0.1f, data.soldierData.melee.attackRange);
+
+        if (data != null)
+            return Mathf.Max(0.1f, data.melee.attackRange);
+
+        return MeleeCombatStats.Default.attackRange;
     }
 
     /// Ends combat and tells the squad to reform.

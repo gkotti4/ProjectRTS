@@ -1,5 +1,21 @@
 using UnityEngine;
 
+/// -----------------------------------------------------------------------------
+/// SoldierCombat
+/// -----------------------------------------------------------------------------
+///
+/// Local combat brain for one soldier.
+/// Chooses nearby targets, checks attack range, requests Attack/HitReact actions,
+/// handles attack impact timing, receives hit reaction requests, manages combat
+/// rhythm, and keeps the soldier within squad-provided cohesion/pressure limits.
+///
+/// This class decides what the soldier wants to do next, but committed action
+/// locking belongs to SoldierController and visual playback belongs to SoldierAnimator.
+///
+/// Design role:
+/// Individual melee decision-making inside squad combat.
+///
+
 public class SoldierCombat : MonoBehaviour
 {
     enum SoldierCombatRhythmState
@@ -7,11 +23,11 @@ public class SoldierCombat : MonoBehaviour
         Seeking,
         Engaged,
         Recovering,
-        HitReacting,
         Waiting,
         Repositioning
     }
 
+    #region Fields
     private SoldierController soldier;
 
     private SoldierController currentTarget;
@@ -88,13 +104,22 @@ public class SoldierCombat : MonoBehaviour
 
     public bool IsActiveAttacker =>
         HasTarget &&
+        soldier != null &&
+        soldier.ActionState != SoldierActionState.HitReact &&
         combatRecoveryTimer <= 0f &&
-        hitReactionTimer <= 0f &&
-        rhythmState == SoldierCombatRhythmState.Engaged;
+        (rhythmState == SoldierCombatRhythmState.Engaged ||
+         soldier.ActionState == SoldierActionState.Attack);
+
+    public bool IsAttacking =>
+        soldier != null && soldier.ActionState == SoldierActionState.Attack;
 
     public bool IsRecovering => combatRecoveryTimer > 0f;
-    public bool IsHitReacting => hitReactionTimer > 0f;
+
+    public bool IsHitReacting =>
+        soldier != null && soldier.ActionState == SoldierActionState.HitReact;
+
     public bool IsWaiting => rhythmState == SoldierCombatRhythmState.Waiting;
+    #endregion
 
     /// Caches the owning SoldierController.
     /// SoldierCombat is the local combat brain for one soldier.
@@ -108,6 +133,8 @@ public class SoldierCombat : MonoBehaviour
     public void Initialize(SoldierController owner)
     {
         soldier = owner;
+        ApplyProfileFromSquad();
+
         currentTarget = null;
         attackTimer = 0f;
         combatRecoveryTimer = 0f;
@@ -122,6 +149,65 @@ public class SoldierCombat : MonoBehaviour
         lastCohesionOrigin = Vector3.zero;
         lastPressureGoal = Vector3.zero;
         rhythmState = SoldierCombatRhythmState.Seeking;
+    }
+
+    public void ApplyProfileFromSquad()
+    {
+        if (soldier == null ||
+            soldier.Squad == null ||
+            soldier.Squad.Data == null)
+        {
+            return;
+        }
+
+        ApplyProfile(soldier.Squad.Data.soldierCombatProfile);
+    }
+
+    public void ApplyProfile(SoldierCombatProfile profile)
+    {
+        if (profile == null)
+            return;
+
+        combatRecoveryMinDuration = Mathf.Max(0.05f, profile.combatRecoveryMinDuration);
+        combatRecoveryMaxDuration = Mathf.Max(combatRecoveryMinDuration, profile.combatRecoveryMaxDuration);
+        combatLongRecoveryChance = Mathf.Clamp01(profile.combatLongRecoveryChance);
+        combatLongRecoveryMinDuration = Mathf.Max(0.05f, profile.combatLongRecoveryMinDuration);
+        combatLongRecoveryMaxDuration = Mathf.Max(combatLongRecoveryMinDuration, profile.combatLongRecoveryMaxDuration);
+        combatRecoveryMoveChance = Mathf.Clamp01(profile.combatRecoveryMoveChance);
+        combatRecoveryReleaseTargetChance = Mathf.Clamp01(profile.combatRecoveryReleaseTargetChance);
+        combatRecoveryBackoffDistance = Mathf.Max(0f, profile.combatRecoveryBackoffDistance);
+        combatRecoverySideStepDistance = Mathf.Max(0f, profile.combatRecoverySideStepDistance);
+        combatRecoveryMoveSpeedMultiplier = Mathf.Max(0.1f, profile.combatRecoveryMoveSpeedMultiplier);
+        combatRecoveryStoppingDistance = Mathf.Max(0f, profile.combatRecoveryStoppingDistance);
+
+        pressureWaitDistance = Mathf.Max(0f, profile.pressureWaitDistance);
+        pressureWaitMinDuration = Mathf.Max(0.05f, profile.pressureWaitMinDuration);
+        pressureWaitMaxDuration = Mathf.Max(pressureWaitMinDuration, profile.pressureWaitMaxDuration);
+        pressureShuffleChance = Mathf.Clamp01(profile.pressureShuffleChance);
+        pressureShuffleSideDistance = Mathf.Max(0f, profile.pressureShuffleSideDistance);
+        pressureShuffleForwardDistance = Mathf.Max(0f, profile.pressureShuffleForwardDistance);
+        pressureShuffleMoveSpeedMultiplier = Mathf.Max(0.1f, profile.pressureShuffleMoveSpeedMultiplier);
+
+        preferredAttackersPerTarget = Mathf.Max(1, profile.preferredAttackersPerTarget);
+        targetCrowdingPenalty = Mathf.Max(0f, profile.targetCrowdingPenalty);
+        crowdedTargetExtraPenaltyDistance = Mathf.Max(0f, profile.crowdedTargetExtraPenaltyDistance);
+
+        hitReactionEnabled = profile.hitReactionEnabled;
+        hitReactionChance = Mathf.Clamp01(profile.hitReactionChance);
+        hitReactionDamageChanceBonus = Mathf.Clamp01(profile.hitReactionDamageChanceBonus);
+        hitReactionMinDuration = Mathf.Max(0.05f, profile.hitReactionMinDuration);
+        hitReactionMaxDuration = Mathf.Max(hitReactionMinDuration, profile.hitReactionMaxDuration);
+        hitReactionCooldown = Mathf.Max(0f, profile.hitReactionCooldown);
+        hitReactionMoveChance = Mathf.Clamp01(profile.hitReactionMoveChance);
+        hitReactionBackoffDistance = Mathf.Max(0f, profile.hitReactionBackoffDistance);
+        hitReactionSideStepDistance = Mathf.Max(0f, profile.hitReactionSideStepDistance);
+        hitReactionMoveSpeedMultiplier = Mathf.Max(0.1f, profile.hitReactionMoveSpeedMultiplier);
+        hitReactionStoppingDistance = Mathf.Max(0f, profile.hitReactionStoppingDistance);
+        hitReactionRecoveryExtension = Mathf.Max(0f, profile.hitReactionRecoveryExtension);
+
+        combatRecoveryHomeBias = Mathf.Clamp01(profile.combatRecoveryHomeBias);
+        hitReactionHomeBias = Mathf.Clamp01(profile.hitReactionHomeBias);
+        pressureShuffleHomeBias = Mathf.Clamp01(profile.pressureShuffleHomeBias);
     }
 
     /// Clears this soldier's local combat target and temporary rhythm state.
@@ -144,8 +230,12 @@ public class SoldierCombat : MonoBehaviour
         rhythmState = SoldierCombatRhythmState.Seeking;
 
         if (soldier != null)
+        {
+            soldier.CancelCurrentAction(false);
             soldier.ClearCombatTarget();
+        }
     }
+    
 
     /// Legacy compatibility overload.
     /// New combat should call the overload with a pressure goal and soft cohesion ranges.
@@ -226,14 +316,11 @@ public class SoldierCombat : MonoBehaviour
 
         RememberCombatContext(cohesionOrigin, clampedPressureGoal);
 
-        if (hitReactionTimer > 0f)
+        if (soldier.IsMovementLocked)
         {
-            TickHitReaction(
+            TickActionLock(
                 enemySquad,
-                cohesionOrigin,
-                clampedPressureGoal,
-                freeEngageDistance,
-                speedMultiplier);
+                clampedPressureGoal);
 
             return;
         }
@@ -301,6 +388,78 @@ public class SoldierCombat : MonoBehaviour
             speedMultiplier);
     }
 
+    /// Locks this soldier in place while a committed full-body action is playing.
+    /// Actions complete through animation events routed by SoldierAnimator -> SoldierController.
+    void TickActionLock(
+        SquadController enemySquad,
+        Vector3 pressureGoal)
+    {
+        soldier.Stop();
+
+        switch (soldier.ActionState)
+        {
+            case SoldierActionState.Attack:
+                if (currentTarget != null && currentTarget.IsAlive)
+                    soldier.FaceToward(currentTarget.transform.position);
+                else
+                    FaceTowardEnemySquad(enemySquad, pressureGoal);
+                break;
+
+            case SoldierActionState.HitReact:
+                if (lastHitAttacker != null && lastHitAttacker.IsAlive)
+                    soldier.FaceToward(lastHitAttacker.transform.position);
+                else if (currentTarget != null && currentTarget.IsAlive)
+                    soldier.FaceToward(currentTarget.transform.position);
+                else
+                    FaceTowardEnemySquad(enemySquad, pressureGoal);
+                break;
+        }
+    }
+    
+    public void HandleActionCompleted(SoldierActionState completedAction)
+    {
+        switch (completedAction)
+        {
+            case SoldierActionState.Attack:
+                BeginCombatRecovery();
+                break;
+
+            case SoldierActionState.HitReact:
+                combatRecoveryTimer = Mathf.Max(
+                    combatRecoveryTimer,
+                    hitReactionRecoveryExtension);
+
+                if (combatRecoveryTimer > 0f)
+                    rhythmState = SoldierCombatRhythmState.Recovering;
+                else
+                    rhythmState = SoldierCombatRhythmState.Seeking;
+
+                break;
+        }
+    }
+
+    public void HandleActionInterrupted(
+        SoldierActionState interruptedAction,
+        SoldierActionState newAction)
+    {
+        if (interruptedAction == SoldierActionState.Attack &&
+            newAction == SoldierActionState.HitReact)
+        {
+            hasCombatRecoveryPoint = false;
+            combatRecoveryTimer = 0f;
+        }
+
+        if (interruptedAction == SoldierActionState.HitReact)
+        {
+            hasHitReactionPoint = false;
+        }
+    }
+    // Backward-compatible hook for older animation-event wiring.
+    public void NotifyAttackAnimationEnded()
+    {
+        soldier?.CompleteAction(SoldierActionState.Attack);
+    }
+
     /// Updates the attack cooldown.
     void TickAttackTimer()
     {
@@ -341,23 +500,11 @@ public class SoldierCombat : MonoBehaviour
         }
     }
 
-    /// Updates hit reaction and its short anti-stunlock cooldown.
+    /// Updates the short anti-stunlock cooldown for hit reactions.
     void TickHitReactionTimers()
     {
         if (hitReactionCooldownTimer > 0f)
             hitReactionCooldownTimer -= Time.deltaTime;
-
-        if (hitReactionTimer <= 0f)
-            return;
-
-        hitReactionTimer -= Time.deltaTime;
-
-        if (hitReactionTimer <= 0f)
-        {
-            hitReactionTimer = 0f;
-            hasHitReactionPoint = false;
-            rhythmState = SoldierCombatRhythmState.Seeking;
-        }
     }
 
     /// Checks whether the current target is still usable.
@@ -460,48 +607,6 @@ public class SoldierCombat : MonoBehaviour
 
         return distanceFromCohesionOrigin <=
                freeEngageDistance + localTargetScanRange + attackRange;
-    }
-
-    /// Handles a short defensive reset after being hit.
-    /// This gives melee a reciprocal rhythm: soldiers react to enemy attacks,
-    /// not only to their own attack cooldowns.
-    void TickHitReaction(
-        SquadController enemySquad,
-        Vector3 cohesionOrigin,
-        Vector3 pressureGoal,
-        float freeEngageDistance,
-        float speedMultiplier)
-    {
-        rhythmState = SoldierCombatRhythmState.HitReacting;
-
-        if (lastHitAttacker != null && lastHitAttacker.IsAlive)
-            soldier.FaceToward(lastHitAttacker.transform.position);
-        else if (currentTarget != null && currentTarget.IsAlive)
-            soldier.FaceToward(currentTarget.transform.position);
-        else
-            FaceTowardEnemySquad(enemySquad, pressureGoal);
-
-        if (!hasHitReactionPoint)
-        {
-            soldier.Stop();
-            return;
-        }
-
-        Vector3 clampedPoint = ClampPointToRange(
-            hitReactionPoint,
-            cohesionOrigin,
-            freeEngageDistance);
-
-        if (Vector3.Distance(transform.position, clampedPoint) <= hitReactionStoppingDistance + 0.05f)
-        {
-            soldier.Stop();
-            return;
-        }
-
-        soldier.MoveToCombatPoint(
-            clampedPoint,
-            hitReactionStoppingDistance,
-            Mathf.Max(0.1f, speedMultiplier * hitReactionMoveSpeedMultiplier));
     }
 
     /// Handles the longer post-attack reset/backoff window.
@@ -745,14 +850,15 @@ public class SoldierCombat : MonoBehaviour
         if (attackTimer > 0f)
             return;
 
+        if (!soldier.TryBeginAction(SoldierActionState.Attack))
+            return;
+
         MeleeCombatStats attackerStats = GetMeleeStats(soldier);
         MeleeCombatStats defenderStats = GetMeleeStats(currentTarget);
 
         DamageResult result = CombatResolver.ResolveMeleeHit(
             attackerStats,
             defenderStats);
-
-        soldier.PlayAttackVisual();
 
         if (result.didHit)
         {
@@ -773,8 +879,6 @@ public class SoldierCombat : MonoBehaviour
         attackTimer = Mathf.Max(
             0.05f,
             attackerStats.attackInterval);
-
-        BeginCombatRecovery();
     }
 
     /// Called by an enemy soldier when this soldier is successfully hit.
@@ -816,53 +920,49 @@ public class SoldierCombat : MonoBehaviour
 
         BeginHitReaction(attacker);
     }
-
+    
     void BeginHitReaction(SoldierController attacker)
     {
-        rhythmState = SoldierCombatRhythmState.HitReacting;
+        if (!soldier.TryBeginAction(SoldierActionState.HitReact))
+            return;
 
-        hitReactionTimer = Random.Range(
-            Mathf.Max(0.05f, hitReactionMinDuration),
-            Mathf.Max(hitReactionMinDuration, hitReactionMaxDuration));
+        rhythmState = SoldierCombatRhythmState.Recovering;
 
         hitReactionCooldownTimer = Mathf.Max(0f, hitReactionCooldown);
+
         hasHitReactionPoint = false;
         hasPressureShufflePoint = false;
+        hasCombatRecoveryPoint = false;
+
         pressureWaitTimer = 0f;
+        combatRecoveryTimer = 0f;
+
+        if (attacker != null && attacker.IsAlive)
+        {
+            currentTarget = attacker;
+            lastHitAttacker = attacker;
+            soldier.SetCombatTarget(attacker);
+            soldier.FaceToward(attacker.transform.position);
+        }
+    }
+
+    void BeginHitReactionRecovery()
+    {
+        if (hitReactionRecoveryExtension <= 0f)
+        {
+            rhythmState = SoldierCombatRhythmState.Seeking;
+            return;
+        }
 
         combatRecoveryTimer = Mathf.Max(
             combatRecoveryTimer,
-            hitReactionTimer + Mathf.Max(0f, hitReactionRecoveryExtension));
+            hitReactionRecoveryExtension);
 
-        if (attacker == null || !attacker.IsAlive)
-            return;
+        hasCombatRecoveryPoint = false;
+        hasPressureShufflePoint = false;
+        pressureWaitTimer = 0f;
 
-        if (Random.value > hitReactionMoveChance)
-            return;
-
-        Vector3 away = transform.position - attacker.transform.position;
-        away.y = 0f;
-
-        if (away == Vector3.zero)
-            away = -transform.forward;
-
-        away.Normalize();
-
-        Vector3 side = new Vector3(away.z, 0f, -away.x);
-
-        if (Random.value < 0.5f)
-            side = -side;
-
-        hitReactionPoint =
-            transform.position +
-            away * Random.Range(hitReactionBackoffDistance * 0.5f, hitReactionBackoffDistance) +
-            side * Random.Range(-hitReactionSideStepDistance, hitReactionSideStepDistance);
-
-        hitReactionPoint = ApplyCombatHomeBias(
-            hitReactionPoint,
-            hitReactionHomeBias);
-
-        hasHitReactionPoint = true;
+        rhythmState = SoldierCombatRhythmState.Recovering;
     }
 
     void BeginCombatRecovery()
@@ -1048,3 +1148,7 @@ public class SoldierCombat : MonoBehaviour
         attackTimer = Random.Range(0f, Mathf.Max(0f, maxDelay));
     }
 }
+
+
+
+

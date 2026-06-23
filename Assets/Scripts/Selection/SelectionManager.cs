@@ -1,9 +1,6 @@
 using System.Collections.Generic;
-using UnityEditor.Rendering;
 using UnityEngine;
 using UnityEngine.EventSystems;
-
-
 
 /*
  * Click Selecting an Object - Can select from GameLayers.SelectableLayers LayerMask;
@@ -16,7 +13,6 @@ using UnityEngine.EventSystems;
  * SelectionTarget - We are now using SelectionTarget script to route selection behavior to the correct ISelectable target,
  *                    Anything searching for ISelectable directly is DEPRECIATED
  */
-
 
 public class SelectionManager : MonoBehaviour
 {

@@ -8,7 +8,8 @@ public class FactionData : ScriptableObject
     public int factionId = 0; // Factions start at 1,
 
     [Header("Visuals (not used currently)")] 
-    public Color factionColor = Color.white;
+    //public Color factionColor = Color.white;
+    public TeamVisualSettings visuals = TeamVisualSettings.Default;
     
     public Material unitMaterial;
     public Material buildingMaterial;
