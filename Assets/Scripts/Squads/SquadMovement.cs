@@ -21,39 +21,68 @@ using UnityEngine.AI;
 [RequireComponent(typeof(NavMeshAgent))]
 public class SquadMovement : MonoBehaviour
 {
-    [Header("Slot Following")]
-    [SerializeField] private float slotUpdateThreshold = 0.25f;
-    [SerializeField] private float memberStoppingDistance = 0.1f;
+    #region Fields
 
-    [Header("Catchup")]
-    [SerializeField] private float catchupStartDistance = 2f;
-    [SerializeField] private float catchupMaxDistance = 10f;
-    [SerializeField] private float catchupMaxMultiplier = 1.45f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Slot Following
+    // -----------------------------------------------------------------------------
+    // These are intentionally not serialized.
+    // Normal tuning should happen in SquadMovementProfile, assigned from SquadData.
+    private float slotUpdateThreshold = 0.25f;
+    private float memberStoppingDistance = 0.1f;
 
-    [Header("Reform")]
-    [SerializeField] private float reformCheckInterval = 0.25f;
-    [SerializeField] private float reformMemberDistance = 1.25f;
-    [SerializeField] private float reformRatioRequired = 0.75f;
-    
-    [Header("Slot Reassignment")]
-    [SerializeField] private bool reassignSlotsOnLargeFacingChange = true;
-    [SerializeField] private float reassignFacingAngle = 100f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Catchup
+    // -----------------------------------------------------------------------------
+    private float catchupStartDistance = 2f;
+    private float catchupMaxDistance = 10f;
+    private float catchupMaxMultiplier = 1.45f;
 
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Reform
+    // -----------------------------------------------------------------------------
+    private float reformCheckInterval = 0.25f;
+    private float reformMemberDistance = 1.25f;
+    private float reformRatioRequired = 0.75f;
+
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Slot Reassignment
+    // -----------------------------------------------------------------------------
+    private bool reassignSlotsOnLargeFacingChange = true;
+    private float reassignFacingAngle = 100f;
+
+    // -----------------------------------------------------------------------------
+    // Component References
+    // -----------------------------------------------------------------------------
     private SquadController squad;
     private SquadRoster roster;
     private SquadFormationController formation;
     private SquadData data;
-
     private NavMeshAgent squadAgent;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Movement State
+    // -----------------------------------------------------------------------------
     private Vector3 finalDestination;
     private Vector3 desiredFacing = Vector3.forward;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Timers
+    // -----------------------------------------------------------------------------
     private float reformTimer = 0f;
+
+    // -----------------------------------------------------------------------------
+    // Runtime Movement Values
+    // -----------------------------------------------------------------------------
     private float baseMoveSpeed = 4f;
 
+    // -----------------------------------------------------------------------------
+    // Public Read-Only Access
+    // -----------------------------------------------------------------------------
     public Vector3 FinalDestination => finalDestination;
     public Vector3 DesiredFacing => desiredFacing;
+
+    #endregion
 
     void Awake()
     {

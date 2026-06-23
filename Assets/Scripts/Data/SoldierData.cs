@@ -31,5 +31,9 @@ public class SoldierData : ScriptableObject
     public HealthStats health = HealthStats.Default;
     public MovementStats movement = MovementStats.Default;
     public MeleeCombatStats melee = MeleeCombatStats.Default;
+
+    [Header("Weapon")]
+    [Tooltip("Optional. If empty, this soldier uses the melee stats above as a fallback weapon.")]
+    public WeaponProfile weaponProfile;
     
 }

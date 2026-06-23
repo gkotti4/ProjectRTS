@@ -92,6 +92,27 @@ public class SquadController : MonoBehaviour,
         Movement = GetComponent<SquadMovement>();
         Selection = GetComponent<SquadSelection>();
         Combat = GetComponent<SquadCombat>();
+
+        // -------------------------------------------------------------------------
+        // Validation
+        // -------------------------------------------------------------------------
+        if (Roster == null)
+            Debug.LogError($"{name}: SquadController missing SquadRoster.", this);
+
+        if (Health == null)
+            Debug.LogError($"{name}: SquadController missing SquadHealth.", this);
+
+        if (Formation == null)
+            Debug.LogError($"{name}: SquadController missing SquadFormationController.", this);
+
+        if (Movement == null)
+            Debug.LogError($"{name}: SquadController missing SquadMovement.", this);
+
+        if (Selection == null)
+            Debug.LogError($"{name}: SquadController missing SquadSelection.", this);
+
+        if (Combat == null)
+            Debug.LogError($"{name}: SquadController missing SquadCombat.", this);
     }
 
     void Start()
@@ -101,6 +122,30 @@ public class SquadController : MonoBehaviour,
 
         SelectionManager.Instance?.RegisterSelectable(this);
         SquadManager.Instance?.RegisterSquad(this);
+
+        // -------------------------------------------------------------------------
+        // Validation
+        // -------------------------------------------------------------------------
+        if (initializeOnStart && !isInitialized)
+        {
+            Debug.LogError(
+                $"{name}: SquadController Start finished but squad is not initialized.",
+                this);
+        }
+
+        if (SelectionManager.Instance == null)
+        {
+            Debug.LogWarning(
+                $"{name}: SelectionManager.Instance is null. This squad will not be selectable through the selection registry.",
+                this);
+        }
+
+        if (SquadManager.Instance == null)
+        {
+            Debug.LogWarning(
+                $"{name}: SquadManager.Instance is null. This squad will not be available for squad combat scanning.",
+                this);
+        }
     }
 
     void Update()
@@ -125,19 +170,19 @@ public class SquadController : MonoBehaviour,
     {
         if (isInitialized)
         {
-            Debug.LogWarning($"{name}: Squad Initialize called more than once.");
+            Debug.LogWarning($"{name}: Squad Initialize called more than once.", this);
             return;
         }
 
         if (data == null)
         {
-            Debug.LogError($"{name}: Squad Initialize failed. SquadData is null.");
+            Debug.LogError($"{name}: Squad Initialize failed. SquadData is null.", this);
             return;
         }
 
         if (faction == null)
         {
-            Debug.LogError($"{name}: Squad Initialize failed. Faction is null.");
+            Debug.LogError($"{name}: Squad Initialize failed. Faction is null.", this);
             return;
         }
 
@@ -161,9 +206,51 @@ public class SquadController : MonoBehaviour,
 
         // 4. The squad is now safe for external systems and Update ticks.
         isInitialized = true;
+
+        // -------------------------------------------------------------------------
+        // Validation
+        // -------------------------------------------------------------------------
+        if (squadData == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. squadData is null.", this);
+
+        if (Faction == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. Faction is null.", this);
+
+        if (Roster == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. Roster is null.", this);
+
+        if (Health == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. Health is null.", this);
+
+        if (Formation == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. Formation is null.", this);
+
+        if (Movement == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. Movement is null.", this);
+
+        if (Selection == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. Selection is null.", this);
+
+        if (Combat == null)
+            Debug.LogError($"{name}: Squad Initialize validation failed. Combat is null.", this);
+
+        if (squadData.soldierData == null)
+            Debug.LogError($"{name}: SquadData validation failed. soldierData is null.", this);
+
+        if (squadData.squadCombatProfile == null)
+            Debug.LogWarning($"{name}: SquadData has no SquadCombatProfile. SquadCombat will use fallback values.", this);
+
+        if (squadData.soldierCombatProfile == null)
+            Debug.LogWarning($"{name}: SquadData has no SoldierCombatProfile. SoldierCombat will use fallback values.", this);
+
+        if (squadData.movementProfile == null)
+            Debug.LogWarning($"{name}: SquadData has no SquadMovementProfile. SquadMovement will use fallback values.", this);
+
+        if (Roster != null && Roster.Count <= 0)
+            Debug.LogError($"{name}: Squad initialized with no soldiers in roster.", this);
     }
 
-    FactionInstance ResolveSceneFaction()
+    FactionInstance ResolveSceneFaction() // CHECK Naming, Convention, Design Choice for future faction/team initialization
     {
         if (GameManager.Instance == null)
             return null;

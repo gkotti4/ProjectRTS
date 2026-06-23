@@ -20,8 +20,8 @@ public class WeaponProfile : ScriptableObject
     [Min(0)] public int armorPiercingDamage = 0;
 
     [Header("Timing / Range")]
-    [Min(0.05f)] public float attackInterval = 1.5f;
-    [Min(0.1f)] public float attackRange = 1.5f;
+    [Min(0.05f)] public float attackInterval = 2.0f;
+    [Min(0.1f)] public float attackRange = 2.5f;
 
     [Header("Projectile")]
     public GameObject projectilePrefab;

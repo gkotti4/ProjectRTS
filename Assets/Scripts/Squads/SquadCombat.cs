@@ -19,43 +19,66 @@ using UnityEngine;
 ///
 public class SquadCombat : MonoBehaviour
 {
-    [Header("Scanning")]
-    [SerializeField] private bool autoScanEnabled = true;
-    [SerializeField] private float scanInterval = 0.35f;
+    #region Fields
 
-    [Header("Approach")]
-    [SerializeField] private float combatStartRange = 6f;
-    [SerializeField] private float combatBreakRange = 10f;
-    [SerializeField] private float approachRefreshInterval = 0.25f;
-    [SerializeField] private float approachStopDistance = 3f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Scanning
+    // -----------------------------------------------------------------------------
+    // These are intentionally not serialized.
+    // Normal tuning should happen in SquadCombatProfile, assigned from SquadData.
+    private bool autoScanEnabled = true;
+    private float scanInterval = 0.35f;
 
-    [Header("Engagement")]
-    [SerializeField] private float soldierLocalTargetScanRange = 3f;
-    [SerializeField] private float combatMoveSpeedMultiplier = 1.15f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Approach
+    // -----------------------------------------------------------------------------
+    private float combatStartRange = 6f;
+    private float combatBreakRange = 10f;
+    private float approachRefreshInterval = 0.25f;
+    private float approachStopDistance = 3f;
 
-    [Header("Combat Pressure / Cohesion")]
-    [SerializeField] private float combatPressureDistance = 2f;
-    [SerializeField] private float combatRearFreeEngageDistance = 1.25f;
-    [SerializeField] private float combatFrontFreeEngageDistance = 3.25f;
-    [SerializeField] private float combatDisengageExtraDistance = 1.5f;
-    [SerializeField] private float combatForceRejoinExtraDistance = 3.5f;
-    [SerializeField] private float combatPressureStoppingDistance = 0.15f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Engagement
+    // -----------------------------------------------------------------------------
+    private float soldierLocalTargetScanRange = 3f;
+    private float combatMoveSpeedMultiplier = 1.15f;
 
-    [Header("Combat Ticks")]
-    [SerializeField] private float targetRefreshInterval = 0.35f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Combat Pressure / Cohesion
+    // -----------------------------------------------------------------------------
+    private float combatPressureDistance = 2f;
+    private float combatRearFreeEngageDistance = 1.25f;
+    private float combatFrontFreeEngageDistance = 3.25f;
+    private float combatDisengageExtraDistance = 1.5f;
+    private float combatForceRejoinExtraDistance = 3.5f;
+    private float combatPressureStoppingDistance = 0.15f;
 
-    [Header("Soft Engagement Budget")]
-    [SerializeField] private bool useSoftEngagementBudget = true;
-    [SerializeField] private float activeEngagementRatio = 0.58f;
-    [SerializeField] private int activeEngagementMinCount = 4;
-    [SerializeField] private int activeEngagementFrontlineOverflow = 2;
-    [SerializeField] private float activeEngagementFrontlineThreshold = 0.7f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Combat Ticks
+    // -----------------------------------------------------------------------------
+    private float targetRefreshInterval = 0.35f;
 
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Soft Engagement Budget
+    // -----------------------------------------------------------------------------
+    private bool useSoftEngagementBudget = true;
+    private float activeEngagementRatio = 0.58f;
+    private int activeEngagementMinCount = 4;
+    private int activeEngagementFrontlineOverflow = 2;
+    private float activeEngagementFrontlineThreshold = 0.7f;
+
+    // -----------------------------------------------------------------------------
+    // Runtime Collections
+    // -----------------------------------------------------------------------------
     private readonly Dictionary<SoldierController, Vector3> combatHomePositions =
         new Dictionary<SoldierController, Vector3>();
 
-    private Vector3 combatContactDirection = Vector3.forward;
+    private readonly HashSet<SoldierController> activeCombatSoldiers =
+        new HashSet<SoldierController>();
 
+    // -----------------------------------------------------------------------------
+    // Component References
+    // -----------------------------------------------------------------------------
     private SquadController squad;
     private SquadRoster roster;
     private SquadFormationController formation;
@@ -63,16 +86,25 @@ public class SquadCombat : MonoBehaviour
     private SquadData data;
     private SquadCombatProfile squadCombatProfile;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Combat State
+    // -----------------------------------------------------------------------------
     private SquadController targetSquad;
+    private Vector3 combatContactDirection = Vector3.forward;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Timers
+    // -----------------------------------------------------------------------------
     private float scanTimer = 0f;
     private float approachRefreshTimer = 0f;
     private float targetRefreshTimer = 0f;
 
-    private readonly HashSet<SoldierController> activeCombatSoldiers =
-        new HashSet<SoldierController>();
-
+    // -----------------------------------------------------------------------------
+    // Public Read-Only Access
+    // -----------------------------------------------------------------------------
     public SquadController TargetSquad => targetSquad;
+
+    #endregion
 
     /// Initializes squad-level combat references.
     public void Initialize(
@@ -735,26 +767,35 @@ public class SquadCombat : MonoBehaviour
         return true;
     }
 
-    /// Checks whether squads are close enough to begin melee.
+    /// Checks whether squads are close enough to begin combat.
+    /// Melee squads use combatStartRange; ranged squads can begin once their weapon range is valid.
     bool IsCloseEnoughToStartEngagement(SquadController target)
     {
         if (target == null)
             return false;
 
+        float startRange = Mathf.Max(
+            combatStartRange,
+            GetSquadAttackRange());
+
         return Vector3.Distance(
             transform.position,
-            target.transform.position) <= combatStartRange;
+            target.transform.position) <= startRange;
     }
 
-    /// Checks whether squads have drifted too far apart to remain in melee.
+    /// Checks whether squads have drifted too far apart to remain in combat.
     bool IsWithinCombatBreakRange(SquadController target)
     {
         if (target == null)
             return false;
 
+        float breakRange = Mathf.Max(
+            combatBreakRange,
+            GetSquadAttackRange() + combatDisengageExtraDistance + 1f);
+
         return Vector3.Distance(
             transform.position,
-            target.transform.position) <= combatBreakRange;
+            target.transform.position) <= breakRange;
     }
 
     /// Returns whether this squad should auto-scan for enemies.
@@ -847,7 +888,14 @@ public class SquadCombat : MonoBehaviour
     float GetSquadAttackRange()
     {
         if (data != null && data.soldierData != null)
+        {
+            WeaponProfile weaponProfile = data.soldierData.weaponProfile;
+
+            if (weaponProfile != null)
+                return Mathf.Max(0.1f, weaponProfile.attackRange);
+
             return Mathf.Max(0.1f, data.soldierData.melee.attackRange);
+        }
 
         if (data != null)
             return Mathf.Max(0.1f, data.melee.attackRange);

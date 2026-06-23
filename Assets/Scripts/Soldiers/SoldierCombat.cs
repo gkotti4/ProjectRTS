@@ -28,77 +28,124 @@ public class SoldierCombat : MonoBehaviour
     }
 
     #region Fields
+
+    // -----------------------------------------------------------------------------
+    // Component References
+    // -----------------------------------------------------------------------------
     private SoldierController soldier;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Target / Attack State
+    // -----------------------------------------------------------------------------
     private SoldierController currentTarget;
     private float attackTimer = 0f;
 
-    [Header("Combat Rhythm / Recovery")]
-    [SerializeField] private float combatRecoveryMinDuration = 2f;
-    [SerializeField] private float combatRecoveryMaxDuration = 4.75f;
-    [SerializeField] private float combatLongRecoveryChance = 0.24f;
-    [SerializeField] private float combatLongRecoveryMinDuration = 3f;
-    [SerializeField] private float combatLongRecoveryMaxDuration = 7f;
-    [SerializeField] private float combatRecoveryMoveChance = 0.65f;
-    [SerializeField] private float combatRecoveryReleaseTargetChance = 0.35f;
-    [SerializeField] private float combatRecoveryBackoffDistance = 1.15f;
-    [SerializeField] private float combatRecoverySideStepDistance = 0.7f;
-    [SerializeField] private float combatRecoveryMoveSpeedMultiplier = 0.55f;
-    [SerializeField] private float combatRecoveryStoppingDistance = 0.08f;
+    // -----------------------------------------------------------------------------
+    // Local Attack Impact Fallbacks
+    // -----------------------------------------------------------------------------
+    // This is intentionally not serialized.
+    // Could move to SoldierCombatProfile later if you want it designer-tunable.
+    private float attackImpactRangeGrace = 0.35f;
 
-    [Header("Pressure Waiting")]
-    [SerializeField] private float pressureWaitDistance = 0.7f;
-    [SerializeField] private float pressureWaitMinDuration = 1f;
-    [SerializeField] private float pressureWaitMaxDuration = 2.5f;
-    [SerializeField] private float pressureShuffleChance = 0.35f;
-    [SerializeField] private float pressureShuffleSideDistance = 0.65f;
-    [SerializeField] private float pressureShuffleForwardDistance = 0.2f;
-    [SerializeField] private float pressureShuffleMoveSpeedMultiplier = 0.55f;
+    private SoldierController pendingAttackTarget;
+    private bool pendingAttackImpactResolved = false;
 
-    [Header("Target Crowding")]
-    [SerializeField] private int preferredAttackersPerTarget = 2;
-    [SerializeField] private float targetCrowdingPenalty = 2.25f;
-    [SerializeField] private float crowdedTargetExtraPenaltyDistance = 0.75f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Combat Rhythm / Recovery
+    // -----------------------------------------------------------------------------
+    // These are intentionally not serialized.
+    // Normal tuning should happen in SoldierCombatProfile, assigned through SquadData.
+    private float combatRecoveryMinDuration = 2f;
+    private float combatRecoveryMaxDuration = 4.75f;
+    private float combatLongRecoveryChance = 0.24f;
+    private float combatLongRecoveryMinDuration = 3f;
+    private float combatLongRecoveryMaxDuration = 7f;
+    private float combatRecoveryMoveChance = 0.65f;
+    private float combatRecoveryReleaseTargetChance = 0.35f;
+    private float combatRecoveryBackoffDistance = 1.15f;
+    private float combatRecoverySideStepDistance = 0.7f;
+    private float combatRecoveryMoveSpeedMultiplier = 0.55f;
+    private float combatRecoveryStoppingDistance = 0.08f;
 
-    [Header("Hit Reaction")]
-    [SerializeField] private bool hitReactionEnabled = true;
-    [SerializeField] private float hitReactionChance = 0.55f;
-    [SerializeField] private float hitReactionDamageChanceBonus = 0.25f;
-    [SerializeField] private float hitReactionMinDuration = 0.35f;
-    [SerializeField] private float hitReactionMaxDuration = 1.05f;
-    [SerializeField] private float hitReactionCooldown = 0.95f;
-    [SerializeField] private float hitReactionMoveChance = 0.25f;
-    [SerializeField] private float hitReactionBackoffDistance = 0.55f;
-    [SerializeField] private float hitReactionSideStepDistance = 0.35f;
-    [SerializeField] private float hitReactionMoveSpeedMultiplier = 0.45f;
-    [SerializeField] private float hitReactionStoppingDistance = 0.06f;
-    [SerializeField] private float hitReactionRecoveryExtension = 0.45f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Pressure Waiting
+    // -----------------------------------------------------------------------------
+    private float pressureWaitDistance = 0.7f;
+    private float pressureWaitMinDuration = 1f;
+    private float pressureWaitMaxDuration = 2.5f;
+    private float pressureShuffleChance = 0.35f;
+    private float pressureShuffleSideDistance = 0.65f;
+    private float pressureShuffleForwardDistance = 0.2f;
+    private float pressureShuffleMoveSpeedMultiplier = 0.55f;
 
-    [Header("Combat Discipline / Home Bias")]
-    [SerializeField] private float combatRecoveryHomeBias = 0.35f;
-    [SerializeField] private float hitReactionHomeBias = 0.5f;
-    [SerializeField] private float pressureShuffleHomeBias = 0.15f;
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Target Crowding
+    // -----------------------------------------------------------------------------
+    private int preferredAttackersPerTarget = 2;
+    private float targetCrowdingPenalty = 2.25f;
+    private float crowdedTargetExtraPenaltyDistance = 0.75f;
 
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Hit Reaction
+    // -----------------------------------------------------------------------------
+    private bool hitReactionEnabled = true;
+    private float hitReactionChance = 0.55f;
+    private float hitReactionDamageChanceBonus = 0.25f;
+    private float hitReactionMinDuration = 0.35f;
+    private float hitReactionMaxDuration = 1.05f;
+    private float hitReactionCooldown = 0.95f;
+    private float hitReactionMoveChance = 0.25f;
+    private float hitReactionBackoffDistance = 0.55f;
+    private float hitReactionSideStepDistance = 0.35f;
+    private float hitReactionMoveSpeedMultiplier = 0.45f;
+    private float hitReactionStoppingDistance = 0.06f;
+    private float hitReactionRecoveryExtension = 0.45f;
+
+    // -----------------------------------------------------------------------------
+    // Profile-Owned Fallbacks: Combat Discipline / Home Bias
+    // -----------------------------------------------------------------------------
+    private float combatRecoveryHomeBias = 0.35f;
+    private float hitReactionHomeBias = 0.5f;
+    private float pressureShuffleHomeBias = 0.15f;
+
+    // -----------------------------------------------------------------------------
+    // Runtime Rhythm State
+    // -----------------------------------------------------------------------------
     private SoldierCombatRhythmState rhythmState = SoldierCombatRhythmState.Seeking;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Recovery State
+    // -----------------------------------------------------------------------------
     private float combatRecoveryTimer = 0f;
     private bool hasCombatRecoveryPoint = false;
     private Vector3 combatRecoveryPoint = Vector3.zero;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Pressure Waiting State
+    // -----------------------------------------------------------------------------
     private float pressureWaitTimer = 0f;
     private bool hasPressureShufflePoint = false;
     private Vector3 pressureShufflePoint = Vector3.zero;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Hit Reaction State
+    // -----------------------------------------------------------------------------
     private float hitReactionTimer = 0f;
     private float hitReactionCooldownTimer = 0f;
     private bool hasHitReactionPoint = false;
     private Vector3 hitReactionPoint = Vector3.zero;
     private SoldierController lastHitAttacker;
 
+    // -----------------------------------------------------------------------------
+    // Runtime Combat Context Cache
+    // -----------------------------------------------------------------------------
     private bool hasLastCombatContext = false;
     private Vector3 lastCohesionOrigin = Vector3.zero;
     private Vector3 lastPressureGoal = Vector3.zero;
 
+    // -----------------------------------------------------------------------------
+    // Public Read-Only Access
+    // -----------------------------------------------------------------------------
     public SoldierController CurrentTarget => currentTarget;
     public bool HasTarget => currentTarget != null && currentTarget.IsAlive;
 
@@ -119,6 +166,7 @@ public class SoldierCombat : MonoBehaviour
         soldier != null && soldier.ActionState == SoldierActionState.HitReact;
 
     public bool IsWaiting => rhythmState == SoldierCombatRhythmState.Waiting;
+
     #endregion
 
     /// Caches the owning SoldierController.
@@ -137,6 +185,7 @@ public class SoldierCombat : MonoBehaviour
 
         currentTarget = null;
         attackTimer = 0f;
+        ClearPendingAttack();
         combatRecoveryTimer = 0f;
         hasCombatRecoveryPoint = false;
         pressureWaitTimer = 0f;
@@ -216,6 +265,7 @@ public class SoldierCombat : MonoBehaviour
     public void ClearCombat()
     {
         currentTarget = null;
+        ClearPendingAttack();
         combatRecoveryTimer = 0f;
         hasCombatRecoveryPoint = false;
         pressureWaitTimer = 0f;
@@ -421,6 +471,15 @@ public class SoldierCombat : MonoBehaviour
         switch (completedAction)
         {
             case SoldierActionState.Attack:
+                if (pendingAttackTarget != null && !pendingAttackImpactResolved)
+                {
+                    Debug.LogWarning(
+                        $"{name}: Attack completed without resolving an impact. " +
+                        "Check that the attack clip has an OnAttackImpact / OnAttackExecute / OnProjectileRelease event.",
+                        this);
+                }
+
+                ClearPendingAttack();
                 BeginCombatRecovery();
                 break;
 
@@ -442,11 +501,15 @@ public class SoldierCombat : MonoBehaviour
         SoldierActionState interruptedAction,
         SoldierActionState newAction)
     {
-        if (interruptedAction == SoldierActionState.Attack &&
-            newAction == SoldierActionState.HitReact)
+        if (interruptedAction == SoldierActionState.Attack)
         {
-            hasCombatRecoveryPoint = false;
-            combatRecoveryTimer = 0f;
+            ClearPendingAttack();
+
+            if (newAction == SoldierActionState.HitReact)
+            {
+                hasCombatRecoveryPoint = false;
+                combatRecoveryTimer = 0f;
+            }
         }
 
         if (interruptedAction == SoldierActionState.HitReact)
@@ -840,8 +903,8 @@ public class SoldierCombat : MonoBehaviour
         return origin + offset.normalized * maxDistance;
     }
 
-    /// Attempts a melee attack against the current target.
-    /// Damage is still immediate for now; animation-timed damage can come later.
+    /// Attempts to start an attack against the current target.
+    /// The actual damage/projectile release happens from the animation event via ResolveAttackImpact().
     void TryAttackCurrentTarget()
     {
         if (currentTarget == null || !currentTarget.IsAlive)
@@ -850,35 +913,169 @@ public class SoldierCombat : MonoBehaviour
         if (attackTimer > 0f)
             return;
 
+        pendingAttackTarget = currentTarget;
+        pendingAttackImpactResolved = false;
+
         if (!soldier.TryBeginAction(SoldierActionState.Attack))
+        {
+            ClearPendingAttack();
+            return;
+        }
+
+        attackTimer = Mathf.Max(
+            0.05f,
+            GetAttackInterval(soldier));
+    }
+
+    /// Resolves the committed attack at the animation's impact/release frame.
+    /// This is called by SoldierController.OnAttackImpact(), which is forwarded from SoldierAnimator.
+    public void ResolveAttackImpact()
+    {
+        if (soldier == null || !soldier.IsAlive)
             return;
 
+        if (soldier.ActionState != SoldierActionState.Attack)
+            return;
+
+        if (pendingAttackImpactResolved)
+            return;
+
+        SoldierController target = pendingAttackTarget;
+
+        if (target == null || !target.IsAlive)
+        {
+            pendingAttackImpactResolved = true;
+            return;
+        }
+
+        if (!IsWithinImpactRange(target))
+        {
+            pendingAttackImpactResolved = true;
+            return;
+        }
+
+        pendingAttackImpactResolved = true;
+
+        WeaponProfile weaponProfile = GetWeaponProfile(soldier);
+        WeaponKind weaponKind = weaponProfile != null
+            ? weaponProfile.weaponKind
+            : WeaponKind.Melee;
+
+        if (weaponKind == WeaponKind.Ranged)
+        {
+            ResolveRangedAttackImpact(target, weaponProfile);
+            return;
+        }
+
+        ResolveMeleeAttackImpact(target, weaponProfile);
+    }
+
+    void ResolveMeleeAttackImpact(
+        SoldierController target,
+        WeaponProfile weaponProfile)
+    {
         MeleeCombatStats attackerStats = GetMeleeStats(soldier);
-        MeleeCombatStats defenderStats = GetMeleeStats(currentTarget);
+        MeleeCombatStats defenderStats = GetMeleeStats(target);
+
+        attackerStats.weaponDamage = GetWeaponDamage(soldier, weaponProfile);
+        attackerStats.armorPiercingDamage = GetWeaponArmorPiercingDamage(soldier, weaponProfile);
+        attackerStats.attackRange = GetAttackRange(soldier, weaponProfile);
+        attackerStats.attackInterval = GetAttackInterval(soldier, weaponProfile);
 
         DamageResult result = CombatResolver.ResolveMeleeHit(
             attackerStats,
             defenderStats);
 
-        if (result.didHit)
-        {
-            currentTarget.Health.TakeDamage(
-                result.normalDamage,
-                result.armorPiercingDamage);
+        if (!result.didHit)
+            return;
 
-            if (currentTarget != null &&
-                currentTarget.IsAlive &&
-                currentTarget.Combat != null)
-            {
-                currentTarget.Combat.ReceiveHitReaction(
-                    soldier,
-                    result.totalDamage);
-            }
+        ApplyDamageAndHitReaction(
+            target,
+            result.normalDamage,
+            result.armorPiercingDamage,
+            result.totalDamage);
+    }
+
+    void ResolveRangedAttackImpact(
+        SoldierController target,
+        WeaponProfile weaponProfile)
+    {
+        if (weaponProfile != null && weaponProfile.projectilePrefab != null)
+        {
+            Transform origin = soldier.AttackOrigin;
+
+            GameObject projectileObject = Instantiate(
+                weaponProfile.projectilePrefab,
+                origin.position,
+                origin.rotation);
+
+            if (!projectileObject.TryGetComponent(out ProjectileController projectile))
+                projectile = projectileObject.AddComponent<ProjectileController>();
+
+            projectile.Initialize(
+                soldier,
+                target,
+                GetWeaponDamage(soldier, weaponProfile),
+                GetWeaponArmorPiercingDamage(soldier, weaponProfile),
+                GetProjectileSpeed(weaponProfile));
+
+            return;
         }
 
-        attackTimer = Mathf.Max(
-            0.05f,
-            attackerStats.attackInterval);
+        // Debug/fallback behavior: ranged weapons without a projectile prefab still deal direct damage.
+        int normalDamage = GetWeaponDamage(soldier, weaponProfile);
+        int armorPiercingDamage = GetWeaponArmorPiercingDamage(soldier, weaponProfile);
+        int estimatedTotalDamage = EstimateDamageAfterArmor(
+            target,
+            normalDamage,
+            armorPiercingDamage);
+
+        ApplyDamageAndHitReaction(
+            target,
+            normalDamage,
+            armorPiercingDamage,
+            estimatedTotalDamage);
+    }
+
+    void ApplyDamageAndHitReaction(
+        SoldierController target,
+        int normalDamage,
+        int armorPiercingDamage,
+        int totalDamageForReaction)
+    {
+        if (target == null || !target.IsAlive || target.Health == null)
+            return;
+
+        target.Health.TakeDamage(
+            normalDamage,
+            armorPiercingDamage);
+
+        if (target != null &&
+            target.IsAlive &&
+            target.Combat != null)
+        {
+            target.Combat.ReceiveHitReaction(
+                soldier,
+                totalDamageForReaction);
+        }
+    }
+
+    bool IsWithinImpactRange(SoldierController target)
+    {
+        if (target == null || !target.IsAlive)
+            return false;
+
+        float allowedRange = GetAttackRange() + Mathf.Max(0f, attackImpactRangeGrace);
+
+        return Vector3.Distance(
+            soldier.transform.position,
+            target.transform.position) <= allowedRange;
+    }
+
+    void ClearPendingAttack()
+    {
+        pendingAttackTarget = null;
+        pendingAttackImpactResolved = false;
     }
 
     /// Called by an enemy soldier when this soldier is successfully hit.
@@ -1125,10 +1322,93 @@ public class SoldierCombat : MonoBehaviour
     /// Gets this soldier's attack range.
     float GetAttackRange()
     {
-        if (soldier != null && soldier.Data != null)
-            return Mathf.Max(0.1f, soldier.Data.melee.attackRange);
+        return GetAttackRange(soldier, GetWeaponProfile(soldier));
+    }
+
+    float GetAttackRange(
+        SoldierController source,
+        WeaponProfile weaponProfile)
+    {
+        if (weaponProfile != null)
+            return Mathf.Max(0.1f, weaponProfile.attackRange);
+
+        if (source != null && source.Data != null)
+            return Mathf.Max(0.1f, source.Data.melee.attackRange);
 
         return MeleeCombatStats.Default.attackRange;
+    }
+
+    float GetAttackInterval(SoldierController source)
+    {
+        return GetAttackInterval(source, GetWeaponProfile(source));
+    }
+
+    float GetAttackInterval(
+        SoldierController source,
+        WeaponProfile weaponProfile)
+    {
+        if (weaponProfile != null)
+            return Mathf.Max(0.05f, weaponProfile.attackInterval);
+
+        if (source != null && source.Data != null)
+            return Mathf.Max(0.05f, source.Data.melee.attackInterval);
+
+        return MeleeCombatStats.Default.attackInterval;
+    }
+
+    int GetWeaponDamage(
+        SoldierController source,
+        WeaponProfile weaponProfile)
+    {
+        if (weaponProfile != null)
+            return Mathf.Max(0, weaponProfile.damage);
+
+        if (source != null && source.Data != null)
+            return Mathf.Max(0, source.Data.melee.weaponDamage);
+
+        return MeleeCombatStats.Default.weaponDamage;
+    }
+
+    int GetWeaponArmorPiercingDamage(
+        SoldierController source,
+        WeaponProfile weaponProfile)
+    {
+        if (weaponProfile != null)
+            return Mathf.Max(0, weaponProfile.armorPiercingDamage);
+
+        if (source != null && source.Data != null)
+            return Mathf.Max(0, source.Data.melee.armorPiercingDamage);
+
+        return MeleeCombatStats.Default.armorPiercingDamage;
+    }
+
+    float GetProjectileSpeed(WeaponProfile weaponProfile)
+    {
+        if (weaponProfile == null)
+            return 18f;
+
+        return Mathf.Max(0.1f, weaponProfile.projectileSpeed);
+    }
+
+    int EstimateDamageAfterArmor(
+        SoldierController target,
+        int normalDamage,
+        int armorPiercingDamage)
+    {
+        int armor = target != null && target.Health != null
+            ? target.Health.Armor
+            : 0;
+
+        int reducedNormalDamage = Mathf.Max(0, normalDamage - armor);
+        return Mathf.Max(1, reducedNormalDamage + Mathf.Max(0, armorPiercingDamage));
+    }
+
+    WeaponProfile GetWeaponProfile(SoldierController source)
+    {
+        if (source == null || source.Data == null)
+            return null;
+
+        return source.Data.weaponProfile;
     }
 
     /// Gets melee stats from a soldier.

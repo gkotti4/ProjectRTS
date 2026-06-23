@@ -102,7 +102,6 @@ public class SoldierMotor : MonoBehaviour
             ? stoppingDistance
             : defaultStoppingDistance;
 
-        Debug.Log("move to " + position);
         agent.SetDestination(position);
     }
 

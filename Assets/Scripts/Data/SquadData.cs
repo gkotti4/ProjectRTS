@@ -2,6 +2,22 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
 
+/// -----------------------------------------------------------------------------
+/// SquadData
+/// -----------------------------------------------------------------------------
+///
+/// ScriptableObject blueprint for a squad type.
+/// Stores squad identity, icon, category, prefab, soldier composition, default
+/// stance/formation, movement profile, squad combat profile, soldier combat profile,
+/// fallback stats, morale data, and available command set.
+///
+/// This data defines what a squad is. Runtime systems read this data but should
+/// keep behavior logic in components rather than hardcoding unit-specific behavior.
+///
+/// Design role:
+/// Designer-facing squad definition and profile hub.
+///
+
 [CreateAssetMenu(
     fileName = "SquadData_",
     menuName = "Scriptable Objects/Military/SquadData")]
@@ -59,21 +75,6 @@ public class SquadData : ScriptableObject
         Mathf.Max(1, startingSoldierCount);
 }
 
-/// -----------------------------------------------------------------------------
-/// SquadData
-/// -----------------------------------------------------------------------------
-///
-/// ScriptableObject blueprint for a squad type.
-/// Stores squad identity, icon, category, prefab, soldier composition, default
-/// stance/formation, movement profile, squad combat profile, soldier combat profile,
-/// fallback stats, morale data, and available command set.
-///
-/// This data defines what a squad is. Runtime systems read this data but should
-/// keep behavior logic in components rather than hardcoding unit-specific behavior.
-///
-/// Design role:
-/// Designer-facing squad definition and profile hub.
-///
 
 [CreateAssetMenu(
     fileName = "SquadCommandSet_",

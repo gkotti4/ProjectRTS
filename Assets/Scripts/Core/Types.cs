@@ -371,8 +371,6 @@ public struct TeamVisualSettings
 
 
 
-
-
 #region StatBlocks
 
 [System.Serializable]
@@ -486,7 +484,6 @@ public struct ProductionStats
         garrisonCapacity = 0
     };
 }
-
 #endregion
 
 
