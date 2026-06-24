@@ -36,18 +36,45 @@ public class SoldierCombatProfile : ScriptableObject
     public bool hitReactionEnabled = true;
     [Range(0f, 1f)] public float hitReactionChance = 0.55f;
     [Range(0f, 1f)] public float hitReactionDamageChanceBonus = 0.25f;
-    [Min(0.05f)] public float hitReactionMinDuration = 0.35f;
-    [Min(0.05f)] public float hitReactionMaxDuration = 1.05f;
     [Min(0f)] public float hitReactionCooldown = 0.95f;
-    [Range(0f, 1f)] public float hitReactionMoveChance = 0.25f;
-    [Min(0f)] public float hitReactionBackoffDistance = 0.55f;
-    [Min(0f)] public float hitReactionSideStepDistance = 0.35f;
-    [Min(0.1f)] public float hitReactionMoveSpeedMultiplier = 0.45f;
-    [Min(0f)] public float hitReactionStoppingDistance = 0.06f;
     [Min(0f)] public float hitReactionRecoveryExtension = 0.45f;
 
     [Header("Combat Discipline / Home Bias")]
     [Range(0f, 1f)] public float combatRecoveryHomeBias = 0.35f;
-    [Range(0f, 1f)] public float hitReactionHomeBias = 0.5f;
     [Range(0f, 1f)] public float pressureShuffleHomeBias = 0.15f;
+
+    void OnValidate()
+    {
+        combatRecoveryMinDuration = Mathf.Max(0.05f, combatRecoveryMinDuration);
+        combatRecoveryMaxDuration = Mathf.Max(combatRecoveryMinDuration, combatRecoveryMaxDuration);
+        combatLongRecoveryChance = Mathf.Clamp01(combatLongRecoveryChance);
+        combatLongRecoveryMinDuration = Mathf.Max(0.05f, combatLongRecoveryMinDuration);
+        combatLongRecoveryMaxDuration = Mathf.Max(combatLongRecoveryMinDuration, combatLongRecoveryMaxDuration);
+        combatRecoveryMoveChance = Mathf.Clamp01(combatRecoveryMoveChance);
+        combatRecoveryReleaseTargetChance = Mathf.Clamp01(combatRecoveryReleaseTargetChance);
+        combatRecoveryBackoffDistance = Mathf.Max(0f, combatRecoveryBackoffDistance);
+        combatRecoverySideStepDistance = Mathf.Max(0f, combatRecoverySideStepDistance);
+        combatRecoveryMoveSpeedMultiplier = Mathf.Max(0.1f, combatRecoveryMoveSpeedMultiplier);
+        combatRecoveryStoppingDistance = Mathf.Max(0f, combatRecoveryStoppingDistance);
+
+        pressureWaitDistance = Mathf.Max(0f, pressureWaitDistance);
+        pressureWaitMinDuration = Mathf.Max(0.05f, pressureWaitMinDuration);
+        pressureWaitMaxDuration = Mathf.Max(pressureWaitMinDuration, pressureWaitMaxDuration);
+        pressureShuffleChance = Mathf.Clamp01(pressureShuffleChance);
+        pressureShuffleSideDistance = Mathf.Max(0f, pressureShuffleSideDistance);
+        pressureShuffleForwardDistance = Mathf.Max(0f, pressureShuffleForwardDistance);
+        pressureShuffleMoveSpeedMultiplier = Mathf.Max(0.1f, pressureShuffleMoveSpeedMultiplier);
+
+        preferredAttackersPerTarget = Mathf.Max(1, preferredAttackersPerTarget);
+        targetCrowdingPenalty = Mathf.Max(0f, targetCrowdingPenalty);
+        crowdedTargetExtraPenaltyDistance = Mathf.Max(0f, crowdedTargetExtraPenaltyDistance);
+
+        hitReactionChance = Mathf.Clamp01(hitReactionChance);
+        hitReactionDamageChanceBonus = Mathf.Clamp01(hitReactionDamageChanceBonus);
+        hitReactionCooldown = Mathf.Max(0f, hitReactionCooldown);
+        hitReactionRecoveryExtension = Mathf.Max(0f, hitReactionRecoveryExtension);
+
+        combatRecoveryHomeBias = Mathf.Clamp01(combatRecoveryHomeBias);
+        pressureShuffleHomeBias = Mathf.Clamp01(pressureShuffleHomeBias);
+    }
 }

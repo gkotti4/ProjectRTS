@@ -51,62 +51,12 @@ public class SoldierCombat : MonoBehaviour
     private bool pendingAttackImpactResolved = false;
 
     // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Combat Rhythm / Recovery
+    // Profile Reference
     // -----------------------------------------------------------------------------
-    // These are intentionally not serialized.
-    // Normal tuning should happen in SoldierCombatProfile, assigned through SquadData.
-    private float combatRecoveryMinDuration = 2f;
-    private float combatRecoveryMaxDuration = 4.75f;
-    private float combatLongRecoveryChance = 0.24f;
-    private float combatLongRecoveryMinDuration = 3f;
-    private float combatLongRecoveryMaxDuration = 7f;
-    private float combatRecoveryMoveChance = 0.65f;
-    private float combatRecoveryReleaseTargetChance = 0.35f;
-    private float combatRecoveryBackoffDistance = 1.15f;
-    private float combatRecoverySideStepDistance = 0.7f;
-    private float combatRecoveryMoveSpeedMultiplier = 0.55f;
-    private float combatRecoveryStoppingDistance = 0.08f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Pressure Waiting
-    // -----------------------------------------------------------------------------
-    private float pressureWaitDistance = 0.7f;
-    private float pressureWaitMinDuration = 1f;
-    private float pressureWaitMaxDuration = 2.5f;
-    private float pressureShuffleChance = 0.35f;
-    private float pressureShuffleSideDistance = 0.65f;
-    private float pressureShuffleForwardDistance = 0.2f;
-    private float pressureShuffleMoveSpeedMultiplier = 0.55f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Target Crowding
-    // -----------------------------------------------------------------------------
-    private int preferredAttackersPerTarget = 2;
-    private float targetCrowdingPenalty = 2.25f;
-    private float crowdedTargetExtraPenaltyDistance = 0.75f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Hit Reaction
-    // -----------------------------------------------------------------------------
-    private bool hitReactionEnabled = true;
-    private float hitReactionChance = 0.55f;
-    private float hitReactionDamageChanceBonus = 0.25f;
-    private float hitReactionMinDuration = 0.35f;
-    private float hitReactionMaxDuration = 1.05f;
-    private float hitReactionCooldown = 0.95f;
-    private float hitReactionMoveChance = 0.25f;
-    private float hitReactionBackoffDistance = 0.55f;
-    private float hitReactionSideStepDistance = 0.35f;
-    private float hitReactionMoveSpeedMultiplier = 0.45f;
-    private float hitReactionStoppingDistance = 0.06f;
-    private float hitReactionRecoveryExtension = 0.45f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Combat Discipline / Home Bias
-    // -----------------------------------------------------------------------------
-    private float combatRecoveryHomeBias = 0.35f;
-    private float hitReactionHomeBias = 0.5f;
-    private float pressureShuffleHomeBias = 0.15f;
+    // SoldierCombatProfile is the single source of truth for designer-tunable
+    // combat values. Runtime fields below are only for actual combat state.
+    private SoldierCombatProfile soldierCombatProfile;
+    private bool hasLoggedMissingCombatProfile = false;
 
     // -----------------------------------------------------------------------------
     // Runtime Rhythm State
@@ -130,10 +80,7 @@ public class SoldierCombat : MonoBehaviour
     // -----------------------------------------------------------------------------
     // Runtime Hit Reaction State
     // -----------------------------------------------------------------------------
-    private float hitReactionTimer = 0f;
     private float hitReactionCooldownTimer = 0f;
-    private bool hasHitReactionPoint = false;
-    private Vector3 hitReactionPoint = Vector3.zero;
     private SoldierController lastHitAttacker;
 
     // -----------------------------------------------------------------------------
@@ -190,9 +137,7 @@ public class SoldierCombat : MonoBehaviour
         hasCombatRecoveryPoint = false;
         pressureWaitTimer = 0f;
         hasPressureShufflePoint = false;
-        hitReactionTimer = 0f;
         hitReactionCooldownTimer = 0f;
-        hasHitReactionPoint = false;
         lastHitAttacker = null;
         hasLastCombatContext = false;
         lastCohesionOrigin = Vector3.zero;
@@ -202,61 +147,40 @@ public class SoldierCombat : MonoBehaviour
 
     public void ApplyProfileFromSquad()
     {
-        if (soldier == null ||
-            soldier.Squad == null ||
-            soldier.Squad.Data == null)
+        SoldierCombatProfile profile = null;
+
+        if (soldier != null &&
+            soldier.Squad != null &&
+            soldier.Squad.Data != null)
         {
-            return;
+            profile = soldier.Squad.Data.soldierCombatProfile;
         }
 
-        ApplyProfile(soldier.Squad.Data.soldierCombatProfile);
+        ApplyProfile(profile);
     }
 
     public void ApplyProfile(SoldierCombatProfile profile)
     {
-        if (profile == null)
-            return;
+        soldierCombatProfile = profile;
 
-        combatRecoveryMinDuration = Mathf.Max(0.05f, profile.combatRecoveryMinDuration);
-        combatRecoveryMaxDuration = Mathf.Max(combatRecoveryMinDuration, profile.combatRecoveryMaxDuration);
-        combatLongRecoveryChance = Mathf.Clamp01(profile.combatLongRecoveryChance);
-        combatLongRecoveryMinDuration = Mathf.Max(0.05f, profile.combatLongRecoveryMinDuration);
-        combatLongRecoveryMaxDuration = Mathf.Max(combatLongRecoveryMinDuration, profile.combatLongRecoveryMaxDuration);
-        combatRecoveryMoveChance = Mathf.Clamp01(profile.combatRecoveryMoveChance);
-        combatRecoveryReleaseTargetChance = Mathf.Clamp01(profile.combatRecoveryReleaseTargetChance);
-        combatRecoveryBackoffDistance = Mathf.Max(0f, profile.combatRecoveryBackoffDistance);
-        combatRecoverySideStepDistance = Mathf.Max(0f, profile.combatRecoverySideStepDistance);
-        combatRecoveryMoveSpeedMultiplier = Mathf.Max(0.1f, profile.combatRecoveryMoveSpeedMultiplier);
-        combatRecoveryStoppingDistance = Mathf.Max(0f, profile.combatRecoveryStoppingDistance);
+        enabled = HasCombatProfile();
+    }
 
-        pressureWaitDistance = Mathf.Max(0f, profile.pressureWaitDistance);
-        pressureWaitMinDuration = Mathf.Max(0.05f, profile.pressureWaitMinDuration);
-        pressureWaitMaxDuration = Mathf.Max(pressureWaitMinDuration, profile.pressureWaitMaxDuration);
-        pressureShuffleChance = Mathf.Clamp01(profile.pressureShuffleChance);
-        pressureShuffleSideDistance = Mathf.Max(0f, profile.pressureShuffleSideDistance);
-        pressureShuffleForwardDistance = Mathf.Max(0f, profile.pressureShuffleForwardDistance);
-        pressureShuffleMoveSpeedMultiplier = Mathf.Max(0.1f, profile.pressureShuffleMoveSpeedMultiplier);
+    bool HasCombatProfile()
+    {
+        if (soldierCombatProfile != null)
+            return true;
 
-        preferredAttackersPerTarget = Mathf.Max(1, profile.preferredAttackersPerTarget);
-        targetCrowdingPenalty = Mathf.Max(0f, profile.targetCrowdingPenalty);
-        crowdedTargetExtraPenaltyDistance = Mathf.Max(0f, profile.crowdedTargetExtraPenaltyDistance);
+        if (!hasLoggedMissingCombatProfile)
+        {
+            Debug.LogError(
+                $"{name}: SoldierCombat requires SquadData.soldierCombatProfile. Assign a SoldierCombatProfile asset before using soldier combat.",
+                this);
 
-        hitReactionEnabled = profile.hitReactionEnabled;
-        hitReactionChance = Mathf.Clamp01(profile.hitReactionChance);
-        hitReactionDamageChanceBonus = Mathf.Clamp01(profile.hitReactionDamageChanceBonus);
-        hitReactionMinDuration = Mathf.Max(0.05f, profile.hitReactionMinDuration);
-        hitReactionMaxDuration = Mathf.Max(hitReactionMinDuration, profile.hitReactionMaxDuration);
-        hitReactionCooldown = Mathf.Max(0f, profile.hitReactionCooldown);
-        hitReactionMoveChance = Mathf.Clamp01(profile.hitReactionMoveChance);
-        hitReactionBackoffDistance = Mathf.Max(0f, profile.hitReactionBackoffDistance);
-        hitReactionSideStepDistance = Mathf.Max(0f, profile.hitReactionSideStepDistance);
-        hitReactionMoveSpeedMultiplier = Mathf.Max(0.1f, profile.hitReactionMoveSpeedMultiplier);
-        hitReactionStoppingDistance = Mathf.Max(0f, profile.hitReactionStoppingDistance);
-        hitReactionRecoveryExtension = Mathf.Max(0f, profile.hitReactionRecoveryExtension);
+            hasLoggedMissingCombatProfile = true;
+        }
 
-        combatRecoveryHomeBias = Mathf.Clamp01(profile.combatRecoveryHomeBias);
-        hitReactionHomeBias = Mathf.Clamp01(profile.hitReactionHomeBias);
-        pressureShuffleHomeBias = Mathf.Clamp01(profile.pressureShuffleHomeBias);
+        return false;
     }
 
     /// Clears this soldier's local combat target and temporary rhythm state.
@@ -270,9 +194,7 @@ public class SoldierCombat : MonoBehaviour
         hasCombatRecoveryPoint = false;
         pressureWaitTimer = 0f;
         hasPressureShufflePoint = false;
-        hitReactionTimer = 0f;
         hitReactionCooldownTimer = 0f;
-        hasHitReactionPoint = false;
         lastHitAttacker = null;
         hasLastCombatContext = false;
         lastCohesionOrigin = Vector3.zero;
@@ -330,6 +252,9 @@ public class SoldierCombat : MonoBehaviour
         bool canStartNewEngagement = true)
     {
         if (soldier == null || !soldier.IsAlive)
+            return;
+
+        if (!HasCombatProfile())
             return;
 
         freeEngageDistance = Mathf.Max(0.1f, freeEngageDistance);
@@ -418,7 +343,7 @@ public class SoldierCombat : MonoBehaviour
             return;
         }
 
-        if (Vector3.Distance(transform.position, clampedPressureGoal) <= pressureWaitDistance)
+        if (Vector3.Distance(transform.position, clampedPressureGoal) <= soldierCombatProfile.pressureWaitDistance)
         {
             TickPressureWaiting(
                 enemySquad,
@@ -484,9 +409,15 @@ public class SoldierCombat : MonoBehaviour
                 break;
 
             case SoldierActionState.HitReact:
+                if (!HasCombatProfile())
+                {
+                    rhythmState = SoldierCombatRhythmState.Seeking;
+                    break;
+                }
+
                 combatRecoveryTimer = Mathf.Max(
                     combatRecoveryTimer,
-                    hitReactionRecoveryExtension);
+                    soldierCombatProfile.hitReactionRecoveryExtension);
 
                 if (combatRecoveryTimer > 0f)
                     rhythmState = SoldierCombatRhythmState.Recovering;
@@ -512,10 +443,6 @@ public class SoldierCombat : MonoBehaviour
             }
         }
 
-        if (interruptedAction == SoldierActionState.HitReact)
-        {
-            hasHitReactionPoint = false;
-        }
     }
     // Backward-compatible hook for older animation-event wiring.
     public void NotifyAttackAnimationEnded()
@@ -627,12 +554,12 @@ public class SoldierCombat : MonoBehaviour
             int currentAttackers = CountFriendlyAttackers(candidate);
             int extraAttackers = Mathf.Max(
                 0,
-                currentAttackers - Mathf.Max(0, preferredAttackersPerTarget - 1));
+                currentAttackers - Mathf.Max(0, soldierCombatProfile.preferredAttackersPerTarget - 1));
 
-            float score = distance + extraAttackers * targetCrowdingPenalty;
+            float score = distance + extraAttackers * soldierCombatProfile.targetCrowdingPenalty;
 
-            if (currentAttackers >= preferredAttackersPerTarget)
-                score += crowdedTargetExtraPenaltyDistance;
+            if (currentAttackers >= soldierCombatProfile.preferredAttackersPerTarget)
+                score += soldierCombatProfile.crowdedTargetExtraPenaltyDistance;
 
             if (score < bestScore)
             {
@@ -700,7 +627,7 @@ public class SoldierCombat : MonoBehaviour
             cohesionOrigin,
             freeEngageDistance);
 
-        if (Vector3.Distance(transform.position, clampedPoint) <= combatRecoveryStoppingDistance + 0.05f)
+        if (Vector3.Distance(transform.position, clampedPoint) <= soldierCombatProfile.combatRecoveryStoppingDistance + 0.05f)
         {
             soldier.Stop();
             return;
@@ -708,8 +635,8 @@ public class SoldierCombat : MonoBehaviour
 
         soldier.MoveToCombatPoint(
             clampedPoint,
-            combatRecoveryStoppingDistance,
-            Mathf.Max(0.1f, speedMultiplier * combatRecoveryMoveSpeedMultiplier));
+            soldierCombatProfile.combatRecoveryStoppingDistance,
+            Mathf.Max(0.1f, speedMultiplier * soldierCombatProfile.combatRecoveryMoveSpeedMultiplier));
     }
 
     /// Handles soldiers who are close enough to the pressure line but cannot find
@@ -747,7 +674,7 @@ public class SoldierCombat : MonoBehaviour
         soldier.MoveToCombatPoint(
             clampedPoint,
             0.05f,
-            pressureShuffleMoveSpeedMultiplier);
+            soldierCombatProfile.pressureShuffleMoveSpeedMultiplier);
     }
 
     void ChooseNextPressureWaitAction(
@@ -757,12 +684,12 @@ public class SoldierCombat : MonoBehaviour
         float freeEngageDistance)
     {
         pressureWaitTimer = Random.Range(
-            Mathf.Max(0.05f, pressureWaitMinDuration),
-            Mathf.Max(pressureWaitMinDuration, pressureWaitMaxDuration));
+            Mathf.Max(0.05f, soldierCombatProfile.pressureWaitMinDuration),
+            Mathf.Max(soldierCombatProfile.pressureWaitMinDuration, soldierCombatProfile.pressureWaitMaxDuration));
 
         hasPressureShufflePoint = false;
 
-        if (Random.value > pressureShuffleChance)
+        if (Random.value > soldierCombatProfile.pressureShuffleChance)
             return;
 
         Vector3 toEnemy = GetDirectionToEnemySquad(enemySquad, pressureGoal);
@@ -773,13 +700,13 @@ public class SoldierCombat : MonoBehaviour
 
         Vector3 desiredPoint =
             pressureGoal +
-            side * Random.Range(0.1f, pressureShuffleSideDistance) +
-            toEnemy * Random.Range(-pressureShuffleForwardDistance, pressureShuffleForwardDistance);
+            side * Random.Range(0.1f, soldierCombatProfile.pressureShuffleSideDistance) +
+            toEnemy * Random.Range(-soldierCombatProfile.pressureShuffleForwardDistance, soldierCombatProfile.pressureShuffleForwardDistance);
 
         desiredPoint = Vector3.Lerp(
             desiredPoint,
             pressureGoal,
-            Mathf.Clamp01(pressureShuffleHomeBias));
+            Mathf.Clamp01(soldierCombatProfile.pressureShuffleHomeBias));
 
         pressureShufflePoint = ClampPointToRange(
             desiredPoint,
@@ -1086,7 +1013,10 @@ public class SoldierCombat : MonoBehaviour
         SoldierController attacker,
         int damage)
     {
-        if (!hitReactionEnabled)
+        if (!HasCombatProfile())
+            return;
+
+        if (!soldierCombatProfile.hitReactionEnabled)
             return;
 
         if (soldier == null || !soldier.IsAlive)
@@ -1110,7 +1040,7 @@ public class SoldierCombat : MonoBehaviour
             Mathf.Max(0, damage) / maxHealth);
 
         float reactionChance = Mathf.Clamp01(
-            hitReactionChance + damagePressure * hitReactionDamageChanceBonus);
+            soldierCombatProfile.hitReactionChance + damagePressure * soldierCombatProfile.hitReactionDamageChanceBonus);
 
         if (Random.value > reactionChance)
             return;
@@ -1125,9 +1055,8 @@ public class SoldierCombat : MonoBehaviour
 
         rhythmState = SoldierCombatRhythmState.Recovering;
 
-        hitReactionCooldownTimer = Mathf.Max(0f, hitReactionCooldown);
+        hitReactionCooldownTimer = Mathf.Max(0f, soldierCombatProfile.hitReactionCooldown);
 
-        hasHitReactionPoint = false;
         hasPressureShufflePoint = false;
         hasCombatRecoveryPoint = false;
 
@@ -1145,7 +1074,10 @@ public class SoldierCombat : MonoBehaviour
 
     void BeginHitReactionRecovery()
     {
-        if (hitReactionRecoveryExtension <= 0f)
+        if (!HasCombatProfile())
+            return;
+
+        if (soldierCombatProfile.hitReactionRecoveryExtension <= 0f)
         {
             rhythmState = SoldierCombatRhythmState.Seeking;
             return;
@@ -1153,7 +1085,7 @@ public class SoldierCombat : MonoBehaviour
 
         combatRecoveryTimer = Mathf.Max(
             combatRecoveryTimer,
-            hitReactionRecoveryExtension);
+            soldierCombatProfile.hitReactionRecoveryExtension);
 
         hasCombatRecoveryPoint = false;
         hasPressureShufflePoint = false;
@@ -1164,19 +1096,22 @@ public class SoldierCombat : MonoBehaviour
 
     void BeginCombatRecovery()
     {
+        if (!HasCombatProfile())
+            return;
+
         rhythmState = SoldierCombatRhythmState.Recovering;
 
-        if (Random.value < combatLongRecoveryChance)
+        if (Random.value < soldierCombatProfile.combatLongRecoveryChance)
         {
             combatRecoveryTimer = Random.Range(
-                Mathf.Max(0.05f, combatLongRecoveryMinDuration),
-                Mathf.Max(combatLongRecoveryMinDuration, combatLongRecoveryMaxDuration));
+                Mathf.Max(0.05f, soldierCombatProfile.combatLongRecoveryMinDuration),
+                Mathf.Max(soldierCombatProfile.combatLongRecoveryMinDuration, soldierCombatProfile.combatLongRecoveryMaxDuration));
         }
         else
         {
             combatRecoveryTimer = Random.Range(
-                Mathf.Max(0.05f, combatRecoveryMinDuration),
-                Mathf.Max(combatRecoveryMinDuration, combatRecoveryMaxDuration));
+                Mathf.Max(0.05f, soldierCombatProfile.combatRecoveryMinDuration),
+                Mathf.Max(soldierCombatProfile.combatRecoveryMinDuration, soldierCombatProfile.combatRecoveryMaxDuration));
         }
 
         hasCombatRecoveryPoint = false;
@@ -1186,7 +1121,7 @@ public class SoldierCombat : MonoBehaviour
         SoldierController recoveryTarget = currentTarget;
 
         if (currentTarget != null &&
-            Random.value < combatRecoveryReleaseTargetChance)
+            Random.value < soldierCombatProfile.combatRecoveryReleaseTargetChance)
         {
             ClearCombatTargetOnly();
         }
@@ -1194,7 +1129,7 @@ public class SoldierCombat : MonoBehaviour
         if (recoveryTarget == null || !recoveryTarget.IsAlive)
             return;
 
-        if (Random.value > combatRecoveryMoveChance)
+        if (Random.value > soldierCombatProfile.combatRecoveryMoveChance)
             return;
 
         Vector3 away = transform.position - recoveryTarget.transform.position;
@@ -1212,12 +1147,12 @@ public class SoldierCombat : MonoBehaviour
 
         combatRecoveryPoint =
             transform.position +
-            away * Random.Range(combatRecoveryBackoffDistance * 0.65f, combatRecoveryBackoffDistance) +
-            side * Random.Range(-combatRecoverySideStepDistance, combatRecoverySideStepDistance);
+            away * Random.Range(soldierCombatProfile.combatRecoveryBackoffDistance * 0.65f, soldierCombatProfile.combatRecoveryBackoffDistance) +
+            side * Random.Range(-soldierCombatProfile.combatRecoverySideStepDistance, soldierCombatProfile.combatRecoverySideStepDistance);
 
         combatRecoveryPoint = ApplyCombatHomeBias(
             combatRecoveryPoint,
-            combatRecoveryHomeBias);
+            soldierCombatProfile.combatRecoveryHomeBias);
 
         hasCombatRecoveryPoint = true;
     }

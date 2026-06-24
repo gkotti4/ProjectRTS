@@ -96,64 +96,38 @@ public class SoldierAnimator : MonoBehaviour
         if (animator == null)
             return;
 
+        // TODO
         bool isMoving = false;
-        float moveX = 0f;
-        float moveZ = 0f;
-        float normalizedMoveSpeed = 0f;
+        // float moveX = 0f;
+        // float moveZ = 0f;
+        // float normalizedMoveSpeed = 0f;
 
         if (!ShouldLockLocomotionParameters() && soldierMotor != null)
         {
-            Vector3 velocity = soldierMotor.Velocity;
-            velocity.y = 0f;
-
-            bool hasMeaningfulVelocity =
-                velocity.sqrMagnitude > movementDeadZone * movementDeadZone;
-
-            bool hasMovementPath =
-                soldierMotor.HasPath;
-
-            isMoving = hasMovementPath && hasMeaningfulVelocity;
-
-            if (isMoving && soldierController != null)
-            {
-                float speedLimit = soldierMotor.CurrentMoveSpeedLimit;
-
-                Vector3 localVelocity =
-                    soldierController.transform.InverseTransformDirection(velocity);
-
-                moveX = Mathf.Clamp(localVelocity.x / speedLimit, -1f, 1f);
-                moveZ = Mathf.Clamp(localVelocity.z / speedLimit, -1f, 1f);
-
-                normalizedMoveSpeed = Mathf.Clamp01(velocity.magnitude / speedLimit);
-            }
+            isMoving = soldierController.Squad.State == SquadState.Moving; // TODO CHECK - DEBUG
         }
 
+        
         animator.SetBool(IsMoving, isMoving);
 
-        animator.SetFloat(
-            MoveSpeed,
-            normalizedMoveSpeed,
-            moveBlendDampTime,
-            Time.deltaTime);
-
-        animator.SetFloat(
-            MoveX,
-            moveX,
-            moveBlendDampTime,
-            Time.deltaTime);
-
-        animator.SetFloat(
-            MoveZ,
-            moveZ,
-            moveBlendDampTime,
-            Time.deltaTime);
+        // animator.SetFloat(
+        //     MoveSpeed,
+        //     normalizedMoveSpeed,
+        //     moveBlendDampTime,
+        //     Time.deltaTime);
+        //
+        // animator.SetFloat(
+        //     MoveX,
+        //     moveX,
+        //     moveBlendDampTime,
+        //     Time.deltaTime);
+        //
+        // animator.SetFloat(
+        //     MoveZ,
+        //     moveZ,
+        //     moveBlendDampTime,
+        //     Time.deltaTime);
     }
-                // Direct move X and Z - snaps hard
-                // Vector3 localVelocity =
-                //     soldierController.transform.InverseTransformDirection(velocity.normalized);
-                //
-                // moveX = localVelocity.x;
-                // moveZ = localVelocity.z;
 
     void UpdateCombatParameter()
     {

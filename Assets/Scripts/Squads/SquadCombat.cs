@@ -22,50 +22,11 @@ public class SquadCombat : MonoBehaviour
     #region Fields
 
     // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Scanning
+    // Profile Reference
     // -----------------------------------------------------------------------------
-    // These are intentionally not serialized.
-    // Normal tuning should happen in SquadCombatProfile, assigned from SquadData.
-    private bool autoScanEnabled = true;
-    private float scanInterval = 0.35f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Approach
-    // -----------------------------------------------------------------------------
-    private float combatStartRange = 6f;
-    private float combatBreakRange = 10f;
-    private float approachRefreshInterval = 0.25f;
-    private float approachStopDistance = 3f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Engagement
-    // -----------------------------------------------------------------------------
-    private float soldierLocalTargetScanRange = 3f;
-    private float combatMoveSpeedMultiplier = 1.15f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Combat Pressure / Cohesion
-    // -----------------------------------------------------------------------------
-    private float combatPressureDistance = 2f;
-    private float combatRearFreeEngageDistance = 1.25f;
-    private float combatFrontFreeEngageDistance = 3.25f;
-    private float combatDisengageExtraDistance = 1.5f;
-    private float combatForceRejoinExtraDistance = 3.5f;
-    private float combatPressureStoppingDistance = 0.15f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Combat Ticks
-    // -----------------------------------------------------------------------------
-    private float targetRefreshInterval = 0.35f;
-
-    // -----------------------------------------------------------------------------
-    // Profile-Owned Fallbacks: Soft Engagement Budget
-    // -----------------------------------------------------------------------------
-    private bool useSoftEngagementBudget = true;
-    private float activeEngagementRatio = 0.58f;
-    private int activeEngagementMinCount = 4;
-    private int activeEngagementFrontlineOverflow = 2;
-    private float activeEngagementFrontlineThreshold = 0.7f;
+    // SquadCombatProfile is the single source of truth for designer-tunable
+    // combat values. Runtime fields below are only for actual combat state.
+    private bool hasLoggedMissingCombatProfile = false;
 
     // -----------------------------------------------------------------------------
     // Runtime Collections
@@ -121,39 +82,25 @@ public class SquadCombat : MonoBehaviour
         data = squadData;
         squadCombatProfile = data != null ? data.squadCombatProfile : null;
 
-        ApplyProfile(squadCombatProfile);
+        if (!HasCombatProfile())
+            enabled = false;
     }
 
-    void ApplyProfile(SquadCombatProfile profile)
+    bool HasCombatProfile()
     {
-        if (profile == null)
-            return;
+        if (squadCombatProfile != null)
+            return true;
 
-        autoScanEnabled = profile.autoScanEnabled;
-        scanInterval = Mathf.Max(0.01f, profile.scanInterval);
+        if (!hasLoggedMissingCombatProfile)
+        {
+            Debug.LogError(
+                $"{name}: SquadCombat requires SquadData.squadCombatProfile. Assign a SquadCombatProfile asset before using squad combat.",
+                this);
 
-        combatStartRange = Mathf.Max(0f, profile.combatStartRange);
-        combatBreakRange = Mathf.Max(combatStartRange, profile.combatBreakRange);
-        approachRefreshInterval = Mathf.Max(0.01f, profile.approachRefreshInterval);
-        approachStopDistance = Mathf.Max(0f, profile.approachStopDistance);
+            hasLoggedMissingCombatProfile = true;
+        }
 
-        soldierLocalTargetScanRange = Mathf.Max(0f, profile.soldierLocalTargetScanRange);
-        combatMoveSpeedMultiplier = Mathf.Max(0.1f, profile.combatMoveSpeedMultiplier);
-
-        combatPressureDistance = Mathf.Max(0f, profile.combatPressureDistance);
-        combatRearFreeEngageDistance = Mathf.Max(0f, profile.combatRearFreeEngageDistance);
-        combatFrontFreeEngageDistance = Mathf.Max(combatRearFreeEngageDistance, profile.combatFrontFreeEngageDistance);
-        combatDisengageExtraDistance = Mathf.Max(0f, profile.combatDisengageExtraDistance);
-        combatForceRejoinExtraDistance = Mathf.Max(combatDisengageExtraDistance, profile.combatForceRejoinExtraDistance);
-        combatPressureStoppingDistance = Mathf.Max(0f, profile.combatPressureStoppingDistance);
-
-        targetRefreshInterval = Mathf.Max(0.01f, profile.targetRefreshInterval);
-
-        useSoftEngagementBudget = profile.useSoftEngagementBudget;
-        activeEngagementRatio = Mathf.Clamp01(profile.activeEngagementRatio);
-        activeEngagementMinCount = Mathf.Max(0, profile.activeEngagementMinCount);
-        activeEngagementFrontlineOverflow = Mathf.Max(0, profile.activeEngagementFrontlineOverflow);
-        activeEngagementFrontlineThreshold = Mathf.Clamp01(profile.activeEngagementFrontlineThreshold);
+        return false;
     }
 
     /// Receives an explicit attack order.
@@ -161,6 +108,9 @@ public class SquadCombat : MonoBehaviour
     /// If the target is close enough, this squad enters melee immediately.
     public void OrderAttack(SquadController target)
     {
+        if (!HasCombatProfile())
+            return;
+
         if (!CanAttack(target))
             return;
 
@@ -181,6 +131,9 @@ public class SquadCombat : MonoBehaviour
     /// This lets the defender fight back without requiring auto-scan.
     public void ReceiveEngagementRequest(SquadController attacker)
     {
+        if (!HasCombatProfile())
+            return;
+
         if (!CanRespondToEngagement(attacker))
             return;
 
@@ -206,6 +159,9 @@ public class SquadCombat : MonoBehaviour
     /// Ticks auto-scan behavior while idle.
     public void TickIdleScan()
     {
+        if (!HasCombatProfile())
+            return;
+
         if (!ShouldScan())
             return;
 
@@ -215,6 +171,9 @@ public class SquadCombat : MonoBehaviour
     /// Ticks auto-scan behavior while attack-moving.
     public void TickAttackMoveScan()
     {
+        if (!HasCombatProfile())
+            return;
+
         if (!ShouldScan())
             return;
 
@@ -224,6 +183,9 @@ public class SquadCombat : MonoBehaviour
     /// Moves toward the current attack target until close enough to enter melee.
     public void TickApproachingCombat()
     {
+        if (!HasCombatProfile())
+            return;
+
         if (!CanAttack(targetSquad))
         {
             EndCombatAndReform();
@@ -243,7 +205,7 @@ public class SquadCombat : MonoBehaviour
         if (approachRefreshTimer > 0f)
             return;
 
-        approachRefreshTimer = approachRefreshInterval;
+        approachRefreshTimer = squadCombatProfile.approachRefreshInterval;
 
         MoveTowardCombatTarget();
     }
@@ -253,6 +215,9 @@ public class SquadCombat : MonoBehaviour
     /// Soldiers receive a combat context and then run local priority behavior.
     public void TickCombat()
     {
+        if (!HasCombatProfile())
+            return;
+
         if (!CanAttack(targetSquad))
         {
             EndCombatAndReform();
@@ -271,7 +236,7 @@ public class SquadCombat : MonoBehaviour
 
         if (targetRefreshTimer <= 0f)
         {
-            targetRefreshTimer = targetRefreshInterval;
+            targetRefreshTimer = squadCombatProfile.targetRefreshInterval;
             RefreshCombatEligibleSoldiers();
         }
 
@@ -286,7 +251,7 @@ public class SquadCombat : MonoBehaviour
         if (scanTimer > 0f)
             return;
 
-        scanTimer = scanInterval;
+        scanTimer = squadCombatProfile.scanInterval;
 
         if (TryFindTarget(out SquadController target))
             OrderAttack(target);
@@ -344,7 +309,7 @@ public class SquadCombat : MonoBehaviour
 
         Vector3 approachPoint =
             targetSquad.transform.position +
-            fromTargetToMe * approachStopDistance;
+            fromTargetToMe * squadCombatProfile.approachStopDistance;
 
         Vector3 facing = -fromTargetToMe;
 
@@ -422,8 +387,8 @@ public class SquadCombat : MonoBehaviour
             float frontness = GetCombatHomeFrontness(home, rearScore, frontScore);
 
             float freeEngageDistance = GetFreeEngageDistance(frontness);
-            float disengageDistance = freeEngageDistance + combatDisengageExtraDistance;
-            float forceRejoinDistance = freeEngageDistance + combatForceRejoinExtraDistance;
+            float disengageDistance = freeEngageDistance + squadCombatProfile.combatDisengageExtraDistance;
+            float forceRejoinDistance = freeEngageDistance + squadCombatProfile.combatForceRejoinExtraDistance;
 
             Vector3 pressureGoal = GetPressureGoalForSoldier(
                 home,
@@ -445,16 +410,16 @@ public class SquadCombat : MonoBehaviour
                 freeEngageDistance,
                 disengageDistance,
                 forceRejoinDistance,
-                soldierLocalTargetScanRange,
-                combatMoveSpeedMultiplier,
-                combatPressureStoppingDistance,
+                squadCombatProfile.soldierLocalTargetScanRange,
+                squadCombatProfile.combatMoveSpeedMultiplier,
+                squadCombatProfile.combatPressureStoppingDistance,
                 canStartNewEngagement);
         }
     }
 
     int GetActiveEngagementBudget()
     {
-        if (!useSoftEngagementBudget)
+        if (!squadCombatProfile.useSoftEngagementBudget)
             return int.MaxValue;
 
         int livingCount = roster != null ? roster.LivingCount : 0;
@@ -463,10 +428,10 @@ public class SquadCombat : MonoBehaviour
             return 0;
 
         int ratioCount = Mathf.CeilToInt(
-            livingCount * Mathf.Clamp01(activeEngagementRatio));
+            livingCount * Mathf.Clamp01(squadCombatProfile.activeEngagementRatio));
 
         return Mathf.Clamp(
-            Mathf.Max(activeEngagementMinCount, ratioCount),
+            Mathf.Max(squadCombatProfile.activeEngagementMinCount, ratioCount),
             1,
             livingCount);
     }
@@ -496,7 +461,7 @@ public class SquadCombat : MonoBehaviour
         int activeEngagementCount,
         int activeEngagementBudget)
     {
-        if (!useSoftEngagementBudget)
+        if (!squadCombatProfile.useSoftEngagementBudget)
             return true;
 
         if (soldier == null || soldier.Combat == null)
@@ -510,13 +475,13 @@ public class SquadCombat : MonoBehaviour
         if (activeEngagementCount < activeEngagementBudget)
             return true;
 
-        bool isFrontlineHome = frontness >= activeEngagementFrontlineThreshold;
+        bool isFrontlineHome = frontness >= squadCombatProfile.activeEngagementFrontlineThreshold;
 
         if (!isFrontlineHome)
             return false;
 
         return activeEngagementCount <
-               activeEngagementBudget + Mathf.Max(0, activeEngagementFrontlineOverflow);
+               activeEngagementBudget + Mathf.Max(0, squadCombatProfile.activeEngagementFrontlineOverflow);
     }
 
     /// Freezes each living soldier's combat home at engagement start.
@@ -642,8 +607,8 @@ public class SquadCombat : MonoBehaviour
     float GetFreeEngageDistance(float frontness)
     {
         float distance = Mathf.Lerp(
-            combatRearFreeEngageDistance,
-            combatFrontFreeEngageDistance,
+            squadCombatProfile.combatRearFreeEngageDistance,
+            squadCombatProfile.combatFrontFreeEngageDistance,
             frontness);
 
         switch (squad.Stance)
@@ -664,7 +629,7 @@ public class SquadCombat : MonoBehaviour
         float freeEngageDistance)
     {
         float pressureDistance = Mathf.Min(
-            combatPressureDistance * GetPressureMultiplier(),
+            squadCombatProfile.combatPressureDistance * GetPressureMultiplier(),
             Mathf.Max(0f, freeEngageDistance));
 
         return home + combatContactDirection * pressureDistance;
@@ -768,14 +733,14 @@ public class SquadCombat : MonoBehaviour
     }
 
     /// Checks whether squads are close enough to begin combat.
-    /// Melee squads use combatStartRange; ranged squads can begin once their weapon range is valid.
+    /// Melee squads use squadCombatProfile.combatStartRange; ranged squads can begin once their weapon range is valid.
     bool IsCloseEnoughToStartEngagement(SquadController target)
     {
         if (target == null)
             return false;
 
         float startRange = Mathf.Max(
-            combatStartRange,
+            squadCombatProfile.combatStartRange,
             GetSquadAttackRange());
 
         return Vector3.Distance(
@@ -790,8 +755,8 @@ public class SquadCombat : MonoBehaviour
             return false;
 
         float breakRange = Mathf.Max(
-            combatBreakRange,
-            GetSquadAttackRange() + combatDisengageExtraDistance + 1f);
+            squadCombatProfile.combatBreakRange,
+            GetSquadAttackRange() + squadCombatProfile.combatDisengageExtraDistance + 1f);
 
         return Vector3.Distance(
             transform.position,
@@ -801,7 +766,7 @@ public class SquadCombat : MonoBehaviour
     /// Returns whether this squad should auto-scan for enemies.
     bool ShouldScan()
     {
-        if (!autoScanEnabled)
+        if (!squadCombatProfile.autoScanEnabled)
             return false;
 
         if (squad == null)
@@ -852,37 +817,25 @@ public class SquadCombat : MonoBehaviour
     /// Gets stance-based auto-scan range.
     float GetScanRange()
     {
-        if (squad == null)
+        if (squad == null || squadCombatProfile == null)
             return 0f;
 
         switch (squad.Stance)
         {
             case SquadStance.Aggressive:
-                return squadCombatProfile != null
-                    ? squadCombatProfile.aggressiveAutoScanRange
-                    : data != null ? data.aggressiveAutoScanRange : 0f;
+                return squadCombatProfile.aggressiveAutoScanRange;
 
             case SquadStance.Defensive:
-                return squadCombatProfile != null
-                    ? squadCombatProfile.defensiveAutoScanRange
-                    : data != null ? data.defensiveAutoScanRange : 0f;
+                return squadCombatProfile.defensiveAutoScanRange;
 
             case SquadStance.StandGround:
-                return GetSquadAttackRange() + GetStandGroundScanPadding();
+                return GetSquadAttackRange() + squadCombatProfile.standGroundScanPadding;
 
             case SquadStance.NoAttack:
                 return 0f;
         }
 
         return 0f;
-    }
-
-    float GetStandGroundScanPadding()
-    {
-        if (squadCombatProfile != null)
-            return Mathf.Max(0f, squadCombatProfile.standGroundScanPadding);
-
-        return data != null ? Mathf.Max(0f, data.standGroundScanPadding) : 0f;
     }
 
     float GetSquadAttackRange()

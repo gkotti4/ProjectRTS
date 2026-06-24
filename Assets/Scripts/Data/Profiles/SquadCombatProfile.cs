@@ -41,4 +41,34 @@ public class SquadCombatProfile : ScriptableObject
     [Min(0)] public int activeEngagementMinCount = 4;
     [Min(0)] public int activeEngagementFrontlineOverflow = 2;
     [Range(0f, 1f)] public float activeEngagementFrontlineThreshold = 0.7f;
+
+    void OnValidate()
+    {
+        scanInterval = Mathf.Max(0.01f, scanInterval);
+        aggressiveAutoScanRange = Mathf.Max(0f, aggressiveAutoScanRange);
+        defensiveAutoScanRange = Mathf.Max(0f, defensiveAutoScanRange);
+        standGroundScanPadding = Mathf.Max(0f, standGroundScanPadding);
+
+        combatStartRange = Mathf.Max(0f, combatStartRange);
+        combatBreakRange = Mathf.Max(combatStartRange, combatBreakRange);
+        approachRefreshInterval = Mathf.Max(0.01f, approachRefreshInterval);
+        approachStopDistance = Mathf.Max(0f, approachStopDistance);
+
+        soldierLocalTargetScanRange = Mathf.Max(0f, soldierLocalTargetScanRange);
+        combatMoveSpeedMultiplier = Mathf.Max(0.1f, combatMoveSpeedMultiplier);
+
+        combatPressureDistance = Mathf.Max(0f, combatPressureDistance);
+        combatRearFreeEngageDistance = Mathf.Max(0f, combatRearFreeEngageDistance);
+        combatFrontFreeEngageDistance = Mathf.Max(combatRearFreeEngageDistance, combatFrontFreeEngageDistance);
+        combatDisengageExtraDistance = Mathf.Max(0f, combatDisengageExtraDistance);
+        combatForceRejoinExtraDistance = Mathf.Max(combatDisengageExtraDistance, combatForceRejoinExtraDistance);
+        combatPressureStoppingDistance = Mathf.Max(0f, combatPressureStoppingDistance);
+
+        targetRefreshInterval = Mathf.Max(0.01f, targetRefreshInterval);
+
+        activeEngagementRatio = Mathf.Clamp01(activeEngagementRatio);
+        activeEngagementMinCount = Mathf.Max(0, activeEngagementMinCount);
+        activeEngagementFrontlineOverflow = Mathf.Max(0, activeEngagementFrontlineOverflow);
+        activeEngagementFrontlineThreshold = Mathf.Clamp01(activeEngagementFrontlineThreshold);
+    }
 }

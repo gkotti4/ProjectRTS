@@ -1,6 +1,6 @@
+
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AI;
 
 /// -----------------------------------------------------------------------------
 /// SquadController
@@ -19,7 +19,6 @@ using UnityEngine.AI;
 /// Player/AI orders enter here, then get routed to SquadMovement, SquadCombat,
 /// SquadFormationController, or other squad-level systems.
 /// 
-[RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(FactionOwner))]
 [RequireComponent(typeof(SquadRoster))]
 [RequireComponent(typeof(SquadHealth))]
@@ -238,13 +237,13 @@ public class SquadController : MonoBehaviour,
             Debug.LogError($"{name}: SquadData validation failed. soldierData is null.", this);
 
         if (squadData.squadCombatProfile == null)
-            Debug.LogWarning($"{name}: SquadData has no SquadCombatProfile. SquadCombat will use fallback values.", this);
+            Debug.LogError($"{name}: SquadData is missing required SquadCombatProfile. SquadCombat will not run without it.", this);
 
         if (squadData.soldierCombatProfile == null)
-            Debug.LogWarning($"{name}: SquadData has no SoldierCombatProfile. SoldierCombat will use fallback values.", this);
+            Debug.LogError($"{name}: SquadData is missing required SoldierCombatProfile. SoldierCombat will not run without it.", this);
 
         if (squadData.movementProfile == null)
-            Debug.LogWarning($"{name}: SquadData has no SquadMovementProfile. SquadMovement will use fallback values.", this);
+            Debug.LogError($"{name}: SquadData is missing required SquadMovementProfile. SquadMovement will not run without it.", this);
 
         if (Roster != null && Roster.Count <= 0)
             Debug.LogError($"{name}: Squad initialized with no soldiers in roster.", this);
@@ -479,5 +478,3 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
-
-
