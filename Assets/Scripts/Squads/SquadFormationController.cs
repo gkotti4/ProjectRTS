@@ -205,58 +205,7 @@ public class SquadFormationController : MonoBehaviour
 
         return result;
     }
-
-    public List<SoldierController> GetLivingSoldiersInFrontRows(
-        Vector3 enemyCenter,
-        int rowDepth = 1)
-    {
-        List<SoldierController> result = new List<SoldierController>();
-
-        if (roster == null)
-            return result;
-
-        Vector3 toEnemy = enemyCenter - transform.position;
-        toEnemy.y = 0f;
-
-        if (toEnemy == Vector3.zero)
-            toEnemy = facing;
-
-        toEnemy.Normalize();
-
-        float bestFrontScore = float.NegativeInfinity;
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive)
-                continue;
-
-            Vector3 local = soldier.transform.position - transform.position;
-            local.y = 0f;
-
-            float score = Vector3.Dot(local, toEnemy);
-
-            if (score > bestFrontScore)
-                bestFrontScore = score;
-        }
-
-        float rowDepthDistance = spacing * Mathf.Max(1, rowDepth);
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive)
-                continue;
-
-            Vector3 local = soldier.transform.position - transform.position;
-            local.y = 0f;
-
-            float score = Vector3.Dot(local, toEnemy);
-
-            if (bestFrontScore - score <= rowDepthDistance)
-                result.Add(soldier);
-        }
-
-        return result;
-    }
+    
 
     float GetDefaultWidth(int count)
     {
@@ -410,18 +359,6 @@ public class SquadFormationController : MonoBehaviour
 
             availableSlotIndices.RemoveAt(bestAvailableListIndex);
         }
-    }
-    
-    
-    public Vector3 GetEngagementDirection(Vector3 enemyCenter)
-    {
-        Vector3 dir = enemyCenter - transform.position;
-        dir.y = 0f;
-
-        if (dir == Vector3.zero)
-            dir = facing;
-
-        return NormalizeFacing(dir);
     }
     
     

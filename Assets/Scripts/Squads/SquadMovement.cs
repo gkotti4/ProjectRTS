@@ -291,23 +291,6 @@ public class SquadMovement : MonoBehaviour
         TickMovementCore(allowArrivalStateChange: false);
     }
     
-    /// Gently moves the virtual squad anchor during combat.
-    /// This lets the formation body follow the pressure of the fight without
-    /// teleporting or fully collapsing into the frontline.
-    public void DriftCombatAnchor(
-        Vector3 desiredAnchor,
-        float maxDistanceThisFrame)
-    {
-        desiredAnchor.y = transform.position.y;
-
-        Vector3 nextPosition = Vector3.MoveTowards(
-            transform.position,
-            desiredAnchor,
-            Mathf.Max(0f, maxDistanceThisFrame));
-
-        MoveRootToProjectedPoint(nextPosition);
-        formation.UpdateSlots(transform.position, desiredFacing);
-    }
 
     /// Starts reforming the squad into its current formation.
     /// Normal movement should not recenter from soldiers, because that can cause

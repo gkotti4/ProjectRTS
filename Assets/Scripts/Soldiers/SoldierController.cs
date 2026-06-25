@@ -485,16 +485,6 @@ public class SoldierController : MonoBehaviour
 
     #region Combat Visuals / Animation Hooks
 
-    public void PlayAttackVisual()
-    {
-        TryBeginAction(SoldierActionState.Attack);
-    }
-    
-    public void PlayHitVisual()
-    {
-        TryBeginAction(SoldierActionState.HitReact);
-    }
-
     public void OnAttackImpact()
     {
         Combat?.ResolveAttackImpact();

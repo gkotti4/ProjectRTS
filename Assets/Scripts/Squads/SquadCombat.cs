@@ -576,8 +576,7 @@ public class SquadCombat : MonoBehaviour
                 frontScore = score;
         }
 
-        if (rearScore == float.PositiveInfinity ||
-            frontScore == float.NegativeInfinity)
+        if (float.IsPositiveInfinity(rearScore) || float.IsPositiveInfinity(frontScore))
         {
             rearScore = 0f;
             frontScore = 0f;
