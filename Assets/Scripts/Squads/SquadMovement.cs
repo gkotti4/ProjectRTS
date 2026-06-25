@@ -35,7 +35,6 @@ public class SquadMovement : MonoBehaviour
     // SquadMovementProfile is the single source of truth for designer-tunable
     // movement values. Runtime fields below are only for actual movement state.
     private SquadMovementProfile movementProfile;
-    private bool hasLoggedMissingMovementProfile = false;
 
     // -----------------------------------------------------------------------------
     // Component References
@@ -72,6 +71,9 @@ public class SquadMovement : MonoBehaviour
     private float baseAnchorMoveSpeed = 4f;
     private float effectiveAnchorMoveSpeed = 4f;
     private float memberBaseMoveSpeed = 4f;
+    
+    // to categorize (replaces reassign facing angle)
+    private const float travelSlotReassignAngle = 12f;
 
     // -----------------------------------------------------------------------------
     // Public Read-Only Access
@@ -137,16 +139,11 @@ public class SquadMovement : MonoBehaviour
     {
         if (movementProfile != null)
             return true;
-
-        if (!hasLoggedMissingMovementProfile)
-        {
-            Debug.LogError(
-                $"{name}: SquadMovement requires SquadData.movementProfile. Assign a SquadMovementProfile asset before using squad movement.",
-                this);
-
-            hasLoggedMissingMovementProfile = true;
-        }
-
+        
+        Debug.LogError(
+            $"{name}: SquadMovement requires SquadData.movementProfile. Assign a SquadMovementProfile asset before using squad movement.",
+            this);
+        
         return false;
     }
 
@@ -160,12 +157,26 @@ public class SquadMovement : MonoBehaviour
             : 4f;
 
         memberBaseMoveSpeed = ResolveMemberBaseMoveSpeed();
-        effectiveAnchorMoveSpeed = ResolveEffectiveAnchorMoveSpeed();
+
+        // ProjectRTS 2.0:
+        // The anchor moves at the squad's intended movement speed.
+        // Individual soldiers use catchup to recover slot error.
+        // We no longer slow the anchor just because member speed could be lower.
+        effectiveAnchorMoveSpeed = Mathf.Max(0.1f, baseAnchorMoveSpeed);
     }
 
     /// Orders the squad to move as a virtual formation body while soldiers follow
     /// shared slot deltas. If the formation cannot fit or breaks cohesion, movement
     /// falls back to LooseMove and then Reforming.
+    ///
+    /// ProjectRTS 2.0 movement rule:
+    /// Formation slot facing and soldier visual facing are separate.
+    ///
+    /// - desiredFacing = slot/layout facing used by formation geometry.
+    /// - finalFacing = visual facing soldiers should settle toward after arrival.
+    ///
+    /// The formation does not wheel/rotate toward finalFacing at the end of a move.
+    /// Individual soldiers handle final facing once they are in/near their slots.
     public void OrderMove(
         Vector3 destination,
         Vector3 facing,
@@ -178,6 +189,7 @@ public class SquadMovement : MonoBehaviour
         finalFacing = NormalizeFacing(facing);
 
         Vector3 startingFacing = desiredFacing;
+
         if (startingFacing == Vector3.zero)
             startingFacing = ResolveFacing(finalDestination);
 
@@ -187,66 +199,49 @@ public class SquadMovement : MonoBehaviour
         if (requestedFormationWidth > 0f)
             formation.SetFormationWidth(requestedFormationWidth);
 
-        // Important:
-        // Do NOT reassign slots immediately for large facing changes during a move
-        // order. The virtual formation motor already wheels the formation toward
-        // the new facing over time. Reassigning slot indices at order time means
-        // a 90/180-degree order can make a soldier suddenly inherit a slot on the
-        // opposite side of the formation, which creates huge first-frame slot
-        // errors and can look like a slingshot.
-        //
-        // Slot reassignment is still useful for explicit reform/facing tools later,
-        // but normal formed movement should preserve slot identity and rotate the
-        // formation body instead.
-
-        // Re-resolve profile and movement speeds at order time so play-mode
-        // tuning changes are reflected without requiring a new scene load.
         RefreshProfileAndMovementSpeeds();
 
-        if (!movementProfile.useVirtualFormationMovement)
-        {
-            BeginProfileLooseMove(finalDestination, finalFacing);
-            return;
-        }
-
         Vector3 travelFacing = ResolveFacing(finalDestination);
-        bool shouldReassignForSharpTurn =
-            IsSharpTurnFromCurrentFacing(travelFacing) ||
-            IsSharpTurnFromCurrentFacing(finalFacing);
 
-        Vector3 sharpTurnFacing = IsSharpTurnFromCurrentFacing(travelFacing)
-            ? travelFacing
-            : finalFacing;
+        if (travelFacing == Vector3.zero)
+            travelFacing = startingFacing;
+
+        if (travelFacing == Vector3.zero)
+            travelFacing = finalFacing;
+
+        Vector3 slotFacing = NormalizeFacing(travelFacing);
+
+        bool shouldReassignForTravelTurn =
+            IsSharpTurnFromCurrentFacing(slotFacing);
 
         if (!BuildAnchorPath(finalDestination))
         {
+            desiredFacing = slotFacing;
+            formation.SetFacing(desiredFacing);
+
+            if (shouldReassignForTravelTurn)
+                formation.ReassignLivingSoldiersToNearestSlots(
+                    transform.position,
+                    desiredFacing);
+
+            formation.UpdateSlots(transform.position, desiredFacing);
             BeginLooseMove();
             return;
         }
 
         moveMode = SquadMoveMode.FormedMove;
 
-        if (shouldReassignForSharpTurn)
+        desiredFacing = slotFacing;
+        formation.SetFacing(desiredFacing);
+
+        if (shouldReassignForTravelTurn)
         {
-            // For 120-180 degree orders, do not physically rotate every slot
-            // through the whole formation. That causes the classic crossover/flip.
-            // Instead, declare the new travel-facing immediately and remap each
-            // living soldier to the nearest slot in that new frame. Since this
-            // happens before the first formed-move tick, there is no giant slot
-            // delta or launch.
-            desiredFacing = NormalizeFacing(sharpTurnFacing);
-            formation.SetFacing(desiredFacing);
-            formation.ReassignLivingSoldiersToNearestSlots(transform.position, desiredFacing);
-            formation.UpdateSlots(transform.position, desiredFacing);
+            formation.ReassignLivingSoldiersToNearestSlots(
+                transform.position,
+                desiredFacing);
         }
-        else
-        {
-            // Keep the current formation facing at order start.
-            // TickFormedMove gradually wheels toward path/final facing.
-            desiredFacing = NormalizeFacing(startingFacing);
-            formation.SetFacing(desiredFacing);
-            formation.UpdateSlots(transform.position, desiredFacing);
-        }
+
+        formation.UpdateSlots(transform.position, desiredFacing);
     }
 
     public void OrderStop()
@@ -427,15 +422,11 @@ public class SquadMovement : MonoBehaviour
             transform.position,
             desiredFacing);
 
-        // Do not slow the entire squad for normal slot error. That made the unit
-        // feel painfully slow. Members now receive catchup speed based on their
-        // own error; the anchor only pauses for extreme separation.
-        bool shouldEmergencyPauseAnchor = ShouldEmergencyPauseAnchor(oldSlots);
+        bool shouldEmergencyPauseAnchor =
+            ShouldEmergencyPauseAnchor(oldSlots);
 
-        Vector3 oldAnchor = transform.position;
-        Vector3 oldFacing = desiredFacing;
+        Vector3 nextAnchor = transform.position;
 
-        Vector3 nextAnchor = oldAnchor;
         Vector3 pathDirection = GetCurrentPathDirection();
         bool anchorAtDestination = HasAnchorReachedDestination();
 
@@ -446,31 +437,22 @@ public class SquadMovement : MonoBehaviour
             pathDirection = GetCurrentPathDirectionFrom(nextAnchor);
         }
 
-        Vector3 targetFacing = ResolveMovementFacing(
-            nextAnchor,
-            pathDirection,
-            HasAnchorReachedDestinationFrom(nextAnchor));
-
-        float turnSpeedMultiplier = shouldEmergencyPauseAnchor ? 0.25f : 1f;
-
-        Vector3 nextFacing = RotateFacingTowards(
-            oldFacing,
-            targetFacing,
-            movementProfile.formedTurnSpeedDegrees * turnSpeedMultiplier * Time.deltaTime);
-
         Vector3 footprintProbeAnchor = nextAnchor;
 
-        if (movementProfile.footprintLookAheadDistance > 0f && pathDirection != Vector3.zero)
-            footprintProbeAnchor += pathDirection * movementProfile.footprintLookAheadDistance;
+        if (movementProfile.footprintLookAheadDistance > 0f &&
+            pathDirection != Vector3.zero)
+        {
+            footprintProbeAnchor +=
+                pathDirection * movementProfile.footprintLookAheadDistance;
+        }
 
-        if (!CanFormationFitAt(footprintProbeAnchor, nextFacing))
+        if (!CanFormationFitAt(footprintProbeAnchor, desiredFacing))
         {
             BeginLooseMove();
             return;
         }
 
         MoveRootToProjectedPoint(nextAnchor);
-        desiredFacing = nextFacing;
 
         formation.SetFacing(desiredFacing);
         formation.UpdateSlots(transform.position, desiredFacing);
@@ -482,13 +464,10 @@ public class SquadMovement : MonoBehaviour
             newSlots,
             desiredFacing);
 
-        bool reachedPosition = HasAnchorReachedDestination();
-        bool reachedFacing = Vector3.Angle(desiredFacing, finalFacing) <= movementProfile.formedFinalFacingAngle;
-
-        if (reachedPosition && reachedFacing)
+        if (HasAnchorReachedDestination())
             CompleteMovementOrReform(allowArrivalStateChange);
     }
-
+    
     void TickLooseMove(bool allowArrivalStateChange)
     {
         if (roster == null || formation == null)
@@ -496,7 +475,7 @@ public class SquadMovement : MonoBehaviour
 
         List<Vector3> finalSlots = formation.GetWorldSlots(
             finalDestination,
-            finalFacing);
+            desiredFacing);
 
         MoveSoldiersIndividuallyToSlots(
             finalSlots,
@@ -522,14 +501,15 @@ public class SquadMovement : MonoBehaviour
         // commanded destination. Since the required near-ratio is high, this should
         // already be close to the target, but it prevents the old "jump away then
         // walk back" artifact when the root had been following the average body.
-        Vector3 estimatedAnchor = EstimateAnchorFromSoldiers(finalFacing);
+        Vector3 estimatedAnchor = EstimateAnchorFromSoldiers(desiredFacing);
         if (estimatedAnchor != Vector3.zero)
             MoveRootTowardProjectedPoint(estimatedAnchor, memberBaseMoveSpeed * Time.deltaTime);
 
         if (Vector3.Distance(Flatten(transform.position), Flatten(finalDestination)) <= movementProfile.reformMemberDistance)
             MoveRootToProjectedPoint(finalDestination);
 
-        desiredFacing = finalFacing;
+        // Keep slot/layout facing separate from final visual facing.
+        // Soldiers will individually face finalFacing once they settle.
         formation.SetFacing(desiredFacing);
         formation.UpdateSlots(transform.position, desiredFacing);
 
@@ -549,15 +529,6 @@ public class SquadMovement : MonoBehaviour
         pathCorners.Clear();
         pathCornerIndex = 0;
         moveMode = SquadMoveMode.LooseMove;
-    }
-
-    void BeginProfileLooseMove(
-        Vector3 destination,
-        Vector3 facing)
-    {
-        finalDestination = destination;
-        finalFacing = facing;
-        BeginLooseMove();
     }
 
     bool BuildAnchorPath(Vector3 destination)
@@ -656,48 +627,7 @@ public class SquadMovement : MonoBehaviour
 
         return direction.normalized;
     }
-
-    Vector3 ResolveMovementFacing(
-        Vector3 anchorPosition,
-        Vector3 pathDirection,
-        bool anchorAtDestination)
-    {
-        if (anchorAtDestination)
-            return finalFacing;
-
-        float distanceToDestination = Vector3.Distance(
-            Flatten(anchorPosition),
-            Flatten(finalDestination));
-
-        if (distanceToDestination <= movementProfile.formedFinalFacingDistance)
-            return finalFacing;
-
-        if (pathDirection != Vector3.zero)
-            return pathDirection;
-
-        return desiredFacing;
-    }
-
-    Vector3 RotateFacingTowards(
-        Vector3 current,
-        Vector3 target,
-        float maxDegrees)
-    {
-        current = NormalizeFacing(current);
-        target = NormalizeFacing(target);
-
-        if (current == Vector3.zero)
-            return target;
-
-        if (target == Vector3.zero)
-            return current;
-
-        return Vector3.RotateTowards(
-            current,
-            target,
-            Mathf.Deg2Rad * Mathf.Max(0f, maxDegrees),
-            0f).normalized;
-    }
+    
 
     bool HasAnchorReachedDestination()
     {
@@ -957,10 +887,16 @@ public class SquadMovement : MonoBehaviour
 
             Vector3 movementDelta = slotDelta + correction;
 
+            // soldier.Motor.MoveByFormationDelta(
+            //     movementDelta,
+            //     facing,
+            //     speedLimit);
+            
             soldier.Motor.MoveByFormationDelta(
                 movementDelta,
                 facing,
-                speedLimit);
+                speedLimit,
+                faceMovementDirection: true);
 
             soldier.SetLastSlotPosition(newSlots[slotIndex]);
         }
@@ -1053,6 +989,12 @@ public class SquadMovement : MonoBehaviour
                 movementProfile.slotUpdateThreshold,
                 movementProfile.memberStoppingDistance,
                 speedMultiplier);
+
+            // Final ordered facing is handled per soldier, not by rotating the whole
+            // formation slot grid. Once the soldier is close enough to its slot, it can
+            // turn in place toward the requested final facing.
+            if (distance <= movementProfile.reformMemberDistance)
+                soldier.Motor.FaceDirection(finalFacing);
         }
     }
 
@@ -1161,14 +1103,6 @@ public class SquadMovement : MonoBehaviour
         return baseAnchorMoveSpeed > 0f ? baseAnchorMoveSpeed : 4f;
     }
 
-    float ResolveEffectiveAnchorMoveSpeed()
-    {
-        float memberLimitedSpeed = memberBaseMoveSpeed * movementProfile.maxAnchorToMemberSpeedRatio;
-        return Mathf.Min(
-            Mathf.Max(0.1f, baseAnchorMoveSpeed),
-            Mathf.Max(0.1f, memberLimitedSpeed));
-    }
-
     void MoveRootToProjectedPoint(Vector3 point)
     {
         transform.position = ProjectPointToNavMesh(
@@ -1238,14 +1172,10 @@ public class SquadMovement : MonoBehaviour
         return copy;
     }
     
-    /// Returns true when a new travel/final facing is so far behind the current
-    /// frame that wheeling the whole slot grid would make soldiers cross through
-    /// each other. In that case we remap nearest slots before movement starts.
+    /// Returns true when the travel slot frame changed enough that nearest-slot
+    /// reassignment is cleaner than preserving old slot identity.
     bool IsSharpTurnFromCurrentFacing(Vector3 newFacing)
     {
-        if (!movementProfile.reassignSlotsOnLargeFacingChange)
-            return false;
-
         Vector3 oldFacing = desiredFacing;
         oldFacing.y = 0f;
         newFacing.y = 0f;
@@ -1253,54 +1183,11 @@ public class SquadMovement : MonoBehaviour
         if (oldFacing == Vector3.zero || newFacing == Vector3.zero)
             return false;
 
-        float threshold = movementProfile.reassignFacingAngle;
-
         float angle = Vector3.Angle(
             oldFacing.normalized,
             newFacing.normalized);
 
-        return angle >= threshold;
+        return angle >= travelSlotReassignAngle;
     }
     
-    /// Holds non-excluded soldiers in their assigned formation slots.
-    /// Excluded soldiers are usually autonomous combat soldiers.
-    public void HoldFormationSlotsExcept(
-        HashSet<SoldierController> excludedSoldiers)
-    {
-        if (!HasMovementProfile())
-            return;
-
-        if (roster == null || formation == null)
-            return;
-
-        formation.UpdateSlots(transform.position, desiredFacing);
-
-        IReadOnlyList<Vector3> slots = formation.CurrentSlots;
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive)
-                continue;
-
-            if (excludedSoldiers != null && excludedSoldiers.Contains(soldier))
-                continue;
-
-            int slotIndex = soldier.SlotIndex;
-
-            if (slotIndex < 0 || slotIndex >= slots.Count)
-                continue;
-
-            float distance = Vector3.Distance(
-                soldier.transform.position,
-                slots[slotIndex]);
-
-            float speedMultiplier = GetCatchupMultiplier(distance);
-
-            soldier.MoveToSlot(
-                slots[slotIndex],
-                movementProfile.slotUpdateThreshold,
-                movementProfile.memberStoppingDistance,
-                speedMultiplier);
-        }
-    }
 }

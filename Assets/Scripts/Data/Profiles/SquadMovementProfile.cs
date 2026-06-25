@@ -18,12 +18,6 @@ public class SquadMovementProfile : ScriptableObject
 
     [Header("Formed Movement")]
 
-    [Tooltip("When enabled, the squad uses the virtual formation anchor. When disabled, the squad intentionally uses loose individual slot movement for debugging/fallback testing. Normal use should leave this enabled.")]
-    public bool useVirtualFormationMovement = true;
-
-    [Tooltip("Caps the virtual formation anchor speed as a ratio of member movement speed. 1.0 means the anchor cannot move faster than the soldiers' base speed.")]
-    [Range(0.1f, 1f)] public float maxAnchorToMemberSpeedRatio = 1.0f;
-
     [Tooltip("Maximum sideways/slot-error correction speed soldiers use to drift back toward assigned slots during formed movement. Catchup speed is controlled by the shared Catchup values below.")]
     [Min(0f)] public float formedSlotCorrectionSpeed = 1.75f;
 
@@ -39,15 +33,6 @@ public class SquadMovementProfile : ScriptableObject
 
     [Tooltip("Distance from the final destination where the virtual anchor counts as having arrived.")]
     [Min(0.01f)] public float formedAnchorArrivalDistance = 0.25f;
-
-    [Tooltip("When the anchor is within this distance of the destination, the formation starts rotating toward the final ordered facing instead of path direction.")]
-    [Min(0f)] public float formedFinalFacingDistance = 2.5f;
-
-    [Tooltip("Allowed angle difference from the final ordered facing before movement is considered visually complete.")]
-    [Range(0f, 45f)] public float formedFinalFacingAngle = 3f;
-
-    [Tooltip("Maximum degrees per second the formation facing can rotate during formed movement. Lower values create slower wheeling turns.")]
-    [Min(1f)] public float formedTurnSpeedDegrees = 300f;
 
 
     [Header("Formation Footprint")]
@@ -99,28 +84,15 @@ public class SquadMovementProfile : ScriptableObject
     [FormerlySerializedAs("looseMoveReformRatioRequired")]
     [Range(0f, 1f)] public float reformRatioRequired = 0.75f;
 
-
-    [Header("Slot Reassignment")]
-
-    [Tooltip("When enabled, sharp move orders may reassign soldiers to nearest slots instead of rotating the whole grid through itself.")]
-    public bool reassignSlotsOnLargeFacingChange = true;
-
-    [Tooltip("Facing angle difference required before large-facing slot reassignment is considered.")]
-    [Range(0f, 180f)] public float reassignFacingAngle = 100f;
-
     void OnValidate()
     {
         slotUpdateThreshold = Mathf.Max(0f, slotUpdateThreshold);
         memberStoppingDistance = Mathf.Max(0f, memberStoppingDistance);
 
-        maxAnchorToMemberSpeedRatio = Mathf.Clamp(maxAnchorToMemberSpeedRatio, 0.1f, 1f);
         formedSlotCorrectionSpeed = Mathf.Max(0f, formedSlotCorrectionSpeed);
         formedAnchorPauseDistance = Mathf.Max(0f, formedAnchorPauseDistance);
         formedAnchorPauseRatio = Mathf.Clamp01(formedAnchorPauseRatio);
         formedAnchorArrivalDistance = Mathf.Max(0.01f, formedAnchorArrivalDistance);
-        formedFinalFacingDistance = Mathf.Max(0f, formedFinalFacingDistance);
-        formedFinalFacingAngle = Mathf.Clamp(formedFinalFacingAngle, 0f, 45f);
-        formedTurnSpeedDegrees = Mathf.Max(1f, formedTurnSpeedDegrees);
 
         footprintLookAheadDistance = Mathf.Max(0f, footprintLookAheadDistance);
         footprintProbeRadius = Mathf.Max(0.01f, footprintProbeRadius);
@@ -134,8 +106,5 @@ public class SquadMovementProfile : ScriptableObject
         reformCheckInterval = Mathf.Max(0.01f, reformCheckInterval);
         reformMemberDistance = Mathf.Max(0f, reformMemberDistance);
         reformRatioRequired = Mathf.Clamp01(reformRatioRequired);
-
-        reassignFacingAngle = Mathf.Clamp(reassignFacingAngle, 0f, 180f);
     }
-
 }

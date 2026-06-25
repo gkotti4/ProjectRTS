@@ -11,7 +11,6 @@ public class FormationVisualizer : MonoBehaviour
 
     [Header("Placement")]
     [SerializeField] private float indicatorHeightOffset = 0.05f;
-    [SerializeField] private bool alignToFacing = true;
 
     private List<GameObject> pool = new List<GameObject>();
     private float hideTimer = 0f;
@@ -59,10 +58,6 @@ public class FormationVisualizer : MonoBehaviour
 
         if (facing == Vector3.zero)
             facing = Vector3.forward;
-
-        // Quaternion rotation = alignToFacing
-        //     ? Quaternion.LookRotation(facing.normalized, Vector3.up)
-        //     : Quaternion.identity;
 
         float yaw = Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg;
         

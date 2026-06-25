@@ -755,9 +755,15 @@ public class SoldierCombat : MonoBehaviour
         Vector3 cohesionOrigin,
         Vector3 fallbackPoint,
         float stoppingDistance,
-        float speedMultiplier)
+        float speedMultiplier,
+        float orginRandomRange = 1.0f)
     {
         Vector3 destination = fallbackPoint;
+        
+        // NEW CHECK
+        // Randomize fallback destination to some degree ?
+        if (orginRandomRange > 0f)
+            destination = destination + new Vector3(Random.Range(-orginRandomRange, orginRandomRange), 0f, Random.Range(-orginRandomRange, orginRandomRange));
 
         if (Vector3.Distance(transform.position, destination) <= stoppingDistance + 0.05f)
         {

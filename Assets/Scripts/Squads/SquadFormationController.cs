@@ -134,26 +134,76 @@ public class SquadFormationController : MonoBehaviour
         return ConvertOffsetsFallback(center, slotFacing);
     }
 
+    /// Calculates preview slots without mutating the live formation.
+    ///
+    /// Important:
+    /// This must not call Rebuild(), SetFacing(), UpdateSlots(), or AssignSlotIndices().
+    /// Drag preview runs every frame while the player is holding right click, so it
+    /// must be a pure read-only calculation.
     public List<Vector3> GetPreviewSlots(
         Vector3 center,
         Vector3 slotFacing,
         float requestedFormationWidth = -1f)
     {
-        float oldWidth = formationWidth;
+        int count = roster != null ? roster.Count : 0;
 
-        if (requestedFormationWidth > 0f)
-            formationWidth = requestedFormationWidth;
+        if (count <= 0)
+            return new List<Vector3>();
 
-        Rebuild();
+        float previewWidth = requestedFormationWidth > 0f
+            ? requestedFormationWidth
+            : formationWidth > 0f
+                ? formationWidth
+                : GetDefaultWidth(count);
 
-        List<Vector3> preview = GetWorldSlots(
+        List<Vector2> previewOffsets;
+
+        if (FormationCalculator.Instance != null)
+        {
+            previewOffsets = FormationCalculator.Instance.CalculateOffsets(
+                count,
+                previewWidth,
+                currentFormation,
+                spacing);
+        }
+        else
+        {
+            previewOffsets = BuildFallbackLineOffsets(count);
+        }
+
+        if (FormationCalculator.Instance != null)
+        {
+            return FormationCalculator.Instance.ConvertOffsetsToWorldPositions(
+                previewOffsets,
+                center,
+                slotFacing);
+        }
+
+        return ConvertPreviewOffsetsFallback(
+            previewOffsets,
             center,
             slotFacing);
+    }
 
-        formationWidth = oldWidth;
-        Rebuild();
+    /// Converts temporary preview offsets to world positions without touching the
+    /// live localOffsets/currentSlots/facing fields.
+    List<Vector3> ConvertPreviewOffsetsFallback(
+        List<Vector2> offsets,
+        Vector3 center,
+        Vector3 slotFacing)
+    {
+        List<Vector3> result = new List<Vector3>();
 
-        return preview;
+        if (offsets == null || offsets.Count == 0)
+            return result;
+
+        slotFacing = NormalizeFacing(slotFacing);
+        Vector3 right = new Vector3(slotFacing.z, 0f, -slotFacing.x).normalized;
+
+        foreach (Vector2 offset in offsets)
+            result.Add(center + right * offset.x + slotFacing * offset.y);
+
+        return result;
     }
 
     public List<SoldierController> GetLivingSoldiersInFrontRows(

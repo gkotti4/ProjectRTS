@@ -130,10 +130,17 @@ public class SoldierMotor : MonoBehaviour
     ///
     /// This is used by SquadMovement.FormedMove so the squad can move as one
     /// shared formation body while each soldier remains a normal NavMeshAgent.
+    ///
+    /// Important:
+    /// Formation facing and soldier visual facing are not always the same.
+    /// During movement, the soldier should usually face its own movement delta.
+    /// When not moving, callers can explicitly rotate the soldier toward final
+    /// formation facing through FaceDirection().
     public void MoveByFormationDelta(
         Vector3 movementDelta,
-        Vector3 facingDirection,
-        float speedLimit = -1f)
+        Vector3 fallbackFacingDirection,
+        float speedLimit = -1f,
+        bool faceMovementDirection = true)
     {
         if (!CanMove())
             return;
@@ -154,14 +161,14 @@ public class SoldierMotor : MonoBehaviour
 
         movementDelta.y = 0f;
 
-        // Critical safety clamp:
-        // NavMeshAgent.Move applies the provided delta directly. It does NOT
-        // enforce agent.speed. A sudden slot-rotation delta can therefore launch
-        // the soldier unless we cap the delta ourselves.
-        float maxDistanceThisFrame = Mathf.Max(0f, resolvedSpeedLimit) * Time.deltaTime;
+        float maxDistanceThisFrame =
+            Mathf.Max(0f, resolvedSpeedLimit) * Time.deltaTime;
 
-        if (maxDistanceThisFrame > 0f && movementDelta.magnitude > maxDistanceThisFrame)
+        if (maxDistanceThisFrame > 0f &&
+            movementDelta.magnitude > maxDistanceThisFrame)
+        {
             movementDelta = movementDelta.normalized * maxDistanceThisFrame;
+        }
 
         manualMovementVelocity = Time.deltaTime > 0f
             ? movementDelta / Time.deltaTime
@@ -172,7 +179,29 @@ public class SoldierMotor : MonoBehaviour
         if (movementDelta.sqrMagnitude > 0.000001f)
             agent.Move(movementDelta);
 
-        RotateTowardDirection(facingDirection);
+        Vector3 visualFacingDirection = fallbackFacingDirection;
+
+        if (faceMovementDirection &&
+            movementDelta.sqrMagnitude > 0.000001f)
+        {
+            visualFacingDirection = movementDelta;
+        }
+
+        RotateTowardDirection(visualFacingDirection);
+    }
+    
+    /// Rotates the soldier toward a requested direction without issuing movement.
+    /// Used when a soldier has reached its slot and should settle into the squad's
+    /// final facing.
+    public void FaceDirection(Vector3 direction)
+    {
+        if (!CanMove())
+            return;
+
+        if (soldierController != null && soldierController.IsMovementLocked)
+            return;
+
+        RotateTowardDirection(direction);
     }
 
     public void Stop()
@@ -183,6 +212,9 @@ public class SoldierMotor : MonoBehaviour
         agent.ResetPath();
         agent.isStopped = false;
         agent.speed = baseMoveSpeed;
+
+        manualMovementVelocity = Vector3.zero;
+        manualMovementVelocityValidUntil = 0f;
     }
 
     public void Warp(Vector3 position)
@@ -227,7 +259,7 @@ public class SoldierMotor : MonoBehaviour
         if (agent == null)
             return;
 
-        Vector3 velocity = agent.velocity;
+        Vector3 velocity = Velocity;
         velocity.y = 0f;
 
         if (velocity.sqrMagnitude < 0.01f)
