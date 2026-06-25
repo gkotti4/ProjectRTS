@@ -83,7 +83,9 @@ public class SquadMovementProfile : ScriptableObject
     [Tooltip("Fraction of living soldiers that must be close enough to assigned slots before reforming completes. Also used for loose fallback completion.")]
     [FormerlySerializedAs("looseMoveReformRatioRequired")]
     [Range(0f, 1f)] public float reformRatioRequired = 0.75f;
-
+    
+    
+    
     void OnValidate()
     {
         slotUpdateThreshold = Mathf.Max(0f, slotUpdateThreshold);

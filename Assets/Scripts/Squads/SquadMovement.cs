@@ -394,7 +394,7 @@ public class SquadMovement : MonoBehaviour
     {
         if (roster == null || formation == null)
             return;
-
+        Debug.Log("TickFormedMove");
         if (pathCorners.Count == 0)
         {
             CompleteMovementOrReform(allowArrivalStateChange);
@@ -451,6 +451,7 @@ public class SquadMovement : MonoBehaviour
             CompleteMovementOrReform(allowArrivalStateChange);
     }
     
+    
     void TickLooseMove(bool allowArrivalStateChange)
     {
         if (roster == null || formation == null)
@@ -460,15 +461,25 @@ public class SquadMovement : MonoBehaviour
             finalDestination,
             desiredFacing);
 
+        // LooseMove is obstacle/choke fallback.
+        // Soldiers path independently at normal soldier speed.
         MoveSoldiersIndividuallyToSlots(
             finalSlots,
-            movementProfile.memberStoppingDistance);
+            movementProfile.memberStoppingDistance,
+            1f);
 
+        // The squad root is visual/representational during LooseMove.
+        // It should not be NavMesh-projected or treated like a physical unit.
         Vector3 center = GetAverageLivingSoldierPosition();
+
         if (center != Vector3.zero)
         {
-            float maxRootFollowDistance = Mathf.Max(0.1f, memberBaseMoveSpeed) * Time.deltaTime;
-            MoveRootTowardProjectedPoint(center, maxRootFollowDistance);
+            float maxRootFollowDistance =
+                Mathf.Max(0.1f, memberBaseMoveSpeed) * Time.deltaTime;
+
+            MoveRootTowardVirtualPoint(
+                center,
+                maxRootFollowDistance);
         }
 
         if (!EnoughSoldiersNearSlots(
@@ -479,20 +490,10 @@ public class SquadMovement : MonoBehaviour
             return;
         }
 
-        // At the end of loose fallback, avoid a visible root snap.
-        // Estimate the anchor from current member positions, then blend toward the
-        // commanded destination. Since the required near-ratio is high, this should
-        // already be close to the target, but it prevents the old "jump away then
-        // walk back" artifact when the root had been following the average body.
-        Vector3 estimatedAnchor = EstimateAnchorFromSoldiers(desiredFacing);
-        if (estimatedAnchor != Vector3.zero)
-            MoveRootTowardProjectedPoint(estimatedAnchor, memberBaseMoveSpeed * Time.deltaTime);
+        // Final slots were generated around finalDestination, so finalDestination
+        // is the only correct reform anchor.
+        MoveRootToVirtualPoint(finalDestination);
 
-        if (Vector3.Distance(Flatten(transform.position), Flatten(finalDestination)) <= movementProfile.reformMemberDistance)
-            MoveRootToProjectedPoint(finalDestination);
-
-        // Keep slot/layout facing separate from final visual facing.
-        // Soldiers will individually face finalFacing once they settle.
         formation.SetFacing(desiredFacing);
         formation.UpdateSlots(transform.position, desiredFacing);
 
@@ -884,38 +885,43 @@ public class SquadMovement : MonoBehaviour
             soldier.SetLastSlotPosition(newSlots[slotIndex]);
         }
     }
-
+    
+    
+    /// Moves each soldier independently during loose fallback.
+    ///
+    /// LooseMove is not "catching up to formation."
+    /// It is temporary obstacle/choke pathing, so it should use the same practical
+    /// travel speed as formed movement instead of letting each soldier sprint at
+    /// full individual NavMeshAgent speed.
     void MoveSoldiersIndividuallyToSlots(
         IReadOnlyList<Vector3> slots,
-        float stoppingDistance)
+        float stoppingDistance,
+        float speedMultiplier = 1f)
     {
         if (roster == null || slots == null)
             return;
-
+    
+        float resolvedSpeedMultiplier = Mathf.Max(0.1f, speedMultiplier);
+    
         foreach (SoldierController soldier in roster.Soldiers)
         {
             if (soldier == null || !soldier.IsAlive)
                 continue;
-
+    
             int slotIndex = soldier.SlotIndex;
-
+    
             if (slotIndex < 0 || slotIndex >= slots.Count)
                 continue;
-
-            float distance = Vector3.Distance(
-                soldier.transform.position,
-                slots[slotIndex]);
-
-            float speedMultiplier = GetCatchupMultiplier(distance);
-
+    
             soldier.MoveToPoint(
                 slots[slotIndex],
                 stoppingDistance,
-                speedMultiplier);
-
+                resolvedSpeedMultiplier);
+    
             soldier.SetLastSlotPosition(slots[slotIndex]);
         }
     }
+    
 
     void PlaceSoldiersInCurrentFormation()
     {
@@ -1112,6 +1118,37 @@ public class SquadMovement : MonoBehaviour
             nextPosition,
             transform.position);
     }
+    
+    #region Squad unable to get to destination during loose move (stuck on obstacle)
+    // CHECK virtual squad loose move fix attempt
+
+    /// Moves the squad root as a pure virtual point.
+    /// No NavMesh projection. No pathfinding. No obstacle collision.
+    ///
+    /// Use this when the root is only representing the squad body visually,
+    /// especially during LooseMove.
+    void MoveRootToVirtualPoint(Vector3 point)
+    {
+        point.y = transform.position.y;
+        transform.position = point;
+    }
+
+    /// Smoothly follows a virtual point without NavMesh projection.
+    /// This keeps the banner/root near the loose squad body without letting
+    /// obstacles or NavMesh sampling trap the root.
+    void MoveRootTowardVirtualPoint(
+        Vector3 point,
+        float maxDistance)
+    {
+        point.y = transform.position.y;
+
+        transform.position = Vector3.MoveTowards(
+            transform.position,
+            point,
+            Mathf.Max(0f, maxDistance));
+    }
+    
+    #endregion
 
     Vector3 ProjectPointToNavMesh(
         Vector3 point,

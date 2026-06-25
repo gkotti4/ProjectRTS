@@ -45,7 +45,8 @@ public class SquadRoster : MonoBehaviour
         _faction = ownerFactionInstance;
 
         if (soldierParent == null)
-            soldierParent = transform;
+            GetOrCreateRuntimeSoldierParent(); // NEW - fix for squad getting stuck on obstacles (transform was root for all soldiers)
+            //soldierParent = transform;
 
         ClearExistingRuntimeSoldiers();
         SpawnStartingSoldiers();
@@ -53,6 +54,21 @@ public class SquadRoster : MonoBehaviour
         OnRosterChanged?.Invoke(this);
     }
 
+    // public void AddExistingSoldier(SoldierController soldier)
+    // {
+    //     if (soldier == null)
+    //         return;
+    //
+    //     if (soldiers.Contains(soldier))
+    //         return;
+    //
+    //     soldiers.Add(soldier);
+    //     soldier.SetSquad(squad, this);
+    //     soldier.SetSlotIndex(soldiers.Count - 1);
+    //
+    //     OnRosterChanged?.Invoke(this);
+    // }
+    
     public void AddExistingSoldier(SoldierController soldier)
     {
         if (soldier == null)
@@ -60,6 +76,11 @@ public class SquadRoster : MonoBehaviour
 
         if (soldiers.Contains(soldier))
             return;
+
+        if (soldierParent == null)
+            soldierParent = GetOrCreateRuntimeSoldierParent();
+
+        soldier.transform.SetParent(soldierParent, true);
 
         soldiers.Add(soldier);
         soldier.SetSquad(squad, this);
@@ -224,6 +245,19 @@ public class SquadRoster : MonoBehaviour
     {
         // Final behavior can move to SquadController later.
         Destroy(gameObject);
+    }
+    
+    /// Runtime soldiers must not be parented under the squad root.
+    /// The squad root is a virtual formation anchor, and moving it should not
+    /// physically drag soldier NavMeshAgents through the world.
+    Transform GetOrCreateRuntimeSoldierParent()
+    {
+        GameObject parentObject = GameObject.Find("Runtime Soldiers");
+
+        if (parentObject == null)
+            parentObject = new GameObject("Runtime Soldiers");
+
+        return parentObject.transform;
     }
     
     int GetExistingCount()
