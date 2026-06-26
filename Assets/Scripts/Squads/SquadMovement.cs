@@ -74,6 +74,12 @@ public class SquadMovement : MonoBehaviour
     
     // to categorize (replaces reassign facing angle)
     private const float travelSlotReassignAngle = 12f;
+    
+    // Final approach facing blend.
+    // While far away, the formation faces travel direction.
+    // Inside this distance, slots gradually rotate toward the drag-order final facing.
+    private const float finalFacingBlendStartDistance = 9f;
+    private const float finalFacingBlendCompleteDistance = 2.25f;
 
     // -----------------------------------------------------------------------------
     // Public Read-Only Access
@@ -177,6 +183,16 @@ public class SquadMovement : MonoBehaviour
     ///
     /// The formation does not wheel/rotate toward finalFacing at the end of a move.
     /// Individual soldiers handle final facing once they are in/near their slots.
+    /// ---------------------------------------------------------------------------------
+    /// /// ProjectRTS 2.0 movement rule:
+    /// Travel facing and final ordered facing are separate.
+    ///
+    /// - desiredFacing = temporary travel/layout facing used while the formation walks.
+    /// - finalFacing = final ordered formation facing from drag-right-click.
+    ///
+    /// The formation walks up using travel-facing so it does not crab sideways.
+    /// After arrival, the squad root becomes the final ordered anchor and soldiers
+    /// reform into slots generated from finalFacing.
     public void OrderMove(
         Vector3 destination,
         Vector3 facing,
@@ -390,11 +406,13 @@ public class SquadMovement : MonoBehaviour
             squad.SetState(SquadState.Idle);
     }
 
+
+    
     void TickFormedMove(bool allowArrivalStateChange)
     {
         if (roster == null || formation == null)
             return;
-        Debug.Log("TickFormedMove");
+
         if (pathCorners.Count == 0)
         {
             CompleteMovementOrReform(allowArrivalStateChange);
@@ -420,6 +438,10 @@ public class SquadMovement : MonoBehaviour
             pathDirection = GetCurrentPathDirectionFrom(nextAnchor);
         }
 
+        Vector3 nextFacing = ResolveFinalApproachFacing(
+            nextAnchor,
+            pathDirection);
+
         Vector3 footprintProbeAnchor = nextAnchor;
 
         if (movementProfile.footprintLookAheadDistance > 0f &&
@@ -429,13 +451,15 @@ public class SquadMovement : MonoBehaviour
                 pathDirection * movementProfile.footprintLookAheadDistance;
         }
 
-        if (!CanFormationFitAt(footprintProbeAnchor, desiredFacing))
+        if (!CanFormationFitAt(footprintProbeAnchor, nextFacing))
         {
             BeginLooseMove();
             return;
         }
 
         MoveRootToProjectedPoint(nextAnchor);
+
+        desiredFacing = nextFacing;
 
         formation.SetFacing(desiredFacing);
         formation.UpdateSlots(transform.position, desiredFacing);
@@ -452,6 +476,7 @@ public class SquadMovement : MonoBehaviour
     }
     
     
+    
     void TickLooseMove(bool allowArrivalStateChange)
     {
         if (roster == null || formation == null)
@@ -459,10 +484,10 @@ public class SquadMovement : MonoBehaviour
 
         List<Vector3> finalSlots = formation.GetWorldSlots(
             finalDestination,
-            desiredFacing);
+            finalFacing);
 
         // LooseMove is obstacle/choke fallback.
-        // Soldiers path independently at normal soldier speed.
+        // Soldiers path independently to the final ordered formation pose.
         MoveSoldiersIndividuallyToSlots(
             finalSlots,
             movementProfile.memberStoppingDistance,
@@ -490,23 +515,85 @@ public class SquadMovement : MonoBehaviour
             return;
         }
 
-        // Final slots were generated around finalDestination, so finalDestination
-        // is the only correct reform anchor.
-        MoveRootToVirtualPoint(finalDestination);
-
-        formation.SetFacing(desiredFacing);
-        formation.UpdateSlots(transform.position, desiredFacing);
-
         CompleteMovementOrReform(allowArrivalStateChange);
     }
-
-    void CompleteMovementOrReform(bool allowArrivalStateChange)
+    
+    
+    /// Resolves the live formation slot facing during formed movement.
+    ///
+    /// Far from the destination, the formation uses path/travel facing so it marches
+    /// naturally toward the order point. During the final approach, the slot layout
+    /// gradually rotates toward the player's drag-order final facing so the squad is
+    /// already lining up before it arrives.
+    Vector3 ResolveFinalApproachFacing(
+        Vector3 anchorPosition,
+        Vector3 pathDirection)
     {
-        BeginReform(false);
+        pathDirection.y = 0f;
+
+        Vector3 travelFacing = pathDirection.sqrMagnitude > 0.0001f
+            ? pathDirection.normalized
+            : ResolveFacing(finalDestination);
+
+        travelFacing = NormalizeFacing(travelFacing);
+
+        float distanceToDestination = Vector3.Distance(
+            Flatten(anchorPosition),
+            Flatten(finalDestination));
+
+        if (distanceToDestination >= finalFacingBlendStartDistance)
+            return travelFacing;
+
+        if (distanceToDestination <= finalFacingBlendCompleteDistance)
+            return finalFacing;
+
+        float blend = Mathf.InverseLerp(
+            finalFacingBlendStartDistance,
+            finalFacingBlendCompleteDistance,
+            distanceToDestination);
+
+        Vector3 blendedFacing = Vector3.Slerp(
+            travelFacing,
+            finalFacing,
+            blend);
+
+        if (blendedFacing.sqrMagnitude <= 0.0001f)
+            blendedFacing = blend >= 0.5f ? finalFacing : travelFacing;
+
+        return NormalizeFacing(blendedFacing);
+    }
+    
+    void CompleteMovementOrReform(bool allowArrivalStateChange) // new
+    {
+        BeginFinalOrderedReform();
 
         if (allowArrivalStateChange)
             squad.SetState(SquadState.Reforming);
     }
+    
+    /// Starts the final move-order reform around the exact ordered destination and
+    /// final drag-facing.
+    ///
+    /// Soldiers are no longer children of the squad root, so moving this virtual root
+    /// to the ordered anchor does not physically drag the soldiers.
+    void BeginFinalOrderedReform()
+    {
+        pathCorners.Clear();
+        pathCornerIndex = 0;
+        moveMode = SquadMoveMode.Reforming;
+
+        MoveRootToProjectedPoint(finalDestination);
+
+        desiredFacing = finalFacing;
+
+        formation.SetFacing(desiredFacing);
+        formation.UpdateSlots(transform.position, desiredFacing);
+
+        ForceRefreshSlotDestinations();
+
+        reformTimer = 0f;
+    }
+    
 
     void BeginLooseMove()
     {

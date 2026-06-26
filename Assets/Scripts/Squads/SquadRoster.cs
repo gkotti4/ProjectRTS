@@ -45,8 +45,7 @@ public class SquadRoster : MonoBehaviour
         _faction = ownerFactionInstance;
 
         if (soldierParent == null)
-            GetOrCreateRuntimeSoldierParent(); // NEW - fix for squad getting stuck on obstacles (transform was root for all soldiers)
-            //soldierParent = transform;
+            soldierParent = GetOrCreateRuntimeSoldierParent(); // Big Play
 
         ClearExistingRuntimeSoldiers();
         SpawnStartingSoldiers();
