@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [CreateAssetMenu(
     fileName = "SquadCombatProfile_",
@@ -9,10 +10,11 @@ public class SquadCombatProfile : ScriptableObject
     public bool autoScanEnabled = true;
     [Min(0.01f)] public float scanInterval = 0.35f;
 
+    [FormerlySerializedAs("aggressiveAutoScanRange")]
     [Header("Stance Scan Ranges")]
-    [Min(0f)] public float aggressiveAutoScanRange = 14f;
-    [Min(0f)] public float defensiveAutoScanRange = 8f;
-    [Min(0f)] public float standGroundScanPadding = 0.5f;
+    [Min(0f)] public float engageStanceScanRange = 14f;
+    [FormerlySerializedAs("defensiveAutoScanRange")] [Min(0f)] public float holdStanceScanRange = 8f;
+    // [Min(0f)] public float standGroundScanPadding = 0.5f;
 
     [Header("Approach")]
     [Min(0f)] public float combatStartRange = 6f;
@@ -45,9 +47,9 @@ public class SquadCombatProfile : ScriptableObject
     void OnValidate()
     {
         scanInterval = Mathf.Max(0.01f, scanInterval);
-        aggressiveAutoScanRange = Mathf.Max(0f, aggressiveAutoScanRange);
-        defensiveAutoScanRange = Mathf.Max(0f, defensiveAutoScanRange);
-        standGroundScanPadding = Mathf.Max(0f, standGroundScanPadding);
+        engageStanceScanRange = Mathf.Max(0f, engageStanceScanRange);
+        holdStanceScanRange = Mathf.Max(0f, holdStanceScanRange);
+        // standGroundScanPadding = Mathf.Max(0f, standGroundScanPadding);
 
         combatStartRange = Mathf.Max(0f, combatStartRange);
         combatBreakRange = Mathf.Max(combatStartRange, combatBreakRange);

@@ -42,15 +42,15 @@ public class FormationVisualizer : MonoBehaviour
 
     public void ShowSlots(
         List<Vector3> positions,
-        bool persistForDelay = false)
+        bool autoHide = true)
     {
-        ShowSlots(positions, Vector3.forward, persistForDelay);
+        ShowSlots(positions, Vector3.forward, autoHide);
     }
 
     public void ShowSlots(
         List<Vector3> positions,
         Vector3 facing,
-        bool persistForDelay = false)
+        bool autoHide = true)
     {
         HideAll();
 
@@ -60,24 +60,29 @@ public class FormationVisualizer : MonoBehaviour
             facing = Vector3.forward;
 
         float yaw = Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg;
-        
+
         for (int i = 0; i < positions.Count && i < pool.Count; i++)
         {
             pool[i].transform.position =
                 positions[i] + Vector3.up * indicatorHeightOffset;
-            
+
             pool[i].transform.rotation = Quaternion.Euler(
                 0f,
                 yaw,
                 0f);
-            
+
             pool[i].SetActive(true);
         }
 
-        if (!persistForDelay)
+        if (autoHide)
         {
-            hideTimer = this.hideDelay;
+            hideTimer = hideDelay;
             isShowing = true;
+        }
+        else
+        {
+            hideTimer = 0f;
+            isShowing = false;
         }
     }
 

@@ -35,6 +35,8 @@ public class SquadFormationController : MonoBehaviour
 
     public SquadFormation CurrentFormation => currentFormation;
     public Vector3 Facing => facing;
+    public float Width => formationWidth;
+    public float Spacing => spacing;
     public IReadOnlyList<Vector2> LocalOffsets => localOffsets;
     public IReadOnlyList<Vector3> CurrentSlots => currentSlots;
 
@@ -362,4 +364,17 @@ public class SquadFormationController : MonoBehaviour
     }
     
     
+    /// Helper: visualizes this squad's current formation slots.
+    public void VisualizeCurrentSlots(bool autoHide = true)
+    {
+        if (!FormationVisualizer.Instance)
+            return;
+
+        UpdateSlots(transform.position, facing);
+
+        FormationVisualizer.Instance.ShowSlots(
+            new List<Vector3>(currentSlots),
+            facing,
+            autoHide);
+    }
 }

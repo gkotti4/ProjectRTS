@@ -68,19 +68,12 @@ public enum SquadMoveMode
 
 public enum SquadStance
 {
-    Aggressive,
-    Defensive,
-    StandGround,
-    NoAttack
+    Engage = 0,
+    Hold = 1,
+    // StandGround,
+    // NoAttack
 }
 
-public enum CombatStance
-{
-    Aggressive,
-    Defensive,
-    StandGround,
-    NoAttack
-}
 
 public enum SquadFormation
 {
@@ -149,16 +142,16 @@ public enum CommandType
     None,
 
     // Core
-    Stop,
-    Move,
-    Attack,
+    Stop = 0,
+    // Move,
+    // Attack,
     AttackMove,
-    Patrol,
-    HoldPosition,
+    // Patrol,
+    // HoldPosition,
 
     // Worker
-    Build,
-    Repair,
+    Build = 1,
+    // Repair,
 
     // Building
     //SetRallyPoint,
@@ -166,27 +159,27 @@ public enum CommandType
     //Research,
 
     // Squad stances
-    Aggressive,
-    Defensive,
-    StandGround,
-    NoAttack,
+    EngageStance = 2, // was aggressive
+    HoldStance = 3, // was defensive
+    // StandGround, // depreciated 
+    // NoAttack, // depreciated
 
     // Squad formations
-    FormationLine,
-    FormationSpread,
-    FormationBox,
-    FormationCircle,
-    FormationWedge,
+    FormationLine = 4,
+    FormationSpread = 5,
+    FormationBox = 6,
+    FormationCircle = 7,
+    FormationWedge = 8,
 
     // Total War-style commands
-    Charge,
-    Withdraw,
-    Brace,
-    Merge,
+    // Charge,
+    // Withdraw,
+    // Brace,
+    // Merge,
 
     // Future / legacy
-    Garrison,
-    Ability
+    // Garrison,
+    // Ability
 }
 
 public enum HotkeySlot
@@ -250,34 +243,6 @@ public struct ResourceCost
         stone == 0;
 }
 
-// ============================================================
-// UPGRADES / MODIFIERS
-// ============================================================
-
-// public enum UpgradeType
-// {
-//     Global,
-//     Unit,       // legacy
-//     Squad,
-//     Soldier,
-//     Worker,
-//     Building
-// }
-//
-// public enum ModifierType
-// {
-//     Flat,
-//     Percentage
-// }
-
-
-// [System.Serializable]
-// public struct StatModifier
-// {
-//     public StatType stat;
-//     public float value;
-//     public ModifierType modifierType;
-// }
 
 // ============================================================
 // INTERFACES

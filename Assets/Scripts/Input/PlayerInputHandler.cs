@@ -453,21 +453,21 @@ public class PlayerInputHandler : MonoBehaviour
                     squad.OrderStop();
                     break;
 
-                case CommandType.Aggressive:
-                    squad.SetStance(SquadStance.Aggressive);
+                case CommandType.EngageStance:
+                    squad.SetStance(SquadStance.Engage);
                     break;
 
-                case CommandType.Defensive:
-                    squad.SetStance(SquadStance.Defensive);
+                case CommandType.HoldStance:
+                    squad.SetStance(SquadStance.Hold);
                     break;
 
-                case CommandType.StandGround:
-                    squad.SetStance(SquadStance.StandGround);
-                    break;
-
-                case CommandType.NoAttack:
-                    squad.SetStance(SquadStance.NoAttack);
-                    break;
+                // case CommandType.StandGround:
+                //     squad.SetStance(SquadStance.StandGround);
+                //     break;
+                //
+                // case CommandType.NoAttack:
+                //     squad.SetStance(SquadStance.NoAttack);
+                //     break;
 
                 case CommandType.FormationLine:
                     squad.SetFormation(SquadFormation.Line);

@@ -46,7 +46,7 @@ public class SquadData : ScriptableObject
 
     [Header("Defaults")]
     public SquadFormation defaultFormation = SquadFormation.Line;
-    public SquadStance defaultStance = SquadStance.Defensive;
+    public SquadStance defaultStance = SquadStance.Hold;
 
     [Header("Formation")]
     [Min(1)] public int defaultUnitsPerRow = 10;

@@ -65,7 +65,7 @@ public class SquadController : MonoBehaviour,
         squadData != null ? squadData.category : SquadCategory.Infantry;
 
     public SquadState State { get; private set; } = SquadState.Idle;
-    public SquadStance Stance { get; private set; } = SquadStance.Aggressive;
+    public SquadStance Stance { get; private set; } = SquadStance.Engage;
 
     public FactionInstance Faction { get; private set; }
 
@@ -358,7 +358,7 @@ public class SquadController : MonoBehaviour,
         Combat.OrderAttack(target);
     }
 
-    public void OrderAttackMove(Vector3 destination)
+    public void OrderAttackMove(Vector3 destination) // UNUSED
     {
         Vector3 facing = Movement.ResolveFacing(destination);
 
@@ -366,7 +366,7 @@ public class SquadController : MonoBehaviour,
         State = SquadState.AttackMoving;
     }
 
-    public void OrderWithdraw(Vector3 destination)
+    public void OrderWithdraw(Vector3 destination) // UNUSED 
     {
         Combat.ClearTargets();
 
@@ -389,22 +389,13 @@ public class SquadController : MonoBehaviour,
 
         Movement.BeginReform();
         State = SquadState.Reforming;
+        
+        Formation.VisualizeCurrentSlots();
     }
 
     public void SetStance(SquadStance stance)
     {
         Stance = stance;
-
-        if (Stance == SquadStance.NoAttack)
-        {
-            Combat.ClearTargets();
-
-            if (State == SquadState.InCombat)
-            {
-                Movement.BeginReform();
-                State = SquadState.Reforming;
-            }
-        }
     }
 
     #endregion

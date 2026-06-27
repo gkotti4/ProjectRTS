@@ -602,7 +602,7 @@ public class SquadCombat : MonoBehaviour
             Mathf.InverseLerp(rearScore, frontScore, score));
     }
 
-    /// Aggressive allows more freedom. Defensive keeps the body tighter.
+    /// ENGAGE allows more freedom. HOLD keeps the body tighter.
     float GetFreeEngageDistance(float frontness)
     {
         float distance = Mathf.Lerp(
@@ -612,9 +612,8 @@ public class SquadCombat : MonoBehaviour
 
         switch (squad.Stance)
         {
-            case SquadStance.Defensive:
-            case SquadStance.StandGround:
-                return distance * 0.8f;
+            case SquadStance.Hold:
+                return distance * 0.65f;
 
             default:
                 return distance;
@@ -638,8 +637,7 @@ public class SquadCombat : MonoBehaviour
     {
         switch (squad.Stance)
         {
-            case SquadStance.Defensive:
-            case SquadStance.StandGround:
+            case SquadStance.Hold:
                 return 0.65f;
 
             default:
@@ -693,8 +691,8 @@ public class SquadCombat : MonoBehaviour
         if (squad.Faction.teamId == target.Faction.teamId)
             return false;
 
-        if (squad.Stance == SquadStance.NoAttack)
-            return false;
+        // if (squad.Stance == SquadStance.NoAttack)
+        //     return false;
 
         return true;
     }
@@ -771,8 +769,8 @@ public class SquadCombat : MonoBehaviour
         if (squad == null)
             return false;
 
-        if (squad.Stance == SquadStance.NoAttack)
-            return false;
+        // if (squad.Stance == SquadStance.NoAttack)
+        //     return false;
 
         if (roster == null || !roster.HasLivingSoldiers)
             return false;
@@ -821,17 +819,17 @@ public class SquadCombat : MonoBehaviour
 
         switch (squad.Stance)
         {
-            case SquadStance.Aggressive:
-                return squadCombatProfile.aggressiveAutoScanRange;
+            case SquadStance.Engage:
+                return squadCombatProfile.engageStanceScanRange;
 
-            case SquadStance.Defensive:
-                return squadCombatProfile.defensiveAutoScanRange;
+            case SquadStance.Hold:
+                return squadCombatProfile.holdStanceScanRange;
 
-            case SquadStance.StandGround:
-                return GetSquadAttackRange() + squadCombatProfile.standGroundScanPadding;
-
-            case SquadStance.NoAttack:
-                return 0f;
+            // case SquadStance.StandGround:
+            //     return GetSquadAttackRange() + squadCombatProfile.standGroundScanPadding;
+            //
+            // case SquadStance.NoAttack:
+            //     return 0f;
         }
 
         return 0f;
