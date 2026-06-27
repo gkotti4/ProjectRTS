@@ -182,7 +182,7 @@ public class SoldierController : MonoBehaviour
             Debug.LogWarning($"{name}: Soldier Initialize validation warning. SelectionVisual is null.", this);
 
         if (Data != null && Data.weaponProfile == null)
-            Debug.LogWarning($"{name}: SoldierData has no WeaponProfile. SoldierCombat will use melee fallback stats.", this);
+            Debug.LogWarning($"{name}: SoldierData has no WeaponProfile. WeaponProfile is required because it is the combat attack-stat source of truth.", this);
 
         if (Data != null && Data.prefab == null)
             Debug.LogWarning($"{name}: SoldierData has no prefab assigned. This is okay only if this SoldierData is not used for spawning.", this);

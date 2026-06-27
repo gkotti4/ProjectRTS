@@ -41,6 +41,25 @@ public enum SquadCategory
     Hero
 }
 
+public enum SquadCombatStyle
+{
+    MeleeLine,
+    RangedLine,
+    ShockCavalry,
+    SiegeArtillery,
+    Hero
+}
+
+public enum SquadEngagementType
+{
+    None,
+    ExplicitAttack,
+    AttackMoveContact,
+    PassiveContact,
+    DefensiveHold,
+    RangedDuel
+}
+
 public enum SquadState
 {
     Idle,
@@ -68,8 +87,8 @@ public enum SquadMoveMode
 
 public enum SquadStance
 {
-    Engage = 0,
-    Hold = 1,
+    Engage,
+    Hold,
     // StandGround,
     // NoAttack
 }
@@ -142,16 +161,16 @@ public enum CommandType
     None,
 
     // Core
-    Stop = 0,
-    // Move,
-    // Attack,
+    Stop,
+    Move,
+    Attack,
     AttackMove,
-    // Patrol,
-    // HoldPosition,
+    Patrol,
+    HoldPosition,
 
     // Worker
-    Build = 1,
-    // Repair,
+    Build,
+    Repair,
 
     // Building
     //SetRallyPoint,
@@ -159,27 +178,27 @@ public enum CommandType
     //Research,
 
     // Squad stances
-    EngageStance = 2, // was aggressive
-    HoldStance = 3, // was defensive
-    // StandGround, // depreciated 
-    // NoAttack, // depreciated
+    EngageStance,
+    HoldStance,
+    // StandGround,
+    // NoAttack,
 
     // Squad formations
-    FormationLine = 4,
-    FormationSpread = 5,
-    FormationBox = 6,
-    FormationCircle = 7,
-    FormationWedge = 8,
+    FormationLine,
+    FormationSpread,
+    FormationBox,
+    FormationCircle,
+    FormationWedge,
 
     // Total War-style commands
-    // Charge,
-    // Withdraw,
-    // Brace,
-    // Merge,
+    Charge,
+    Withdraw,
+    Brace,
+    Merge,
 
     // Future / legacy
-    // Garrison,
-    // Ability
+    Garrison,
+    Ability
 }
 
 public enum HotkeySlot
@@ -366,40 +385,66 @@ public struct MovementStats
     };
 }
 
+
 [System.Serializable]
 public struct MeleeCombatStats
 {
     [Min(0)] public int meleeAttack;
-    [Min(0)] public int meleeDefense;
-
     [Min(0)] public int weaponDamage;
     [Min(0)] public int armorPiercingDamage;
 
     [Min(0.05f)] public float attackInterval;
-    [Min(0f)] public float attackRange;
+    [Min(0.1f)] public float attackRange;
 
     public static MeleeCombatStats Default => new MeleeCombatStats
     {
         meleeAttack = 20,
-        meleeDefense = 20,
         weaponDamage = 20,
         armorPiercingDamage = 0,
-        attackInterval = 1.5f,
-        attackRange = 1.5f
+        attackInterval = 2.0f,
+        attackRange = 2.5f
     };
 }
 
 [System.Serializable]
 public struct RangedCombatStats
 {
+    [Min(0)] public int rangedAccuracy;
     [Min(0)] public int missileDamage;
     [Min(0)] public int armorPiercingDamage;
 
     [Min(0.05f)] public float attackInterval;
-    [Min(0f)] public float attackRange;
-    [Min(0f)] public float projectileSpeed;
+    [Min(0.1f)] public float attackRange;
+
+    public GameObject projectilePrefab;
+    [Min(0.1f)] public float projectileSpeed;
+
+    public static RangedCombatStats Default => new RangedCombatStats
+    {
+        rangedAccuracy = 50,
+        missileDamage = 12,
+        armorPiercingDamage = 0,
+        attackInterval = 2.0f,
+        attackRange = 100f,
+        projectilePrefab = null,
+        projectileSpeed = 18f
+    };
 }
 
+[System.Serializable]
+public struct CombatDefenseStats
+{
+    [Min(0)] public int meleeDefense;
+    [Min(0)] public int missileDefense;
+    [Range(0f, 1f)] public float shieldBlockChance;
+
+    public static CombatDefenseStats Default => new CombatDefenseStats
+    {
+        meleeDefense = 20,
+        missileDefense = 0,
+        shieldBlockChance = 0f
+    };
+}
 [System.Serializable]
 public struct MoraleStats
 {
@@ -454,84 +499,3 @@ public struct ProductionStats
 
 
 
-
-
-
-
-
-
-
-// ============================================================
-// LEGACY COMPATIBILITY
-// ============================================================
-// Keep this until old EntityStats / UnitController / VillagerController /
-// MilitaryController / EntityDetails are fully deleted or rewritten.
-
-// public enum EntityType
-// {
-//     None,
-//     Unit,
-//     Building
-// }
-//
-// public enum EntityTag
-// {
-//     None = 0,
-//
-//     Villager,
-//
-//     Infantry,
-//     Ranged,
-//     Cavalry,
-//     Siege,
-//
-//     TownCenter,
-//     MilitaryBuilding,
-//     ResourceBuilding,
-//     ProductionBuilding,
-//     DefenseBuilding,
-//
-//     AllUnits,
-//     AllBuildings,
-//     All
-// }
-//
-// public enum UnitType
-// {
-//     None,
-//     Villager,
-//
-//     Infantry,
-//     Ranged,
-//     Cavalry,
-//     Siege,
-//     Support,
-//     Hero
-// }
-//
-// public enum BuildingType
-// {
-//     None,
-//     TownCenter,
-//     Barracks,
-//     Farm
-// }
-//
-// public enum UnitState
-// {
-//     Idle,
-//     Moving,
-//     Attacking,
-//     Returning,
-//     Gathering,
-//     Building,
-//     Patrolling,
-//     AttackMoving
-// }
-//
-// public enum UnitControlState
-// {
-//     PlayerControlled,
-//     AIControlled,
-//     Locked
-// }

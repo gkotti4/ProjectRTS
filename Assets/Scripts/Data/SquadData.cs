@@ -27,6 +27,9 @@ public class SquadData : ScriptableObject
     public string squadName = "Squad";
     public Sprite squadIcon;
     public SquadCategory category;
+
+    [Header("Combat Behavior")]
+    public SquadCombatStyle combatStyle = SquadCombatStyle.MeleeLine;
     
     [Header("Profiles")]
     public SquadMovementProfile movementProfile;
@@ -55,18 +58,18 @@ public class SquadData : ScriptableObject
     [Header("Movement")]
     public MovementStats movement = MovementStats.Default;
 
-    [Header("Melee Combat (Fallback)")]
-    [Tooltip("DEBUGGING PURPOSES, Fallback for unit melee stats.")]
-    public MeleeCombatStats melee = MeleeCombatStats.Default;
+    // [Header("Melee Combat (Fallback)")]
+    // [Tooltip("DEBUGGING PURPOSES, Fallback for unit melee stats.")]
+    // public MeleeCombatStats melee = MeleeCombatStats.Default;
 
     [Header("Morale")]
     public MoraleStats morale = MoraleStats.Default;
 
-    [Header("Combat Behavior")]
-    [Min(0f)] public float aggressiveAutoScanRange = 14f;
-    [Min(0f)] public float defensiveAutoScanRange = 8f;
-    [Min(0f)] public float standGroundScanPadding = 0.5f;
-    [Min(0f)] public float combatDefensiveLeashRange = 8f;
+    // [Header("Legacy Combat Behavior / Unused By New SquadCombatProfile")]
+    // [Min(0f)] public float aggressiveAutoScanRange = 14f;
+    // [Min(0f)] public float defensiveAutoScanRange = 8f;
+    // [Min(0f)] public float standGroundScanPadding = 0.5f;
+    // [Min(0f)] public float combatDefensiveLeashRange = 8f;
 
     [Header("Commands")]
     public SquadCommandSet commandSet;
@@ -105,11 +108,3 @@ public class SquadCommandSet : ScriptableObject
         return result;
     }
 }
-
-
-
-
-
-
-
-

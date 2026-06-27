@@ -15,15 +15,25 @@ public class WeaponProfile : ScriptableObject
     public string weaponName = "Weapon";
     public WeaponKind weaponKind = WeaponKind.Melee;
 
-    [Header("Damage")]
-    [Min(0)] public int damage = 20;
-    [Min(0)] public int armorPiercingDamage = 0;
+    [Header("Melee Stats")]
+    public MeleeCombatStats melee = MeleeCombatStats.Default;
 
-    [Header("Timing / Range")]
-    [Min(0.05f)] public float attackInterval = 2.0f;
-    [Min(0.1f)] public float attackRange = 2.5f;
+    [Header("Ranged Stats")]
+    public RangedCombatStats ranged = RangedCombatStats.Default;
 
-    [Header("Projectile")]
-    public GameObject projectilePrefab;
-    [Min(0.1f)] public float projectileSpeed = 18f;
+    void OnValidate()
+    {
+        melee.meleeAttack = Mathf.Max(0, melee.meleeAttack);
+        melee.weaponDamage = Mathf.Max(0, melee.weaponDamage);
+        melee.armorPiercingDamage = Mathf.Max(0, melee.armorPiercingDamage);
+        melee.attackInterval = Mathf.Max(0.05f, melee.attackInterval);
+        melee.attackRange = Mathf.Max(0.1f, melee.attackRange);
+
+        ranged.rangedAccuracy = Mathf.Max(0, ranged.rangedAccuracy);
+        ranged.missileDamage = Mathf.Max(0, ranged.missileDamage);
+        ranged.armorPiercingDamage = Mathf.Max(0, ranged.armorPiercingDamage);
+        ranged.attackInterval = Mathf.Max(0.05f, ranged.attackInterval);
+        ranged.attackRange = Mathf.Max(0.1f, ranged.attackRange);
+        ranged.projectileSpeed = Mathf.Max(0.1f, ranged.projectileSpeed);
+    }
 }

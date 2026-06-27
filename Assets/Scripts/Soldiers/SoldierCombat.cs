@@ -95,6 +95,7 @@ public class SoldierCombat : MonoBehaviour
     // -----------------------------------------------------------------------------
     public SoldierController CurrentTarget => currentTarget;
     public bool HasTarget => currentTarget != null && currentTarget.IsAlive;
+    public bool IsUsingRangedWeapon => IsRangedWeapon(GetWeaponProfile(soldier));
 
     public bool IsActiveAttacker =>
         HasTarget &&
@@ -249,7 +250,8 @@ public class SoldierCombat : MonoBehaviour
         float localTargetScanRange,
         float speedMultiplier,
         float pressureStoppingDistance,
-        bool canStartNewEngagement = true)
+        bool canStartNewEngagement = true,
+        float preferredAttackDistance = -1f)
     {
         if (soldier == null || !soldier.IsAlive)
             return;
@@ -338,7 +340,8 @@ public class SoldierCombat : MonoBehaviour
             TickTargetMovementAndAttack(
                 cohesionOrigin,
                 forceRejoinDistance,
-                speedMultiplier);
+                speedMultiplier,
+                preferredAttackDistance);
 
             return;
         }
@@ -717,10 +720,14 @@ public class SoldierCombat : MonoBehaviour
     }
 
     /// Moves toward the current target if not in range, or attacks if in range.
+    /// Weapon kind decides the local movement rule:
+    /// - Melee closes to contact.
+    /// - Ranged holds fire line and only steps forward enough to get into missile range.
     void TickTargetMovementAndAttack(
         Vector3 cohesionOrigin,
         float forceRejoinDistance,
-        float speedMultiplier)
+        float speedMultiplier,
+        float preferredAttackDistance = -1f)
     {
         if (currentTarget == null || !currentTarget.IsAlive)
         {
@@ -728,6 +735,28 @@ public class SoldierCombat : MonoBehaviour
             return;
         }
 
+        if (IsUsingRangedWeapon)
+        {
+            TickRangedTargetMovementAndAttack(
+                cohesionOrigin,
+                forceRejoinDistance,
+                speedMultiplier,
+                preferredAttackDistance);
+
+            return;
+        }
+
+        TickMeleeTargetMovementAndAttack(
+            cohesionOrigin,
+            forceRejoinDistance,
+            speedMultiplier);
+    }
+
+    void TickMeleeTargetMovementAndAttack(
+        Vector3 cohesionOrigin,
+        float forceRejoinDistance,
+        float speedMultiplier)
+    {
         if (IsWithinAttackRange(currentTarget))
         {
             soldier.Stop();
@@ -748,6 +777,53 @@ public class SoldierCombat : MonoBehaviour
             desiredPoint,
             0.05f,
             speedMultiplier);
+    }
+
+    void TickRangedTargetMovementAndAttack(
+        Vector3 cohesionOrigin,
+        float forceRejoinDistance,
+        float speedMultiplier,
+        float preferredAttackDistance)
+    {
+        soldier.FaceToward(currentTarget.transform.position);
+
+        if (IsWithinAttackRange(currentTarget))
+        {
+            soldier.Stop();
+            TryAttackCurrentTarget();
+            return;
+        }
+
+        Vector3 toTarget = currentTarget.transform.position - transform.position;
+        toTarget.y = 0f;
+
+        if (toTarget == Vector3.zero)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        float attackRange = GetAttackRange();
+
+        float preferredDistance = preferredAttackDistance > 0f
+            ? Mathf.Min(preferredAttackDistance, attackRange)
+            : Mathf.Max(0.1f, attackRange - soldierCombatProfile.rangedPreferredRangeBuffer);
+
+        Vector3 directionToTarget = toTarget.normalized;
+
+        Vector3 desiredPoint =
+            currentTarget.transform.position -
+            directionToTarget * preferredDistance;
+
+        desiredPoint = ClampPointToRange(
+            desiredPoint,
+            cohesionOrigin,
+            forceRejoinDistance);
+
+        soldier.MoveToCombatPoint(
+            desiredPoint,
+            Mathf.Max(0.05f, soldierCombatProfile.rangedPreferredRangeBuffer),
+            Mathf.Max(0.1f, speedMultiplier * soldierCombatProfile.rangedMoveSpeedMultiplier));
     }
 
     /// Moves toward either the pressure goal or the cohesion/rejoin origin.
@@ -903,21 +979,17 @@ public class SoldierCombat : MonoBehaviour
         ResolveMeleeAttackImpact(target, weaponProfile);
     }
 
+
     void ResolveMeleeAttackImpact(
         SoldierController target,
         WeaponProfile weaponProfile)
     {
-        MeleeCombatStats attackerStats = GetMeleeStats(soldier);
-        MeleeCombatStats defenderStats = GetMeleeStats(target);
-
-        attackerStats.weaponDamage = GetWeaponDamage(soldier, weaponProfile);
-        attackerStats.armorPiercingDamage = GetWeaponArmorPiercingDamage(soldier, weaponProfile);
-        attackerStats.attackRange = GetAttackRange(soldier, weaponProfile);
-        attackerStats.attackInterval = GetAttackInterval(soldier, weaponProfile);
+        if (weaponProfile == null)
+            return;
 
         DamageResult result = CombatResolver.ResolveMeleeHit(
-            attackerStats,
-            defenderStats);
+            weaponProfile.melee,
+            GetDefenseStats(target));
 
         if (!result.didHit)
             return;
@@ -933,12 +1005,17 @@ public class SoldierCombat : MonoBehaviour
         SoldierController target,
         WeaponProfile weaponProfile)
     {
-        if (weaponProfile != null && weaponProfile.projectilePrefab != null)
+        if (weaponProfile == null)
+            return;
+
+        RangedCombatStats rangedStats = weaponProfile.ranged;
+
+        if (rangedStats.projectilePrefab != null)
         {
             Transform origin = soldier.AttackOrigin;
 
             GameObject projectileObject = Instantiate(
-                weaponProfile.projectilePrefab,
+                rangedStats.projectilePrefab,
                 origin.position,
                 origin.rotation);
 
@@ -948,26 +1025,24 @@ public class SoldierCombat : MonoBehaviour
             projectile.Initialize(
                 soldier,
                 target,
-                GetWeaponDamage(soldier, weaponProfile),
-                GetWeaponArmorPiercingDamage(soldier, weaponProfile),
-                GetProjectileSpeed(weaponProfile));
+                weaponProfile);
 
             return;
         }
 
-        // Debug/fallback behavior: ranged weapons without a projectile prefab still deal direct damage.
-        int normalDamage = GetWeaponDamage(soldier, weaponProfile);
-        int armorPiercingDamage = GetWeaponArmorPiercingDamage(soldier, weaponProfile);
-        int estimatedTotalDamage = EstimateDamageAfterArmor(
-            target,
-            normalDamage,
-            armorPiercingDamage);
+        // Debug/fallback behavior: ranged weapons without a projectile prefab still resolve immediately.
+        DamageResult result = CombatResolver.ResolveRangedHit(
+            rangedStats,
+            GetDefenseStats(target));
+
+        if (!result.didHit)
+            return;
 
         ApplyDamageAndHitReaction(
             target,
-            normalDamage,
-            armorPiercingDamage,
-            estimatedTotalDamage);
+            result.normalDamage,
+            result.armorPiercingDamage,
+            result.totalDamage);
     }
 
     void ApplyDamageAndHitReaction(
@@ -1100,10 +1175,37 @@ public class SoldierCombat : MonoBehaviour
         rhythmState = SoldierCombatRhythmState.Recovering;
     }
 
+
+    void BeginRangedCombatRecovery()
+    {
+        rhythmState = SoldierCombatRhythmState.Recovering;
+
+        combatRecoveryTimer = Random.Range(
+            Mathf.Max(0.05f, soldierCombatProfile.rangedRecoveryMinDuration),
+            Mathf.Max(soldierCombatProfile.rangedRecoveryMinDuration, soldierCombatProfile.rangedRecoveryMaxDuration));
+
+        hasPressureShufflePoint = false;
+        pressureWaitTimer = 0f;
+
+        if (soldierCombatProfile.rangedHoldPositionDuringRecovery)
+        {
+            hasCombatRecoveryPoint = false;
+            return;
+        }
+
+        hasCombatRecoveryPoint = false;
+    }
+
     void BeginCombatRecovery()
     {
         if (!HasCombatProfile())
             return;
+
+        if (IsUsingRangedWeapon)
+        {
+            BeginRangedCombatRecovery();
+            return;
+        }
 
         rhythmState = SoldierCombatRhythmState.Recovering;
 
@@ -1260,89 +1362,43 @@ public class SoldierCombat : MonoBehaviour
         return direction.normalized;
     }
 
+    bool IsRangedWeapon(WeaponProfile weaponProfile)
+    {
+        return weaponProfile != null && weaponProfile.weaponKind == WeaponKind.Ranged;
+    }
+
+
     /// Gets this soldier's attack range.
     float GetAttackRange()
     {
-        return GetAttackRange(soldier, GetWeaponProfile(soldier));
+        return GetAttackRange(GetWeaponProfile(soldier));
     }
 
-    float GetAttackRange(
-        SoldierController source,
-        WeaponProfile weaponProfile)
+    float GetAttackRange(WeaponProfile weaponProfile)
     {
-        if (weaponProfile != null)
-            return Mathf.Max(0.1f, weaponProfile.attackRange);
+        if (weaponProfile == null)
+            return 0.1f;
 
-        if (source != null && source.Data != null)
-            return Mathf.Max(0.1f, source.Data.melee.attackRange);
-
-        return MeleeCombatStats.Default.attackRange;
+        return weaponProfile.weaponKind == WeaponKind.Ranged
+            ? Mathf.Max(0.1f, weaponProfile.ranged.attackRange)
+            : Mathf.Max(0.1f, weaponProfile.melee.attackRange);
     }
 
     float GetAttackInterval(SoldierController source)
     {
-        return GetAttackInterval(source, GetWeaponProfile(source));
+        return GetAttackInterval(GetWeaponProfile(source));
     }
 
-    float GetAttackInterval(
-        SoldierController source,
-        WeaponProfile weaponProfile)
-    {
-        if (weaponProfile != null)
-            return Mathf.Max(0.05f, weaponProfile.attackInterval);
-
-        if (source != null && source.Data != null)
-            return Mathf.Max(0.05f, source.Data.melee.attackInterval);
-
-        return MeleeCombatStats.Default.attackInterval;
-    }
-
-    int GetWeaponDamage(
-        SoldierController source,
-        WeaponProfile weaponProfile)
-    {
-        if (weaponProfile != null)
-            return Mathf.Max(0, weaponProfile.damage);
-
-        if (source != null && source.Data != null)
-            return Mathf.Max(0, source.Data.melee.weaponDamage);
-
-        return MeleeCombatStats.Default.weaponDamage;
-    }
-
-    int GetWeaponArmorPiercingDamage(
-        SoldierController source,
-        WeaponProfile weaponProfile)
-    {
-        if (weaponProfile != null)
-            return Mathf.Max(0, weaponProfile.armorPiercingDamage);
-
-        if (source != null && source.Data != null)
-            return Mathf.Max(0, source.Data.melee.armorPiercingDamage);
-
-        return MeleeCombatStats.Default.armorPiercingDamage;
-    }
-
-    float GetProjectileSpeed(WeaponProfile weaponProfile)
+    float GetAttackInterval(WeaponProfile weaponProfile)
     {
         if (weaponProfile == null)
-            return 18f;
+            return 0.05f;
 
-        return Mathf.Max(0.1f, weaponProfile.projectileSpeed);
+        return weaponProfile.weaponKind == WeaponKind.Ranged
+            ? Mathf.Max(0.05f, weaponProfile.ranged.attackInterval)
+            : Mathf.Max(0.05f, weaponProfile.melee.attackInterval);
     }
 
-    int EstimateDamageAfterArmor(
-        SoldierController target,
-        int normalDamage,
-        int armorPiercingDamage)
-    {
-        int armor = target != null && target.Health != null
-            ? target.Health.Armor
-            : 0;
-
-        int reducedNormalDamage = Mathf.Max(0, normalDamage - armor);
-        return Mathf.Max(1, reducedNormalDamage + Mathf.Max(0, armorPiercingDamage));
-    }
 
     WeaponProfile GetWeaponProfile(SoldierController source)
     {
@@ -1352,13 +1408,22 @@ public class SoldierCombat : MonoBehaviour
         return source.Data.weaponProfile;
     }
 
-    /// Gets melee stats from a soldier.
-    MeleeCombatStats GetMeleeStats(SoldierController source)
+    CombatDefenseStats GetDefenseStats(SoldierController source)
     {
         if (source != null && source.Data != null)
-            return source.Data.melee;
+            return source.Data.defense;
 
-        return MeleeCombatStats.Default;
+        return CombatDefenseStats.Default;
+    }
+
+    float GetDefaultFallbackAttackRange()
+    {
+        return 1.5f;
+    }
+
+    float GetDefaultFallbackAttackInterval()
+    {
+        return 1.5f;
     }
 
     public void RandomizeInitialAttackTimer(float maxDelay)

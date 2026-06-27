@@ -5,8 +5,8 @@ using UnityEngine;
 /// -----------------------------------------------------------------------------
 ///
 /// ScriptableObject blueprint for an individual soldier type.
-/// Stores identity, icon, prefab reference, health stats, movement stats, and melee
-/// combat stats.
+/// Stores identity, icon, prefab reference, health stats, movement stats, defense stats,
+/// and a weapon profile reference.
 ///
 /// This data is used by SquadRoster when spawning soldiers and by soldier systems
 /// when initializing runtime stats.
@@ -30,10 +30,10 @@ public class SoldierData : ScriptableObject
     [Header("Stats")]
     public HealthStats health = HealthStats.Default;
     public MovementStats movement = MovementStats.Default;
-    public MeleeCombatStats melee = MeleeCombatStats.Default;
+    public CombatDefenseStats defense = CombatDefenseStats.Default;
 
     [Header("Weapon")]
-    [Tooltip("Optional. If empty, this soldier uses the melee stats above as a fallback weapon.")]
+    [Tooltip("Required for combat. WeaponProfile is the source of truth for attack stats, timing, range, and projectile data.")]
     public WeaponProfile weaponProfile;
     
 }

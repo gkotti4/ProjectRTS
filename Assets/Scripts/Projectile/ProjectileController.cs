@@ -21,12 +21,31 @@ public class ProjectileController : MonoBehaviour
     private SoldierController attacker;
     private SoldierController target;
 
-    private int normalDamage;
-    private int armorPiercingDamage;
+    private RangedCombatStats rangedStats;
     private float projectileSpeed = 18f;
     private float lifetimeTimer = 0f;
     private bool hasInitialized = false;
 
+    public void Initialize(
+        SoldierController source,
+        SoldierController targetSoldier,
+        WeaponProfile weaponProfile)
+    {
+        attacker = source;
+        target = targetSoldier;
+
+        rangedStats = weaponProfile != null
+            ? weaponProfile.ranged
+            : RangedCombatStats.Default;
+
+        projectileSpeed = Mathf.Max(0.1f, rangedStats.projectileSpeed);
+        lifetimeTimer = Mathf.Max(0.1f, maxLifetime);
+        hasInitialized = true;
+    }
+
+    /// Backward-compatible initializer for older callers.
+    /// New ranged combat should pass WeaponProfile so the projectile uses
+    /// WeaponProfile.ranged as the attack-stat source of truth.
     public void Initialize(
         SoldierController source,
         SoldierController targetSoldier,
@@ -36,9 +55,13 @@ public class ProjectileController : MonoBehaviour
     {
         attacker = source;
         target = targetSoldier;
-        normalDamage = Mathf.Max(0, damage);
-        armorPiercingDamage = Mathf.Max(0, armorPiercing);
-        projectileSpeed = Mathf.Max(0.1f, speed);
+
+        rangedStats = RangedCombatStats.Default;
+        rangedStats.missileDamage = Mathf.Max(0, damage);
+        rangedStats.armorPiercingDamage = Mathf.Max(0, armorPiercing);
+        rangedStats.projectileSpeed = Mathf.Max(0.1f, speed);
+
+        projectileSpeed = rangedStats.projectileSpeed;
         lifetimeTimer = Mathf.Max(0.1f, maxLifetime);
         hasInitialized = true;
     }
@@ -88,11 +111,24 @@ public class ProjectileController : MonoBehaviour
             return;
         }
 
-        int totalDamageForReaction = EstimateDamageAfterArmor(target);
+        DamageResult result = CombatResolver.ResolveRangedHit(
+            rangedStats,
+            GetTargetDefenseStats(target));
+
+        if (!result.didHit)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        int totalDamageForReaction = EstimateDamageAfterArmor(
+            target,
+            result.normalDamage,
+            result.armorPiercingDamage);
 
         target.Health.TakeDamage(
-            normalDamage,
-            armorPiercingDamage);
+            result.normalDamage,
+            result.armorPiercingDamage);
 
         if (target != null &&
             target.IsAlive &&
@@ -106,13 +142,24 @@ public class ProjectileController : MonoBehaviour
         Destroy(gameObject);
     }
 
-    int EstimateDamageAfterArmor(SoldierController targetSoldier)
+    CombatDefenseStats GetTargetDefenseStats(SoldierController targetSoldier)
+    {
+        if (targetSoldier != null && targetSoldier.Data != null)
+            return targetSoldier.Data.defense;
+
+        return CombatDefenseStats.Default;
+    }
+
+    int EstimateDamageAfterArmor(
+        SoldierController targetSoldier,
+        int damage,
+        int armorPiercing)
     {
         int armor = targetSoldier != null && targetSoldier.Health != null
             ? targetSoldier.Health.Armor
             : 0;
 
-        int reducedNormalDamage = Mathf.Max(0, normalDamage - armor);
-        return Mathf.Max(1, reducedNormalDamage + armorPiercingDamage);
+        int reducedNormalDamage = Mathf.Max(0, damage - armor);
+        return Mathf.Max(1, reducedNormalDamage + armorPiercing);
     }
 }

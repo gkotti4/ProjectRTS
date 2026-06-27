@@ -18,6 +18,22 @@ public class SoldierCombatProfile : ScriptableObject
     [Min(0.1f)] public float combatRecoveryMoveSpeedMultiplier = 0.55f;
     [Min(0f)] public float combatRecoveryStoppingDistance = 0.08f;
 
+    [Header("Ranged Rhythm / Fire Line")]
+    [Tooltip("Ranged soldiers should usually reload/ready in place instead of doing melee-style backoff shuffles.")]
+    public bool rangedHoldPositionDuringRecovery = true;
+
+    [Tooltip("Short post-shot visual/rhythm pause. AttackInterval still controls the real fire rate.")]
+    [Min(0.05f)] public float rangedRecoveryMinDuration = 0.25f;
+
+    [Tooltip("Short post-shot visual/rhythm pause. AttackInterval still controls the real fire rate.")]
+    [Min(0.05f)] public float rangedRecoveryMaxDuration = 0.75f;
+
+    [Tooltip("Movement speed multiplier used when a ranged soldier steps forward to get into missile range.")]
+    [Min(0.1f)] public float rangedMoveSpeedMultiplier = 1.0f;
+
+    [Tooltip("Small buffer used when a ranged soldier moves toward its preferred firing distance.")]
+    [Min(0f)] public float rangedPreferredRangeBuffer = 0.35f;
+
     [Header("Pressure Waiting")]
     [Min(0f)] public float pressureWaitDistance = 0.7f;
     [Min(0.05f)] public float pressureWaitMinDuration = 1f;
@@ -56,6 +72,11 @@ public class SoldierCombatProfile : ScriptableObject
         combatRecoverySideStepDistance = Mathf.Max(0f, combatRecoverySideStepDistance);
         combatRecoveryMoveSpeedMultiplier = Mathf.Max(0.1f, combatRecoveryMoveSpeedMultiplier);
         combatRecoveryStoppingDistance = Mathf.Max(0f, combatRecoveryStoppingDistance);
+
+        rangedRecoveryMinDuration = Mathf.Max(0.05f, rangedRecoveryMinDuration);
+        rangedRecoveryMaxDuration = Mathf.Max(rangedRecoveryMinDuration, rangedRecoveryMaxDuration);
+        rangedMoveSpeedMultiplier = Mathf.Max(0.1f, rangedMoveSpeedMultiplier);
+        rangedPreferredRangeBuffer = Mathf.Max(0f, rangedPreferredRangeBuffer);
 
         pressureWaitDistance = Mathf.Max(0f, pressureWaitDistance);
         pressureWaitMinDuration = Mathf.Max(0.05f, pressureWaitMinDuration);
