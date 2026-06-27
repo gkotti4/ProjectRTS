@@ -490,6 +490,11 @@ public class SoldierController : MonoBehaviour
         Combat?.ResolveAttackImpact();
     }
 
+    public void OnProjectileRelease()
+    {
+        Combat?.ResolveProjectileRelease();
+    }
+
     public void OnAttackEnd()
     {
         CompleteAction(SoldierActionState.Attack);

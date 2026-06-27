@@ -79,9 +79,6 @@ public class SoldierAnimator : MonoBehaviour
     [Tooltip("ApproachingCombat can use combat-ready idle/walk visuals.")]
     [SerializeField] private bool approachCountsAsCombat = true;
 
-    [Tooltip("AttackMoving can use combat-ready idle/walk visuals.")]
-    [SerializeField] private bool attackMoveCountsAsCombat = false;
-
     #endregion
 
     #region Animator Layers
@@ -408,9 +405,6 @@ public class SoldierAnimator : MonoBehaviour
             case SquadState.ApproachingCombat:
                 return approachCountsAsCombat;
 
-            case SquadState.AttackMoving:
-                return attackMoveCountsAsCombat;
-
             default:
                 return false;
         }
@@ -535,25 +529,7 @@ public class SoldierAnimator : MonoBehaviour
     }
 
     #endregion
-
-    // #region Backward-Compatible Wrappers
-    //
-    // // public void TriggerAttack()
-    // // {
-    // //     PlayAction(SoldierActionState.Attack);
-    // // }
-    // //
-    // // public void TriggerHit()
-    // // {
-    // //     PlayAction(SoldierActionState.HitReact);
-    // // }
-    // //
-    // // public void TriggerDeath()
-    // // {
-    // //     PlayAction(SoldierActionState.Death);
-    // // }
-    //
-    // #endregion
+    
 
     #region Animation Events
 
@@ -563,10 +539,10 @@ public class SoldierAnimator : MonoBehaviour
         soldierController?.OnAttackImpact();
     }
 
-    // Animation Event alias: ranged projectile release frame.
+    // Animation Event: ranged projectile release frame.
     public void OnProjectileRelease()
     {
-        soldierController?.OnAttackImpact();
+        soldierController?.OnProjectileRelease();
     }
 
     // Animation Event alias: generic attack execution frame.

@@ -525,14 +525,26 @@ public class SoldierCombat : MonoBehaviour
     }
 
     /// Finds the best nearby enemy soldier this soldier can reasonably engage.
-    /// This is intentionally local: the soldier prefers nearby reachable targets
-    /// instead of blindly chasing the enemy squad center.
+    /// Melee uses local nearest/crowding scoring.
+    /// Ranged uses random valid target selection so volleys spread across the enemy squad.
     SoldierController FindBestLocalTarget(
         SquadController enemySquad,
         Vector3 cohesionOrigin,
         float freeEngageDistance,
         float localTargetScanRange)
     {
+        if (enemySquad == null || enemySquad.Roster == null)
+            return null;
+
+        if (IsUsingRangedWeapon)
+        {
+            return FindRandomRangedTarget(
+                enemySquad,
+                cohesionOrigin,
+                freeEngageDistance,
+                localTargetScanRange);
+        }
+
         SoldierController bestTarget = null;
         float bestScore = float.PositiveInfinity;
 
@@ -572,6 +584,85 @@ public class SoldierCombat : MonoBehaviour
         }
 
         return bestTarget;
+    }
+
+    /// Picks a random ranged target.
+    /// First tries targets currently inside this soldier's attack range.
+    /// If none are in range, falls back to any reachable target so the soldier can step forward.
+    SoldierController FindRandomRangedTarget(
+        SquadController enemySquad,
+        Vector3 cohesionOrigin,
+        float freeEngageDistance,
+        float localTargetScanRange)
+    {
+        if (TryFindRandomRangedTarget(
+                enemySquad,
+                cohesionOrigin,
+                freeEngageDistance,
+                localTargetScanRange,
+                requireCurrentAttackRange: true,
+                out SoldierController inRangeTarget))
+        {
+            return inRangeTarget;
+        }
+
+        if (TryFindRandomRangedTarget(
+                enemySquad,
+                cohesionOrigin,
+                freeEngageDistance,
+                localTargetScanRange,
+                requireCurrentAttackRange: false,
+                out SoldierController reachableTarget))
+        {
+            return reachableTarget;
+        }
+
+        return null;
+    }
+
+    /// Reservoir-samples one valid target without allocating a temporary list.
+    bool TryFindRandomRangedTarget(
+        SquadController enemySquad,
+        Vector3 cohesionOrigin,
+        float freeEngageDistance,
+        float localTargetScanRange,
+        bool requireCurrentAttackRange,
+        out SoldierController selectedTarget)
+    {
+        selectedTarget = null;
+
+        if (enemySquad == null || enemySquad.Roster == null)
+            return false;
+
+        int validCandidateCount = 0;
+
+        foreach (SoldierController candidate in enemySquad.Roster.Soldiers)
+        {
+            if (candidate == null || !candidate.IsAlive)
+                continue;
+
+            if (!IsCandidateReachable(
+                    candidate,
+                    cohesionOrigin,
+                    freeEngageDistance,
+                    localTargetScanRange))
+            {
+                continue;
+            }
+
+            if (requireCurrentAttackRange &&
+                !IsWithinAttackRange(candidate))
+            {
+                continue;
+            }
+
+            validCandidateCount++;
+
+            if (Random.Range(0, validCandidateCount) == 0)
+                selectedTarget = candidate;
+        }
+
+        return selectedTarget != null;
     }
 
     /// Returns true when the enemy is close enough to either this soldier or this
@@ -936,8 +1027,15 @@ public class SoldierCombat : MonoBehaviour
             GetAttackInterval(soldier));
     }
 
+    /// Resolves the committed ranged attack at the animation's projectile-release frame.
+    /// This keeps archer clips readable while still using the same pending attack guard.
+    public void ResolveProjectileRelease()
+    {
+        ResolveAttackImpact();
+    }
+
     /// Resolves the committed attack at the animation's impact/release frame.
-    /// This is called by SoldierController.OnAttackImpact(), which is forwarded from SoldierAnimator.
+    /// This is called by SoldierController.OnAttackImpact() or OnProjectileRelease(), which are forwarded from SoldierAnimator.
     public void ResolveAttackImpact()
     {
         if (soldier == null || !soldier.IsAlive)
