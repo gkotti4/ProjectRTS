@@ -33,7 +33,7 @@ public class ProductionOptionData : ScriptableObject
         squadData != null ? squadData.defaultFormation : SquadFormation.Line;
 
     public SquadStance startingStance =>
-        squadData != null ? squadData.defaultStance : SquadStance.Engage;
+        squadData != null ? squadData.defaultStance : SquadStance.EngageFreely;
 
     public GameObject prefab
     {

@@ -30,13 +30,13 @@ public class ProjectileController : MonoBehaviour
     [SerializeField] private bool useArc = true;
 
     [Tooltip("Base arc height before distance scaling is added.")]
-    [SerializeField] private float arcHeight = 2.25f;
+    [SerializeField] private float arcHeight = 1.0f;
 
     [Tooltip("Additional arc height added per meter of horizontal shot distance.")]
-    [SerializeField] private float arcHeightPerMeter = 0.2f;
+    [SerializeField] private float arcHeightPerMeter = 0.22f;
 
     [Tooltip("Minimum visual arc height for short shots.")]
-    [SerializeField] private float minArcHeight = 2.5f;
+    [SerializeField] private float minArcHeight = 1.0f;
 
     [Tooltip("Maximum visual arc height so long shots do not become cartoon lobs.")]
     [SerializeField] private float maxArcHeight = 15f;
@@ -208,8 +208,6 @@ public class ProjectileController : MonoBehaviour
         float horizontalDistance = Vector3.Distance(
             flatLaunchPoint,
             flatImpactPoint);
-
-        Debug.Log(horizontalDistance);
         
         float distanceBasedArcHeight =
             arcHeight +

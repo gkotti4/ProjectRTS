@@ -14,18 +14,15 @@ public enum SelectableKind
     Resource
 }
 
-public enum CommandContext
-{
-    Default,
-    SquadSelected,
-    WorkerSelected,
-    BuildingSelected,
-    ResourceSelected,
-
-    // Legacy aliases while old files are removed.
-    EconomicUnitSelected,
-    MilitarySquadSelected
-}
+// public enum CommandContext
+// {
+//     Default,
+//     SquadSelected,
+//     WorkerSelected,
+//     BuildingSelected,
+//     ResourceSelected,
+//     
+// }
 
 // ============================================================
 // SQUADS / SOLDIERS
@@ -36,21 +33,17 @@ public enum SquadCategory
     Infantry,
     Ranged,
     Cavalry,
-    Siege,
-    Support,
-    Hero
+    Siege
 }
 
 public enum SquadCombatStyle
 {
-    MeleeLine,
-    RangedLine,
-    ShockCavalry,
-    SiegeArtillery,
-    Hero
+    FormationMelee = 0,
+    // LooseMelee, DEPRECIATED
+    RangedLine = 2,
 }
 
-public enum SquadEngagementType
+public enum SquadEngagementReason
 {
     None,
     ExplicitAttack,
@@ -87,8 +80,8 @@ public enum SquadMoveMode
 
 public enum SquadStance
 {
-    Engage,
-    Hold,
+    EngageFreely,
+    HoldPosition,
     // StandGround,
     // NoAttack
 }
@@ -126,15 +119,15 @@ public enum SoldierActionState
 // WORKERS
 // ============================================================
 
-public enum WorkerState
-{
-    Idle,
-    Moving,
-    Gathering,
-    Building,
-    Repairing,
-    Attacking
-}
+// public enum WorkerState
+// {
+//     Idle,
+//     Moving,
+//     Gathering,
+//     Building,
+//     Repairing,
+//     Attacking
+// }
 
 // ============================================================
 // BUILDINGS
@@ -149,7 +142,6 @@ public enum BuildingCategory
     MilitaryProduction,
     Research,
     Defense,
-    Farm
 }
 
 // ============================================================
@@ -161,15 +153,15 @@ public enum CommandType
     None,
 
     // Core
-    Stop,
-    Move,
-    Attack,
+    Stop=0,
+    // Move,
+    // Attack,
     AttackMove,
-    Patrol,
-    HoldPosition,
+    // Patrol,
+    // HoldPosition,
 
     // Worker
-    Build,
+    Build=1,
     Repair,
 
     // Building
@@ -178,27 +170,27 @@ public enum CommandType
     //Research,
 
     // Squad stances
-    EngageStance,
-    HoldStance,
+    EngageStance=2,
+    HoldStance=3,
     // StandGround,
     // NoAttack,
 
     // Squad formations
-    FormationLine,
-    FormationSpread,
-    FormationBox,
-    FormationCircle,
-    FormationWedge,
+    FormationLine=4,
+    FormationSpread=5,
+    FormationBox=6,
+    FormationCircle=7,
+    FormationWedge=8,
 
     // Total War-style commands
-    Charge,
-    Withdraw,
-    Brace,
-    Merge,
+    // Charge,
+    // Withdraw,
+    // Brace,
+    // Merge,
 
     // Future / legacy
-    Garrison,
-    Ability
+    // Garrison,
+    // Ability
 }
 
 public enum HotkeySlot
@@ -218,7 +210,6 @@ public enum ProductionType
 {
     None,
     Worker,
-    Unit,   // legacy
     Squad,
     Upgrade
 }

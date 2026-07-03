@@ -65,7 +65,7 @@ public class SquadController : MonoBehaviour,
         squadData != null ? squadData.category : SquadCategory.Infantry;
 
     public SquadState State { get; private set; } = SquadState.Idle;
-    public SquadStance Stance { get; private set; } = SquadStance.Engage;
+    public SquadStance Stance { get; private set; } = SquadStance.EngageFreely;
 
     public FactionInstance Faction { get; private set; }
 

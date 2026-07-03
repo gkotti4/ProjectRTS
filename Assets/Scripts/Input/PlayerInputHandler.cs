@@ -454,11 +454,11 @@ public class PlayerInputHandler : MonoBehaviour
                     break;
 
                 case CommandType.EngageStance:
-                    squad.SetStance(SquadStance.Engage);
+                    squad.SetStance(SquadStance.EngageFreely);
                     break;
 
                 case CommandType.HoldStance:
-                    squad.SetStance(SquadStance.Hold);
+                    squad.SetStance(SquadStance.HoldPosition);
                     break;
 
                 // case CommandType.StandGround:

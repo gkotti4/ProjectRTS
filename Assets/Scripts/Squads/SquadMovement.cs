@@ -158,11 +158,9 @@ public class SquadMovement : MonoBehaviour
         if (!HasMovementProfile())
             return;
 
-        baseAnchorMoveSpeed = data != null && data.movement.moveSpeed > 0f
-            ? data.movement.moveSpeed
-            : 4f;
-
         memberBaseMoveSpeed = ResolveMemberBaseMoveSpeed();
+
+        baseAnchorMoveSpeed = memberBaseMoveSpeed;
 
         // ProjectRTS 2.0:
         // The anchor moves at the squad's intended movement speed.

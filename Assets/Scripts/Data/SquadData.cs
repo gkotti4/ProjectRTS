@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -9,7 +10,7 @@ using UnityEngine.Serialization;
 /// ScriptableObject blueprint for a squad type.
 /// Stores squad identity, icon, category, prefab, soldier composition, default
 /// stance/formation, movement profile, squad combat profile, soldier combat profile,
-/// fallback stats, morale data, and available command set.
+/// morale data, and available command set.
 ///
 /// This data defines what a squad is. Runtime systems read this data but should
 /// keep behavior logic in components rather than hardcoding unit-specific behavior.
@@ -28,8 +29,8 @@ public class SquadData : ScriptableObject
     public Sprite squadIcon;
     public SquadCategory category;
 
-    [Header("Combat Behavior")]
-    public SquadCombatStyle combatStyle = SquadCombatStyle.MeleeLine;
+    [FormerlySerializedAs("defaultCombatBehavior")] [FormerlySerializedAs("combatStyle")] [Header("Combat Behavior")]
+    public SquadCombatStyle defaultCombatStyle = SquadCombatStyle.FormationMelee;
     
     [Header("Profiles")]
     public SquadMovementProfile movementProfile;
@@ -45,31 +46,20 @@ public class SquadData : ScriptableObject
     [FormerlySerializedAs("numMembers")]
     [Min(1)] public int startingSoldierCount = 5;
 
+    [Tooltip("Future reinforcement/replenishment cap. Not used by current starting spawn logic.")]
     [Min(1)] public int maxSoldierCount = 50;
-
+    
     [Header("Defaults")]
     public SquadFormation defaultFormation = SquadFormation.Line;
-    public SquadStance defaultStance = SquadStance.Hold;
+    public SquadStance defaultStance = SquadStance.HoldPosition;
 
     [Header("Formation")]
     [Min(1)] public int defaultUnitsPerRow = 10;
-    [Min(0.1f)] public float defaultSpacing = 2f;
+    [Min(0.1f)] public float defaultSpacing = 2.5f;
 
-    [Header("Movement")]
-    public MovementStats movement = MovementStats.Default;
-
-    // [Header("Melee Combat (Fallback)")]
-    // [Tooltip("DEBUGGING PURPOSES, Fallback for unit melee stats.")]
-    // public MeleeCombatStats melee = MeleeCombatStats.Default;
-
+    
     [Header("Morale")]
     public MoraleStats morale = MoraleStats.Default;
-
-    // [Header("Legacy Combat Behavior / Unused By New SquadCombatProfile")]
-    // [Min(0f)] public float aggressiveAutoScanRange = 14f;
-    // [Min(0f)] public float defensiveAutoScanRange = 8f;
-    // [Min(0f)] public float standGroundScanPadding = 0.5f;
-    // [Min(0f)] public float combatDefensiveLeashRange = 8f;
 
     [Header("Commands")]
     public SquadCommandSet commandSet;

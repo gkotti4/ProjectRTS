@@ -210,27 +210,27 @@ public class SoldierCombat : MonoBehaviour
     }
     
 
-    /// Legacy compatibility overload.
-    /// New combat should call the overload with a pressure goal and soft cohesion ranges.
-    public void TickCombat(
-        SquadController enemySquad,
-        Vector3 leashOrigin,
-        float combatLeashRange,
-        float localTargetScanRange,
-        float speedMultiplier)
-    {
-        TickCombat(
-            enemySquad,
-            leashOrigin,
-            leashOrigin,
-            combatLeashRange,
-            combatLeashRange + localTargetScanRange,
-            combatLeashRange + localTargetScanRange + GetAttackRange(),
-            localTargetScanRange,
-            speedMultiplier,
-            0.1f,
-            true);
-    }
+    // /// Legacy compatibility overload.
+    // /// New combat should call the overload with a pressure goal and soft cohesion ranges.
+    // public void TickCombat(
+    //     SquadController enemySquad,
+    //     Vector3 leashOrigin,
+    //     float combatLeashRange,
+    //     float localTargetScanRange,
+    //     float speedMultiplier)
+    // {
+    //     TickCombat(
+    //         enemySquad,
+    //         leashOrigin,
+    //         leashOrigin,
+    //         combatLeashRange,
+    //         combatLeashRange + localTargetScanRange,
+    //         combatLeashRange + localTargetScanRange + GetAttackRange(),
+    //         localTargetScanRange,
+    //         speedMultiplier,
+    //         0.1f,
+    //         true);
+    // }
 
     /// Ticks autonomous local melee behavior for this soldier.
     /// Priority order:
@@ -362,6 +362,193 @@ public class SoldierCombat : MonoBehaviour
         MoveTowardFallback(
             cohesionOrigin,
             clampedPressureGoal,
+            pressureStoppingDistance,
+            speedMultiplier);
+    }
+
+
+    /// FormationMelee soldier path.
+    /// This intentionally uses the disciplined combat-home/cohesion implementation.
+    public void TickFormationMelee(
+        SquadController enemySquad,
+        Vector3 combatHome,
+        Vector3 pressureGoal,
+        float freeEngageDistance,
+        float disengageDistance,
+        float forceRejoinDistance,
+        float localTargetScanRange,
+        float speedMultiplier,
+        float pressureStoppingDistance,
+        bool canStartNewEngagement = true)
+    {
+        TickCombat(
+            enemySquad,
+            combatHome,
+            pressureGoal,
+            freeEngageDistance,
+            disengageDistance,
+            forceRejoinDistance,
+            localTargetScanRange,
+            speedMultiplier,
+            pressureStoppingDistance,
+            canStartNewEngagement,
+            preferredAttackDistance: -1f);
+    }
+
+    /// RangedLine soldier path.
+    /// This intentionally uses formation combat homes with ranged movement rules.
+    public void TickRangedLine(
+        SquadController enemySquad,
+        Vector3 fireLineHome,
+        Vector3 pressureGoal,
+        float freeEngageDistance,
+        float disengageDistance,
+        float forceRejoinDistance,
+        float localTargetScanRange,
+        float speedMultiplier,
+        float pressureStoppingDistance,
+        bool canStartNewEngagement,
+        float preferredAttackDistance)
+    {
+        TickCombat(
+            enemySquad,
+            fireLineHome,
+            pressureGoal,
+            freeEngageDistance,
+            disengageDistance,
+            forceRejoinDistance,
+            localTargetScanRange,
+            speedMultiplier,
+            pressureStoppingDistance,
+            canStartNewEngagement,
+            preferredAttackDistance);
+    }
+
+    /// LooseMelee soldier path.
+    /// This does not use formation slots, frontness, or old combat homes.
+    /// The anchor is a dynamic personal combat-progress point provided by SquadCombat.
+    public void TickLooseMelee(
+        SquadController enemySquad,
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float freeEngageDistance,
+        float disengageDistance,
+        float forceRejoinDistance,
+        float localTargetScanRange,
+        float speedMultiplier,
+        float pressureStoppingDistance)
+    {
+        if (soldier == null || !soldier.IsAlive)
+            return;
+
+        if (!HasCombatProfile())
+            return;
+
+        freeEngageDistance = Mathf.Max(0.1f, freeEngageDistance);
+        disengageDistance = Mathf.Max(freeEngageDistance, disengageDistance);
+        forceRejoinDistance = Mathf.Max(disengageDistance, forceRejoinDistance);
+        localTargetScanRange = Mathf.Max(0f, localTargetScanRange);
+
+        TickAttackTimer();
+        TickCombatRecoveryTimer();
+        TickPressureWaitTimer();
+        TickHitReactionTimers();
+
+        if (enemySquad == null ||
+            enemySquad.Roster == null ||
+            !enemySquad.Roster.HasLivingSoldiers)
+        {
+            ClearCombat();
+            MoveTowardLooseMeleeFallback(
+                looseAnchor,
+                pressureGoal,
+                pressureStoppingDistance,
+                1f);
+            return;
+        }
+
+        RememberCombatContext(looseAnchor, pressureGoal);
+
+        if (IsFarOutsideLooseMeleeArea(looseAnchor, pressureGoal, forceRejoinDistance) &&
+            !HasImmediateAttackOpportunity())
+        {
+            ClearCombatTargetOnly();
+            MoveTowardLooseMeleeFallback(
+                looseAnchor,
+                pressureGoal,
+                pressureStoppingDistance,
+                speedMultiplier);
+            return;
+        }
+
+        if (soldier.IsMovementLocked)
+        {
+            TickActionLock(
+                enemySquad,
+                pressureGoal);
+
+            return;
+        }
+
+        if (combatRecoveryTimer > 0f)
+        {
+            TickLooseMeleeRecovery(
+                enemySquad,
+                looseAnchor,
+                pressureGoal,
+                freeEngageDistance,
+                speedMultiplier);
+
+            return;
+        }
+
+        if (!IsValidLooseMeleeTarget(
+                enemySquad,
+                looseAnchor,
+                pressureGoal,
+                disengageDistance))
+        {
+            ClearCombatTargetOnly();
+
+            currentTarget = FindBestLooseMeleeTarget(
+                enemySquad,
+                looseAnchor,
+                pressureGoal,
+                freeEngageDistance,
+                localTargetScanRange);
+
+            soldier.SetCombatTarget(currentTarget);
+        }
+
+        if (currentTarget != null)
+        {
+            rhythmState = SoldierCombatRhythmState.Engaged;
+
+            TickLooseMeleeTargetMovementAndAttack(
+                looseAnchor,
+                pressureGoal,
+                forceRejoinDistance,
+                speedMultiplier);
+
+            return;
+        }
+
+        if (Vector3.Distance(transform.position, pressureGoal) <= soldierCombatProfile.pressureWaitDistance)
+        {
+            TickLooseMeleePressureWaiting(
+                enemySquad,
+                looseAnchor,
+                pressureGoal,
+                freeEngageDistance);
+
+            return;
+        }
+
+        rhythmState = SoldierCombatRhythmState.Seeking;
+
+        MoveTowardLooseMeleeFallback(
+            looseAnchor,
+            pressureGoal,
             pressureStoppingDistance,
             speedMultiplier);
     }
@@ -524,6 +711,142 @@ public class SoldierCombat : MonoBehaviour
             currentTarget.transform.position) <= allowedDistance;
     }
 
+
+    /// Checks whether the current target is still usable in LooseMelee.
+    /// LooseMelee cares about the current local fight area, not an old formation slot.
+    bool IsValidLooseMeleeTarget(
+        SquadController enemySquad,
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float disengageDistance)
+    {
+        if (currentTarget == null || !currentTarget.IsAlive)
+            return false;
+
+        if (currentTarget.Squad != enemySquad)
+            return false;
+
+        if (IsWithinAttackRange(currentTarget))
+            return true;
+
+        float allowedDistance = disengageDistance + GetAttackRange();
+
+        float distanceFromSoldier = Vector3.Distance(
+            transform.position,
+            currentTarget.transform.position);
+
+        if (distanceFromSoldier <= allowedDistance)
+            return true;
+
+        float distanceFromPressureGoal = Vector3.Distance(
+            pressureGoal,
+            currentTarget.transform.position);
+
+        if (distanceFromPressureGoal <= allowedDistance)
+            return true;
+
+        return Vector3.Distance(
+            looseAnchor,
+            currentTarget.transform.position) <= allowedDistance;
+    }
+
+    /// Finds a local LooseMelee target.
+    /// This intentionally does not score from formation slots. It favors enemies
+    /// close to this soldier or to the loose pressure/contact area.
+    SoldierController FindBestLooseMeleeTarget(
+        SquadController enemySquad,
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float freeEngageDistance,
+        float localTargetScanRange)
+    {
+        if (enemySquad == null || enemySquad.Roster == null)
+            return null;
+
+        SoldierController bestTarget = null;
+        float bestScore = float.PositiveInfinity;
+
+        foreach (SoldierController candidate in enemySquad.Roster.Soldiers)
+        {
+            if (candidate == null || !candidate.IsAlive)
+                continue;
+
+            if (!IsLooseMeleeTargetReachable(
+                    candidate,
+                    looseAnchor,
+                    pressureGoal,
+                    freeEngageDistance,
+                    localTargetScanRange))
+            {
+                continue;
+            }
+
+            float distanceFromSoldier = Vector3.Distance(
+                transform.position,
+                candidate.transform.position);
+
+            float distanceFromPressureGoal = Vector3.Distance(
+                pressureGoal,
+                candidate.transform.position);
+
+            int currentAttackers = CountFriendlyAttackers(candidate);
+            int extraAttackers = Mathf.Max(
+                0,
+                currentAttackers - Mathf.Max(0, soldierCombatProfile.meleePreferredAttackersPerTarget - 1));
+
+            float score =
+                distanceFromSoldier +
+                distanceFromPressureGoal * 0.35f +
+                extraAttackers * soldierCombatProfile.meleeTargetCrowdingPenalty;
+
+            if (currentAttackers >= soldierCombatProfile.meleePreferredAttackersPerTarget)
+                score += soldierCombatProfile.meleeCrowdedTargetExtraPenaltyDistance;
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestTarget = candidate;
+            }
+        }
+
+        return bestTarget;
+    }
+
+    /// Returns true if a target belongs to this soldier's loose local fight area.
+    bool IsLooseMeleeTargetReachable(
+        SoldierController target,
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float freeEngageDistance,
+        float localTargetScanRange)
+    {
+        if (target == null)
+            return false;
+
+        float attackRange = GetAttackRange();
+        float localReach = localTargetScanRange + attackRange;
+
+        float distanceFromSoldier = Vector3.Distance(
+            transform.position,
+            target.transform.position);
+
+        if (distanceFromSoldier <= localReach)
+            return true;
+
+        float distanceFromPressureGoal = Vector3.Distance(
+            pressureGoal,
+            target.transform.position);
+
+        if (distanceFromPressureGoal <= freeEngageDistance + localReach)
+            return true;
+
+        float distanceFromAnchor = Vector3.Distance(
+            looseAnchor,
+            target.transform.position);
+
+        return distanceFromAnchor <= freeEngageDistance + localReach;
+    }
+
     /// Finds the best nearby enemy soldier this soldier can reasonably engage.
     /// Melee uses local nearest/crowding scoring.
     /// Ranged uses random valid target selection so volleys spread across the enemy squad.
@@ -569,12 +892,12 @@ public class SoldierCombat : MonoBehaviour
             int currentAttackers = CountFriendlyAttackers(candidate);
             int extraAttackers = Mathf.Max(
                 0,
-                currentAttackers - Mathf.Max(0, soldierCombatProfile.preferredAttackersPerTarget - 1));
+                currentAttackers - Mathf.Max(0, soldierCombatProfile.meleePreferredAttackersPerTarget - 1));
 
-            float score = distance + extraAttackers * soldierCombatProfile.targetCrowdingPenalty;
+            float score = distance + extraAttackers * soldierCombatProfile.meleeTargetCrowdingPenalty;
 
-            if (currentAttackers >= soldierCombatProfile.preferredAttackersPerTarget)
-                score += soldierCombatProfile.crowdedTargetExtraPenaltyDistance;
+            if (currentAttackers >= soldierCombatProfile.meleePreferredAttackersPerTarget)
+                score += soldierCombatProfile.meleeCrowdedTargetExtraPenaltyDistance;
 
             if (score < bestScore)
             {
@@ -721,7 +1044,7 @@ public class SoldierCombat : MonoBehaviour
             cohesionOrigin,
             freeEngageDistance);
 
-        if (Vector3.Distance(transform.position, clampedPoint) <= soldierCombatProfile.combatRecoveryStoppingDistance + 0.05f)
+        if (Vector3.Distance(transform.position, clampedPoint) <= soldierCombatProfile.meleeCombatRecoveryStoppingDistance + 0.05f)
         {
             soldier.Stop();
             return;
@@ -729,8 +1052,8 @@ public class SoldierCombat : MonoBehaviour
 
         soldier.MoveToCombatPoint(
             clampedPoint,
-            soldierCombatProfile.combatRecoveryStoppingDistance,
-            Mathf.Max(0.1f, speedMultiplier * soldierCombatProfile.combatRecoveryMoveSpeedMultiplier));
+            soldierCombatProfile.meleeCombatRecoveryStoppingDistance,
+            Mathf.Max(0.1f, speedMultiplier * soldierCombatProfile.meleeCombatRecoveryMoveSpeedMultiplier));
     }
 
     /// Handles soldiers who are close enough to the pressure line but cannot find
@@ -769,6 +1092,116 @@ public class SoldierCombat : MonoBehaviour
             clampedPoint,
             0.05f,
             soldierCombatProfile.pressureShuffleMoveSpeedMultiplier);
+    }
+
+    /// LooseMelee recovery keeps attack rhythm but does not pull toward an old formation home.
+    void TickLooseMeleeRecovery(
+        SquadController enemySquad,
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float freeEngageDistance,
+        float speedMultiplier)
+    {
+        rhythmState = SoldierCombatRhythmState.Recovering;
+
+        if (currentTarget != null && currentTarget.IsAlive)
+            soldier.FaceToward(currentTarget.transform.position);
+        else
+            FaceTowardEnemySquad(enemySquad, pressureGoal);
+
+        if (!hasCombatRecoveryPoint)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        Vector3 clampedPoint = ClampPointToRange(
+            combatRecoveryPoint,
+            looseAnchor,
+            freeEngageDistance);
+
+        if (Vector3.Distance(transform.position, clampedPoint) <= soldierCombatProfile.meleeCombatRecoveryStoppingDistance + 0.05f)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        soldier.MoveToCombatPoint(
+            clampedPoint,
+            soldierCombatProfile.meleeCombatRecoveryStoppingDistance,
+            Mathf.Max(0.1f, speedMultiplier * soldierCombatProfile.meleeCombatRecoveryMoveSpeedMultiplier));
+    }
+
+    /// LooseMelee pressure waiting faces the fight and shuffles around the local
+    /// contact point instead of a formation home.
+    void TickLooseMeleePressureWaiting(
+        SquadController enemySquad,
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float freeEngageDistance)
+    {
+        rhythmState = SoldierCombatRhythmState.Waiting;
+
+        FaceTowardEnemySquad(enemySquad, pressureGoal);
+
+        if (pressureWaitTimer <= 0f)
+            ChooseNextLooseMeleePressureWaitAction(enemySquad, looseAnchor, pressureGoal, freeEngageDistance);
+
+        if (!hasPressureShufflePoint)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        Vector3 clampedPoint = ClampPointToRange(
+            pressureShufflePoint,
+            looseAnchor,
+            freeEngageDistance);
+
+        if (Vector3.Distance(transform.position, clampedPoint) <= 0.08f)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        soldier.MoveToCombatPoint(
+            clampedPoint,
+            0.05f,
+            soldierCombatProfile.pressureShuffleMoveSpeedMultiplier);
+    }
+
+    void ChooseNextLooseMeleePressureWaitAction(
+        SquadController enemySquad,
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float freeEngageDistance)
+    {
+        pressureWaitTimer = Random.Range(
+            Mathf.Max(0.05f, soldierCombatProfile.pressureWaitMinDuration),
+            Mathf.Max(soldierCombatProfile.pressureWaitMinDuration, soldierCombatProfile.pressureWaitMaxDuration));
+
+        hasPressureShufflePoint = false;
+
+        if (Random.value > soldierCombatProfile.pressureShuffleChance)
+            return;
+
+        Vector3 toEnemy = GetDirectionToEnemySquad(enemySquad, pressureGoal);
+        Vector3 side = new Vector3(toEnemy.z, 0f, -toEnemy.x);
+
+        if (Random.value < 0.5f)
+            side = -side;
+
+        Vector3 desiredPoint =
+            pressureGoal +
+            side * Random.Range(0.1f, soldierCombatProfile.pressureShuffleSideDistance) +
+            toEnemy * Random.Range(-soldierCombatProfile.pressureShuffleForwardDistance, soldierCombatProfile.pressureShuffleForwardDistance);
+
+        pressureShufflePoint = ClampPointToRange(
+            desiredPoint,
+            looseAnchor,
+            freeEngageDistance);
+
+        hasPressureShufflePoint = true;
     }
 
     void ChooseNextPressureWaitAction(
@@ -870,6 +1303,48 @@ public class SoldierCombat : MonoBehaviour
             speedMultiplier);
     }
 
+    /// Moves toward the current target in LooseMelee.
+    /// This does not clamp target chasing to an old formation home.
+    void TickLooseMeleeTargetMovementAndAttack(
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float forceRejoinDistance,
+        float speedMultiplier)
+    {
+        if (currentTarget == null || !currentTarget.IsAlive)
+        {
+            ClearCombatTargetOnly();
+            return;
+        }
+
+        if (IsWithinAttackRange(currentTarget))
+        {
+            soldier.Stop();
+            soldier.FaceToward(currentTarget.transform.position);
+
+            TryAttackCurrentTarget();
+            return;
+        }
+
+        if (IsFarOutsideLooseMeleeArea(looseAnchor, pressureGoal, forceRejoinDistance) &&
+            !HasImmediateAttackOpportunity())
+        {
+            MoveTowardLooseMeleeFallback(
+                looseAnchor,
+                pressureGoal,
+                0.1f,
+                speedMultiplier);
+            return;
+        }
+
+        soldier.FaceToward(currentTarget.transform.position);
+
+        soldier.MoveToCombatPoint(
+            currentTarget.transform.position,
+            0.05f,
+            speedMultiplier);
+    }
+
     void TickRangedTargetMovementAndAttack(
         Vector3 cohesionOrigin,
         float forceRejoinDistance,
@@ -947,6 +1422,53 @@ public class SoldierCombat : MonoBehaviour
             destination,
             stoppingDistance,
             speedMultiplier);
+    }
+
+    /// Moves toward the loose pressure/contact goal.
+    /// This is the loose-mode equivalent of returning to a combat point, not to
+    /// an old formation slot.
+    void MoveTowardLooseMeleeFallback(
+        Vector3 looseAnchor,
+        Vector3 fallbackPoint,
+        float stoppingDistance,
+        float speedMultiplier)
+    {
+        Vector3 destination = fallbackPoint;
+
+        if (Vector3.Distance(transform.position, destination) <= stoppingDistance + 0.05f)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        if (Vector3.Distance(transform.position, destination) > 0.05f)
+            soldier.FaceToward(destination);
+
+        soldier.MoveToCombatPoint(
+            destination,
+            stoppingDistance,
+            speedMultiplier);
+    }
+
+    /// Checks whether this soldier has drifted outside the loose combat area.
+    /// The rejoin target remains the active loose pressure/contact area.
+    bool IsFarOutsideLooseMeleeArea(
+        Vector3 looseAnchor,
+        Vector3 pressureGoal,
+        float forceRejoinDistance)
+    {
+        float distanceFromAnchor = Vector3.Distance(
+            transform.position,
+            looseAnchor);
+
+        if (distanceFromAnchor <= forceRejoinDistance)
+            return false;
+
+        float distanceFromPressureGoal = Vector3.Distance(
+            transform.position,
+            pressureGoal);
+
+        return distanceFromPressureGoal > forceRejoinDistance;
     }
 
     void ClearCombatTargetOnly()
@@ -1307,17 +1829,17 @@ public class SoldierCombat : MonoBehaviour
 
         rhythmState = SoldierCombatRhythmState.Recovering;
 
-        if (Random.value < soldierCombatProfile.combatLongRecoveryChance)
+        if (Random.value < soldierCombatProfile.meleeCombatLongRecoveryChance)
         {
             combatRecoveryTimer = Random.Range(
-                Mathf.Max(0.05f, soldierCombatProfile.combatLongRecoveryMinDuration),
-                Mathf.Max(soldierCombatProfile.combatLongRecoveryMinDuration, soldierCombatProfile.combatLongRecoveryMaxDuration));
+                Mathf.Max(0.05f, soldierCombatProfile.meleeCombatLongRecoveryMinDuration),
+                Mathf.Max(soldierCombatProfile.meleeCombatLongRecoveryMinDuration, soldierCombatProfile.meleeCombatLongRecoveryMaxDuration));
         }
         else
         {
             combatRecoveryTimer = Random.Range(
-                Mathf.Max(0.05f, soldierCombatProfile.combatRecoveryMinDuration),
-                Mathf.Max(soldierCombatProfile.combatRecoveryMinDuration, soldierCombatProfile.combatRecoveryMaxDuration));
+                Mathf.Max(0.05f, soldierCombatProfile.meleeCombatRecoveryMinDuration),
+                Mathf.Max(soldierCombatProfile.meleeCombatRecoveryMinDuration, soldierCombatProfile.meleeCombatRecoveryMaxDuration));
         }
 
         hasCombatRecoveryPoint = false;
@@ -1327,7 +1849,7 @@ public class SoldierCombat : MonoBehaviour
         SoldierController recoveryTarget = currentTarget;
 
         if (currentTarget != null &&
-            Random.value < soldierCombatProfile.combatRecoveryReleaseTargetChance)
+            Random.value < soldierCombatProfile.meleeCombatRecoveryReleaseTargetChance)
         {
             ClearCombatTargetOnly();
         }
@@ -1335,7 +1857,7 @@ public class SoldierCombat : MonoBehaviour
         if (recoveryTarget == null || !recoveryTarget.IsAlive)
             return;
 
-        if (Random.value > soldierCombatProfile.combatRecoveryMoveChance)
+        if (Random.value > soldierCombatProfile.meleeCombatRecoveryMoveChance)
             return;
 
         Vector3 away = transform.position - recoveryTarget.transform.position;
@@ -1353,8 +1875,8 @@ public class SoldierCombat : MonoBehaviour
 
         combatRecoveryPoint =
             transform.position +
-            away * Random.Range(soldierCombatProfile.combatRecoveryBackoffDistance * 0.65f, soldierCombatProfile.combatRecoveryBackoffDistance) +
-            side * Random.Range(-soldierCombatProfile.combatRecoverySideStepDistance, soldierCombatProfile.combatRecoverySideStepDistance);
+            away * Random.Range(soldierCombatProfile.meleeCombatRecoveryBackoffDistance * 0.65f, soldierCombatProfile.meleeCombatRecoveryBackoffDistance) +
+            side * Random.Range(-soldierCombatProfile.meleeCombatRecoverySideStepDistance, soldierCombatProfile.meleeCombatRecoverySideStepDistance);
 
         combatRecoveryPoint = ApplyCombatHomeBias(
             combatRecoveryPoint,

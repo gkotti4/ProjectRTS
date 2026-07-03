@@ -50,7 +50,7 @@ public class SoldierMotor : MonoBehaviour
         manualMovementVelocity.sqrMagnitude > 0.0001f;
 
     public NavMeshAgent Agent => agent;
-    public bool HasPath => agent != null && (agent.hasPath || HasManualMovementVelocity);
+    // public bool HasPath => agent != null && (agent.hasPath || HasManualMovementVelocity);
 
     public Vector3 Velocity
     {
@@ -63,10 +63,10 @@ public class SoldierMotor : MonoBehaviour
         }
     }
     
-    public float CurrentMoveSpeedLimit =>
-        agent != null
-            ? Mathf.Max(0.001f, agent.speed)
-            : Mathf.Max(0.001f, baseMoveSpeed); // used in SoldierAnimator for calculating speed
+    // public float CurrentMoveSpeedLimit =>
+    //     agent != null
+    //         ? Mathf.Max(0.001f, agent.speed)
+    //         : Mathf.Max(0.001f, baseMoveSpeed); // used in SoldierAnimator for calculating speed
 
     void Awake()
     {
