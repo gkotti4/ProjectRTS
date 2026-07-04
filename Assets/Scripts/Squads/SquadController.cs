@@ -65,7 +65,7 @@ public class SquadController : MonoBehaviour,
         squadData != null ? squadData.category : SquadCategory.Infantry;
 
     public SquadState State { get; private set; } = SquadState.Idle;
-    public SquadStance Stance { get; private set; } = SquadStance.EngageFreely;
+    public SquadStance Stance { get; private set; } = SquadStance.Engage;
 
     public FactionInstance Faction { get; private set; }
 
@@ -238,9 +238,6 @@ public class SquadController : MonoBehaviour,
 
         if (squadData.squadCombatProfile == null)
             Debug.LogError($"{name}: SquadData is missing required SquadCombatProfile. SquadCombat will not run without it.", this);
-
-        if (squadData.soldierCombatProfile == null)
-            Debug.LogError($"{name}: SquadData is missing required SoldierCombatProfile. SoldierCombat will not run without it.", this);
 
         if (squadData.movementProfile == null)
             Debug.LogError($"{name}: SquadData is missing required SquadMovementProfile. SquadMovement will not run without it.", this);

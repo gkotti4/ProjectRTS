@@ -296,14 +296,14 @@ public class ProjectileController : MonoBehaviour
             plannedDamageResult.normalDamage,
             plannedDamageResult.armorPiercingDamage);
 
-        if (target != null &&
-            target.IsAlive &&
-            target.Combat != null)
-        {
-            target.Combat.ReceiveHitReaction(
-                attacker,
-                totalDamageForReaction);
-        }
+        // if (target != null &&
+        //     target.IsAlive &&
+        //     target.Combat != null)
+        // {
+        //     target.Combat.ReceiveHitReaction( // DEPRECIATED with new base PrototypeMeleeCleanup pass
+        //         attacker,
+        //         totalDamageForReaction);
+        // }
 
         Destroy(gameObject);
     }

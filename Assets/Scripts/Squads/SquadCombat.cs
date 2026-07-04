@@ -5,37 +5,26 @@ using UnityEngine;
 /// SquadCombat
 /// -----------------------------------------------------------------------------
 ///
-/// Squad-level combat coordinator.
-/// Handles attack orders, auto-scan, approaching enemy squads, beginning/ending
-/// engagements, assigning combat homes, calculating pressure goals, managing
-/// frontline/support participation, and ticking each SoldierCombat with a local
-/// combat context.
+/// Squad-level combat coordinator for the new PrototypeMelee base.
+/// Owns squad target selection, approach, engagement start/end, simple prototype
+/// target assignment, and attack resolution hooks.
 ///
-/// This class should decide squad engagement context, not individual attack
-/// results or animation playback.
+/// Removed on purpose:
+/// - old formation-combat combat homes
+/// - old loose-combat anchors
+/// - pressure goals
+/// - old row-scoring/support budgets
+/// - old SoldierCombat rhythm/cohesion routing
 ///
 /// Design role:
-/// Converts "this squad is fighting that squad" into per-soldier combat context.
+/// The squad decides which enemy squad is being fought and provides shared combat
+/// context. Soldiers still execute through SoldierController/SoldierMotor and use
+/// SoldierContactSensor for local body-space checks.
 ///
+[DisallowMultipleComponent]
 public class SquadCombat : MonoBehaviour
 {
     #region Fields
-
-    // -----------------------------------------------------------------------------
-    // Profile Reference
-    // -----------------------------------------------------------------------------
-    // SquadCombatProfile is the single source of truth for designer-tunable
-    // combat values. Runtime fields below are only for actual combat state.
-    private bool hasLoggedMissingCombatProfile = false;
-
-    // -----------------------------------------------------------------------------
-    // Runtime Collections
-    // -----------------------------------------------------------------------------
-    private readonly Dictionary<SoldierController, Vector3> combatHomePositions =
-        new Dictionary<SoldierController, Vector3>();
-
-    private readonly HashSet<SoldierController> activeCombatSoldiers =
-        new HashSet<SoldierController>();
 
     // -----------------------------------------------------------------------------
     // Component References
@@ -52,7 +41,7 @@ public class SquadCombat : MonoBehaviour
     // -----------------------------------------------------------------------------
     private SquadController targetSquad;
     private Vector3 combatContactDirection = Vector3.forward;
-    private SquadCombatStyle _currentCombatStyle = SquadCombatStyle.FormationMelee;
+    private SquadCombatStyle currentCombatStyle = SquadCombatStyle.PrototypeMelee;
     private SquadEngagementReason currentEngagementType = SquadEngagementReason.None;
 
     // -----------------------------------------------------------------------------
@@ -60,16 +49,37 @@ public class SquadCombat : MonoBehaviour
     // -----------------------------------------------------------------------------
     private float scanTimer = 0f;
     private float approachRefreshTimer = 0f;
-    private float targetRefreshTimer = 0f;
+
+    // -----------------------------------------------------------------------------
+    // Prototype Runtime State
+    // -----------------------------------------------------------------------------
+    private readonly Dictionary<SoldierController, SoldierController> prototypeTargets =
+        new Dictionary<SoldierController, SoldierController>();
+
+    private readonly Dictionary<SoldierController, float> prototypeTargetRefreshTimers =
+        new Dictionary<SoldierController, float>();
+
+    private readonly Dictionary<SoldierController, float> prototypeAttackTimers =
+        new Dictionary<SoldierController, float>();
+
+    private readonly Dictionary<SoldierController, SoldierController> prototypePendingProjectileTargets =
+        new Dictionary<SoldierController, SoldierController>();
+
+    private readonly Dictionary<SoldierController, WeaponProfile> prototypePendingProjectileWeapons =
+        new Dictionary<SoldierController, WeaponProfile>();
+
+    private bool hasLoggedMissingCombatProfile = false;
 
     // -----------------------------------------------------------------------------
     // Public Read-Only Access
     // -----------------------------------------------------------------------------
     public SquadController TargetSquad => targetSquad;
-    public SquadCombatStyle CurrentCombatStyle => _currentCombatStyle;
+    public SquadCombatStyle CurrentCombatStyle => currentCombatStyle;
     public SquadEngagementReason CurrentEngagementType => currentEngagementType;
 
     #endregion
+
+    #region Initialization
 
     /// Initializes squad-level combat references.
     public void Initialize(
@@ -85,7 +95,7 @@ public class SquadCombat : MonoBehaviour
         movement = squadMovement;
         data = squadData;
         squadCombatProfile = data != null ? data.squadCombatProfile : null;
-        _currentCombatStyle = ResolveCombatStyle();
+        currentCombatStyle = ResolveCombatStyle();
         currentEngagementType = SquadEngagementReason.None;
 
         if (!HasCombatProfile())
@@ -109,8 +119,11 @@ public class SquadCombat : MonoBehaviour
         return false;
     }
 
+    #endregion
+
+    #region Orders / State Ticks
+
     /// Receives an explicit attack order.
-    /// FormationMelee squads approach to contact. RangedLine squads approach to missile range.
     public void OrderAttack(SquadController target)
     {
         OrderAttack(target, SquadEngagementReason.ExplicitAttack);
@@ -128,10 +141,11 @@ public class SquadCombat : MonoBehaviour
             return;
 
         targetSquad = target;
-        _currentCombatStyle = ResolveCombatStyle();
+        currentCombatStyle = ResolveCombatStyle();
         currentEngagementType = engagementType;
         approachRefreshTimer = 0f;
-        targetRefreshTimer = 0f;
+
+        ClearPrototypeRuntimeState(clearAttackTimers: false);
 
         if (IsCloseEnoughToStartEngagement(targetSquad))
         {
@@ -142,8 +156,7 @@ public class SquadCombat : MonoBehaviour
         BeginApproachingCombat();
     }
 
-    /// Called by the enemy squad when this squad has entered melee range.
-    /// This lets the defender fight back without requiring auto-scan.
+    /// Called by the enemy squad when this squad has entered melee/contact range.
     public void ReceiveEngagementRequest(SquadController attacker)
     {
         if (!HasCombatProfile())
@@ -153,11 +166,12 @@ public class SquadCombat : MonoBehaviour
             return;
 
         targetSquad = attacker;
-        _currentCombatStyle = ResolveCombatStyle();
-        currentEngagementType = squad != null && squad.Stance == SquadStance.HoldPosition
+        currentCombatStyle = ResolveCombatStyle();
+        currentEngagementType = squad != null && squad.Stance == SquadStance.Hold
             ? SquadEngagementReason.DefensiveHold
             : SquadEngagementReason.PassiveContact;
-        targetRefreshTimer = 0f;
+
+        ClearPrototypeRuntimeState(clearAttackTimers: false);
 
         if (!IsCloseEnoughToStartEngagement(targetSquad))
             return;
@@ -170,9 +184,8 @@ public class SquadCombat : MonoBehaviour
     {
         targetSquad = null;
         currentEngagementType = SquadEngagementReason.None;
-        activeCombatSoldiers.Clear();
-        combatHomePositions.Clear();
 
+        ClearPrototypeRuntimeState(clearAttackTimers: true);
         ClearSoldierCombatStates();
     }
 
@@ -200,7 +213,7 @@ public class SquadCombat : MonoBehaviour
         TickScan();
     }
 
-    /// Moves toward the current attack target until close enough to enter melee.
+    /// Moves toward the current attack target until close enough to enter combat.
     public void TickApproachingCombat()
     {
         if (!HasCombatProfile())
@@ -225,15 +238,28 @@ public class SquadCombat : MonoBehaviour
         if (approachRefreshTimer > 0f)
             return;
 
-        approachRefreshTimer = squadCombatProfile.combatApproachRefreshInterval;
+        approachRefreshTimer = Mathf.Max(0.01f, squadCombatProfile.combatApproachRefreshInterval);
 
         MoveTowardCombatTarget();
     }
 
-    /// Ticks active squad melee engagement.
-    /// In combat, normal formation slot following is paused.
-    /// Soldiers receive a combat context and then run local priority behavior.
+    /// Ticks active squad combat.
     public void TickCombat()
+    {
+        TickPrototypeCombat();
+    }
+
+    #endregion
+
+    #region Prototype Combat
+
+    /// PrototypeMelee base:
+    /// - no combat homes
+    /// - no formation combat slots
+    /// - no old pressure/old row-scoring/support logic
+    /// - simple target crowding
+    /// - attack, advance, or wait if a friendly body blocks the forward lane
+    void TickPrototypeCombat()
     {
         if (!HasCombatProfile())
             return;
@@ -250,20 +276,510 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
-        combatContactDirection = GetContactDirection();
-
-        targetRefreshTimer -= Time.deltaTime;
-
-        if (targetRefreshTimer <= 0f)
+        if (roster == null ||
+            targetSquad == null ||
+            targetSquad.Roster == null)
         {
-            targetRefreshTimer = squadCombatProfile.combatParticipantRefreshInterval;
-            RefreshCombatEligibleSoldiers();
+            EndCombatAndReform();
+            return;
         }
 
-        TickCombatHomeSoldiers();
+        combatContactDirection = GetContactDirection();
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            TickPrototypeSoldier(soldier);
+        }
     }
 
-    /// Ticks auto-scan and starts an attack order if a valid target is found.
+    void TickPrototypeSoldier(SoldierController soldier)
+    {
+        if (soldier == null || !soldier.IsAlive)
+            return;
+
+        EnsurePrototypeTimers(soldier);
+        TickPrototypeTimers(soldier);
+
+        prototypeTargets.TryGetValue(
+            soldier,
+            out SoldierController currentTarget);
+
+        bool shouldRefreshTarget =
+            prototypeTargetRefreshTimers[soldier] <= 0f ||
+            !IsValidPrototypeTarget(currentTarget);
+
+        if (shouldRefreshTarget)
+        {
+            prototypeTargetRefreshTimers[soldier] = Mathf.Max(
+                0.01f,
+                squadCombatProfile.prototypeTargetRefreshInterval);
+
+            currentTarget = FindBestPrototypeTarget(soldier, currentTarget);
+
+            prototypeTargets[soldier] = currentTarget;
+            soldier.SetCombatTarget(currentTarget);
+        }
+
+        if (currentTarget == null)
+        {
+            soldier.Stop();
+            soldier.ClearCombatTarget();
+            return;
+        }
+
+        WeaponProfile weaponProfile = GetWeaponProfile(soldier);
+        bool isRangedWeapon = IsRangedWeapon(weaponProfile);
+
+        GetPrototypeAttackValues(
+            weaponProfile,
+            isRangedWeapon,
+            out MeleeCombatStats meleeStats,
+            out RangedCombatStats rangedStats,
+            out float attackRange,
+            out float attackInterval,
+            out float stoppingDistance);
+
+        if (soldier.IsMovementLocked)
+        {
+            soldier.FaceToward(currentTarget.transform.position);
+            return;
+        }
+
+        Vector3 toTarget = currentTarget.transform.position - soldier.transform.position;
+        toTarget.y = 0f;
+
+        float distanceToTarget = toTarget.magnitude;
+
+        if (distanceToTarget <= 0.001f)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        soldier.FaceToward(currentTarget.transform.position);
+
+        if (distanceToTarget <= attackRange)
+        {
+            soldier.Stop();
+
+            if (prototypeAttackTimers[soldier] <= 0f)
+            {
+                TryPrototypeAttack(
+                    soldier,
+                    currentTarget,
+                    weaponProfile,
+                    meleeStats,
+                    rangedStats,
+                    isRangedWeapon,
+                    attackInterval);
+            }
+
+            return;
+        }
+
+        Vector3 moveDestination = isRangedWeapon
+            ? GetRangedMoveDestination(soldier, currentTarget, attackRange)
+            : currentTarget.transform.position;
+
+        Vector3 desiredMoveDirection = moveDestination - soldier.transform.position;
+        desiredMoveDirection.y = 0f;
+
+        if (desiredMoveDirection.sqrMagnitude <= 0.0001f)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        desiredMoveDirection.Normalize();
+
+        SoldierContactSensor contactSensor = soldier.ContactSensor;
+
+        if (contactSensor != null &&
+            contactSensor.TryGetForwardBlockingFriendly(
+                soldier,
+                desiredMoveDirection,
+                out _))
+        {
+            soldier.Stop();
+            return;
+        }
+
+        soldier.MoveToCombatPoint(
+            moveDestination,
+            stoppingDistance,
+            squadCombatProfile.prototypeCombatMoveSpeedMultiplier);
+    }
+
+    void EnsurePrototypeTimers(SoldierController soldier)
+    {
+        if (!prototypeTargetRefreshTimers.ContainsKey(soldier))
+            prototypeTargetRefreshTimers[soldier] = 0f;
+
+        if (!prototypeAttackTimers.ContainsKey(soldier))
+            prototypeAttackTimers[soldier] = 0f;
+    }
+
+    void TickPrototypeTimers(SoldierController soldier)
+    {
+        prototypeTargetRefreshTimers[soldier] -= Time.deltaTime;
+        prototypeAttackTimers[soldier] -= Time.deltaTime;
+    }
+
+    SoldierController FindBestPrototypeTarget(
+        SoldierController soldier,
+        SoldierController currentTarget)
+    {
+        if (soldier == null || targetSquad == null || targetSquad.Roster == null)
+            return null;
+
+        SoldierController bestTarget = null;
+        float bestScore = float.PositiveInfinity;
+
+        foreach (SoldierController enemy in targetSquad.Roster.Soldiers)
+        {
+            if (!IsValidPrototypeTarget(enemy))
+                continue;
+
+            float distance = Vector3.Distance(
+                Flatten(soldier.transform.position),
+                Flatten(enemy.transform.position));
+
+            int currentAttackers = CountPrototypeAttackers(enemy, soldier);
+
+            float score =
+                distance +
+                currentAttackers * squadCombatProfile.prototypeTargetCrowdingPenalty;
+
+            if (enemy == currentTarget)
+                score -= squadCombatProfile.prototypeCurrentTargetStickinessBonus;
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestTarget = enemy;
+            }
+        }
+
+        return bestTarget;
+    }
+
+    int CountPrototypeAttackers(
+        SoldierController target,
+        SoldierController ignoredSoldier)
+    {
+        if (target == null)
+            return 0;
+
+        int count = 0;
+
+        foreach (KeyValuePair<SoldierController, SoldierController> pair in prototypeTargets)
+        {
+            SoldierController attacker = pair.Key;
+            SoldierController assignedTarget = pair.Value;
+
+            if (attacker == null || attacker == ignoredSoldier || !attacker.IsAlive)
+                continue;
+
+            if (assignedTarget == target)
+                count++;
+        }
+
+        return count;
+    }
+
+    bool IsValidPrototypeTarget(SoldierController target)
+    {
+        return target != null &&
+               target.IsAlive &&
+               target.Squad == targetSquad;
+    }
+
+    void GetPrototypeAttackValues(
+        WeaponProfile weaponProfile,
+        bool isRangedWeapon,
+        out MeleeCombatStats meleeStats,
+        out RangedCombatStats rangedStats,
+        out float attackRange,
+        out float attackInterval,
+        out float stoppingDistance)
+    {
+        meleeStats = weaponProfile != null
+            ? weaponProfile.melee
+            : MeleeCombatStats.Default;
+
+        rangedStats = weaponProfile != null
+            ? weaponProfile.ranged
+            : RangedCombatStats.Default;
+
+        if (isRangedWeapon)
+        {
+            attackRange = Mathf.Max(0.1f, rangedStats.attackRange);
+            attackInterval = Mathf.Max(0.05f, rangedStats.attackInterval);
+            stoppingDistance = Mathf.Max(
+                0.05f,
+                attackRange * squadCombatProfile.prototypeRangedStoppingDistanceMultiplier);
+            return;
+        }
+
+        attackRange = Mathf.Max(
+            0.1f,
+            weaponProfile != null
+                ? meleeStats.attackRange
+                : squadCombatProfile.prototypeFallbackMeleeAttackRange);
+
+        attackInterval = Mathf.Max(
+            0.05f,
+            weaponProfile != null
+                ? meleeStats.attackInterval
+                : squadCombatProfile.prototypeFallbackMeleeAttackInterval);
+
+        stoppingDistance = Mathf.Max(
+            0.05f,
+            attackRange * squadCombatProfile.prototypeMeleeStoppingDistanceMultiplier);
+    }
+
+    Vector3 GetRangedMoveDestination(
+        SoldierController soldier,
+        SoldierController target,
+        float attackRange)
+    {
+        Vector3 toTarget = target.transform.position - soldier.transform.position;
+        toTarget.y = 0f;
+
+        if (toTarget.sqrMagnitude <= 0.0001f)
+            return soldier.transform.position;
+
+        Vector3 directionToTarget = toTarget.normalized;
+
+        float preferredDistance = Mathf.Max(
+            0.1f,
+            attackRange * squadCombatProfile.prototypeRangedPreferredDistanceMultiplier);
+
+        return target.transform.position - directionToTarget * preferredDistance;
+    }
+
+    void TryPrototypeAttack(
+        SoldierController attacker,
+        SoldierController target,
+        WeaponProfile weaponProfile,
+        MeleeCombatStats meleeStats,
+        RangedCombatStats rangedStats,
+        bool isRangedWeapon,
+        float attackInterval)
+    {
+        if (attacker == null || target == null)
+            return;
+
+        bool beganAttack = attacker.TryBeginAction(SoldierActionState.Attack);
+
+        if (!beganAttack)
+            return;
+
+        prototypeAttackTimers[attacker] = Mathf.Max(0.05f, attackInterval);
+
+        if (isRangedWeapon)
+        {
+            BeginPrototypeRangedAttack(
+                attacker,
+                target,
+                weaponProfile,
+                rangedStats);
+            return;
+        }
+
+        ResolvePrototypeMeleeHit(
+            attacker,
+            target,
+            meleeStats);
+    }
+
+    void ResolvePrototypeMeleeHit(
+        SoldierController attacker,
+        SoldierController target,
+        MeleeCombatStats meleeStats)
+    {
+        if (attacker == null || target == null || target.Health == null)
+            return;
+
+        CombatDefenseStats defenderStats = target.Data != null
+            ? target.Data.defense
+            : CombatDefenseStats.Default;
+
+        DamageResult damageResult = CombatResolver.ResolveMeleeHit(
+            meleeStats,
+            defenderStats);
+
+        if (!damageResult.didHit)
+            return;
+
+        target.Health.TakeDamage(
+            damageResult.normalDamage,
+            damageResult.armorPiercingDamage);
+
+        if (target.IsAlive)
+            target.TryBeginAction(SoldierActionState.HitReact);
+    }
+
+    void BeginPrototypeRangedAttack(
+        SoldierController attacker,
+        SoldierController target,
+        WeaponProfile weaponProfile,
+        RangedCombatStats rangedStats)
+    {
+        if (attacker == null || target == null)
+            return;
+
+        if (weaponProfile != null && rangedStats.projectilePrefab != null)
+        {
+            prototypePendingProjectileTargets[attacker] = target;
+            prototypePendingProjectileWeapons[attacker] = weaponProfile;
+            return;
+        }
+
+        ResolvePrototypeRangedHit(
+            attacker,
+            target,
+            rangedStats);
+    }
+
+    void ResolvePrototypeRangedHit(
+        SoldierController attacker,
+        SoldierController target,
+        RangedCombatStats rangedStats)
+    {
+        if (attacker == null || target == null || target.Health == null)
+            return;
+
+        CombatDefenseStats defenderStats = target.Data != null
+            ? target.Data.defense
+            : CombatDefenseStats.Default;
+
+        DamageResult damageResult = CombatResolver.ResolveRangedHit(
+            rangedStats,
+            defenderStats);
+
+        if (!damageResult.didHit)
+            return;
+
+        target.Health.TakeDamage(
+            damageResult.normalDamage,
+            damageResult.armorPiercingDamage);
+
+        if (target.IsAlive)
+            target.TryBeginAction(SoldierActionState.HitReact);
+    }
+
+    /// Called by SoldierCombat from an animation event bridge.
+    public void ResolveSoldierProjectileRelease(SoldierController attacker)
+    {
+        if (attacker == null)
+            return;
+
+        if (!prototypePendingProjectileTargets.TryGetValue(
+                attacker,
+                out SoldierController target))
+        {
+            return;
+        }
+
+        if (!prototypePendingProjectileWeapons.TryGetValue(
+                attacker,
+                out WeaponProfile weaponProfile))
+        {
+            ClearPendingProjectile(attacker);
+            return;
+        }
+
+        ClearPendingProjectile(attacker);
+
+        if (target == null || !target.IsAlive)
+            return;
+
+        if (weaponProfile == null ||
+            weaponProfile.ranged.projectilePrefab == null)
+            return;
+
+        Transform attackOrigin = attacker.AttackOrigin;
+        Vector3 spawnPosition = attackOrigin != null
+            ? attackOrigin.position
+            : attacker.transform.position;
+
+        Quaternion spawnRotation = attackOrigin != null
+            ? attackOrigin.rotation
+            : attacker.transform.rotation;
+
+        GameObject projectileObject = Instantiate(
+            weaponProfile.ranged.projectilePrefab,
+            spawnPosition,
+            spawnRotation);
+
+        ProjectileController projectile =
+            projectileObject.GetComponent<ProjectileController>();
+
+        if (projectile == null)
+        {
+            Debug.LogWarning(
+                $"{name}: Ranged projectile prefab has no ProjectileController.",
+                projectileObject);
+            return;
+        }
+
+        projectile.Initialize(
+            attacker,
+            target,
+            weaponProfile);
+    }
+
+    /// Melee is currently resolved immediately when the attack begins.
+    /// This hook exists so SoldierCombat can safely forward animation events.
+    public void ResolveSoldierAttackImpact(SoldierController attacker)
+    {
+        // Intentionally empty for this PrototypeMelee base.
+    }
+
+    /// Called by SoldierCombat when the soldier action ends.
+    public void HandleSoldierActionCompleted(
+        SoldierController soldier,
+        SoldierActionState completedAction)
+    {
+        if (completedAction == SoldierActionState.Attack)
+            ClearPendingProjectile(soldier);
+    }
+
+    /// Called by SoldierCombat when an action is interrupted.
+    public void HandleSoldierActionInterrupted(
+        SoldierController soldier,
+        SoldierActionState interruptedAction,
+        SoldierActionState newAction)
+    {
+        if (interruptedAction == SoldierActionState.Attack)
+            ClearPendingProjectile(soldier);
+    }
+
+    void ClearPendingProjectile(SoldierController soldier)
+    {
+        if (soldier == null)
+            return;
+
+        prototypePendingProjectileTargets.Remove(soldier);
+        prototypePendingProjectileWeapons.Remove(soldier);
+    }
+
+    void ClearPrototypeRuntimeState(bool clearAttackTimers)
+    {
+        prototypeTargets.Clear();
+        prototypeTargetRefreshTimers.Clear();
+        prototypePendingProjectileTargets.Clear();
+        prototypePendingProjectileWeapons.Clear();
+
+        if (clearAttackTimers)
+            prototypeAttackTimers.Clear();
+    }
+
+    #endregion
+
+    #region Engagement Flow
+
     void TickScan()
     {
         scanTimer -= Time.deltaTime;
@@ -271,66 +787,62 @@ public class SquadCombat : MonoBehaviour
         if (scanTimer > 0f)
             return;
 
-        scanTimer = squadCombatProfile.autoTargetScanInterval;
+        scanTimer = Mathf.Max(0.01f, squadCombatProfile.autoTargetScanInterval);
 
         if (TryFindTarget(out SquadController target))
         {
-            SquadEngagementReason scanEngagementType = squad != null && squad.State == SquadState.AttackMoving
-                ? SquadEngagementReason.AttackMoveContact
-                : SquadEngagementReason.PassiveContact;
+            SquadEngagementReason scanEngagementType =
+                squad != null && squad.State == SquadState.AttackMoving
+                    ? SquadEngagementReason.AttackMoveContact
+                    : SquadEngagementReason.PassiveContact;
 
             OrderAttack(target, scanEngagementType);
         }
     }
 
-    /// Enters the intermediate attack-approach state.
     void BeginApproachingCombat()
     {
         ClearSoldierCombatStates();
 
-        squad.SetState(SquadState.ApproachingCombat);
+        if (squad != null)
+            squad.SetState(SquadState.ApproachingCombat);
 
         MoveTowardCombatTarget();
     }
 
-    /// Starts melee engagement for this squad.
-    /// The target is optionally notified so it also enters combat.
-    /// Combat homes are remembered as cohesion references, not strict reserve slots.
     void BeginEngagement(bool notifyTarget)
     {
         if (targetSquad == null)
             return;
 
         movement.OrderStop();
-
-        _currentCombatStyle = ResolveCombatStyle();
+        currentCombatStyle = ResolveCombatStyle();
         combatContactDirection = GetContactDirection();
 
-        BuildCombatHomePositions();
-        RefreshCombatEligibleSoldiers();
+        ClearPrototypeRuntimeState(clearAttackTimers: false);
 
-        targetRefreshTimer = 0f;
-
-        squad.SetState(SquadState.InCombat);
+        if (squad != null)
+            squad.SetState(SquadState.InCombat);
 
         if (notifyTarget && targetSquad.Combat != null)
             targetSquad.Combat.ReceiveEngagementRequest(squad);
     }
 
-    /// Moves the squad formation toward a point near the target squad.
-    /// This is approach movement only, not melee pressure movement.
     void MoveTowardCombatTarget()
     {
-        if (targetSquad == null)
+        if (targetSquad == null || movement == null)
             return;
 
-        Vector3 fromTargetToMe =
-            transform.position - targetSquad.transform.position;
+        Vector3 fromTargetToMe = transform.position - targetSquad.transform.position;
+        fromTargetToMe.y = 0f;
+
+        if (fromTargetToMe.sqrMagnitude <= 0.0001f)
+            fromTargetToMe = -(movement != null ? movement.DesiredFacing : transform.forward);
 
         fromTargetToMe.y = 0f;
 
-        if (fromTargetToMe == Vector3.zero)
-            fromTargetToMe = -targetSquad.transform.forward;
+        if (fromTargetToMe.sqrMagnitude <= 0.0001f)
+            fromTargetToMe = -Vector3.forward;
 
         fromTargetToMe.Normalize();
 
@@ -345,425 +857,29 @@ public class SquadCombat : MonoBehaviour
             facing);
     }
 
-    /// Marks every living soldier as a combat participant for the current combat style.
-    /// FormationMelee and RangedLine use frozen formation combat homes.
-    /// DEPRECIATED LooseMelee ignores old formation slots and uses dynamic personal combat anchors.
-    void RefreshCombatEligibleSoldiers()
+    void EndCombatAndReform()
     {
-        activeCombatSoldiers.Clear();
+        ClearTargets();
 
-        if (targetSquad == null || roster == null)
+        approachRefreshTimer = 0f;
+        scanTimer = 0f;
+
+        if (squad == null || roster == null || !roster.HasLivingSoldiers)
             return;
 
-        _currentCombatStyle = ResolveCombatStyle();
+        if (formation != null)
+            formation.Rebuild();
 
-        RefreshFormationOrRangedCombatEligibleSoldiers();
+        if (movement != null)
+            movement.BeginReform(recenterFromSoldiers: true);
+
+        squad.SetState(SquadState.Reforming);
     }
 
-    /// Refreshes roles for FormationMelee and RangedLine.
-    /// These styles intentionally preserve the current combat-home/frontness model.
-    void RefreshFormationOrRangedCombatEligibleSoldiers()
-    {
-        if (combatHomePositions.Count == 0)
-            BuildFormationCombatHomePositions();
+    #endregion
 
-        GetCombatHomeFrontScoreRange(
-            out float rearScore,
-            out float frontScore);
+    #region Validation / Targeting Helpers
 
-        bool isRangedLine = IsRangedCombatStyle();
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive)
-                continue;
-
-            bool wasAlreadyInCombatRole =
-                soldier.Role == SoldierRole.Frontline ||
-                soldier.Role == SoldierRole.Support ||
-                soldier.Role == SoldierRole.Replacing ||
-                soldier.Role == SoldierRole.Ranged;
-
-            Vector3 home = GetCombatHomeForSoldier(soldier);
-            float frontness = GetCombatHomeFrontness(home, rearScore, frontScore);
-
-            if (isRangedLine)
-            {
-                soldier.SetCombatRole(SoldierRole.Ranged);
-            }
-            else
-            {
-                soldier.SetCombatRole(
-                    frontness >= 0.55f
-                        ? SoldierRole.Frontline
-                        : SoldierRole.Support);
-            }
-
-            if (!wasAlreadyInCombatRole)
-                soldier.Combat?.RandomizeInitialAttackTimer(0.75f);
-
-            activeCombatSoldiers.Add(soldier);
-        }
-    }
-    
-    /// Ticks every living soldier during active combat by routing to a clear style path.
-    void TickCombatHomeSoldiers()
-    {
-        if (targetSquad == null || roster == null)
-            return;
-
-        _currentCombatStyle = ResolveCombatStyle();
-
-        // RANGED COMBAT
-        if (IsRangedCombatStyle())
-        {
-            TickRangedLineCombatSoldiers();
-            return;
-        }
-
-        // MELEE COMBAT
-        TickFormationMeleeCombatSoldiers();
-    }
-
-    /// FormationMelee is the current disciplined slot/home pressure path.
-    /// Soldiers use formation-derived combat homes, frontness, support/frontline roles,
-    /// and soft engagement budgets.
-    void TickFormationMeleeCombatSoldiers()
-    {
-        GetCombatHomeFrontScoreRange(
-            out float rearScore,
-            out float frontScore);
-
-        int activeEngagementBudget = GetActiveEngagementBudget();
-        int activeEngagementCount = CountActiveAttackers();
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive || soldier.Combat == null)
-                continue;
-
-            Vector3 home = GetCombatHomeForSoldier(soldier);
-            float frontness = GetCombatHomeFrontness(home, rearScore, frontScore);
-
-            float freeEngageDistance = GetFormationMeleeFreeEngageDistance(frontness);
-            float disengageDistance = freeEngageDistance + squadCombatProfile.formationMeleeDisengageExtraDistance;
-            float forceRejoinDistance = freeEngageDistance + squadCombatProfile.formationMeleeForceRejoinExtraDistance;
-
-            Vector3 pressureGoal = GetFormationMeleePressureGoal(
-                home,
-                freeEngageDistance);
-
-            bool canStartNewEngagement = CanSoldierStartNewEngagement(
-                soldier,
-                frontness,
-                activeEngagementCount,
-                activeEngagementBudget);
-
-            if (canStartNewEngagement && !soldier.Combat.HasTarget)
-                activeEngagementCount++;
-
-            soldier.Combat.TickFormationMelee(
-                targetSquad,
-                home,
-                pressureGoal,
-                freeEngageDistance,
-                disengageDistance,
-                forceRejoinDistance,
-                squadCombatProfile.allStylesSoldierLocalTargetScanRange,
-                squadCombatProfile.allStylesSoldierCombatMoveSpeedMultiplier,
-                squadCombatProfile.formationMeleePressureStoppingDistance,
-                canStartNewEngagement);
-        }
-    }
-
-    /// RangedLine keeps formation combat homes but uses missile range preferences.
-    void TickRangedLineCombatSoldiers()
-    {
-        GetCombatHomeFrontScoreRange(
-            out float rearScore,
-            out float frontScore);
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive || soldier.Combat == null)
-                continue;
-
-            Vector3 home = GetCombatHomeForSoldier(soldier);
-            float freeEngageDistance = squadCombatProfile.rangedSoldierHomeFreeEngageDistance;
-            float disengageDistance = freeEngageDistance + squadCombatProfile.formationMeleeDisengageExtraDistance;
-            float forceRejoinDistance = freeEngageDistance + squadCombatProfile.formationMeleeForceRejoinExtraDistance;
-
-            Vector3 pressureGoal = GetRangedLinePressureGoal(
-                home,
-                freeEngageDistance);
-
-            soldier.Combat.TickRangedLine(
-                targetSquad,
-                home,
-                pressureGoal,
-                freeEngageDistance,
-                disengageDistance,
-                forceRejoinDistance,
-                squadCombatProfile.allStylesSoldierLocalTargetScanRange,
-                squadCombatProfile.allStylesSoldierCombatMoveSpeedMultiplier,
-                squadCombatProfile.rangedPressureStoppingDistance,
-                canStartNewEngagement: true,
-                preferredAttackDistance: GetEffectivePreferredEngagementRange());
-        }
-    }
-
-    int GetActiveEngagementBudget()
-    {
-        if (!squadCombatProfile.useSoftEngagementBudget)
-            return int.MaxValue;
-
-        int livingCount = roster != null ? roster.LivingCount : 0;
-
-        if (livingCount <= 0)
-            return 0;
-
-        int ratioCount = Mathf.CeilToInt(
-            livingCount * Mathf.Clamp01(squadCombatProfile.activeEngagementRatio));
-
-        return Mathf.Clamp(
-            Mathf.Max(squadCombatProfile.activeEngagementMinCount, ratioCount),
-            1,
-            livingCount);
-    }
-
-    int CountActiveAttackers()
-    {
-        if (roster == null)
-            return 0;
-
-        int count = 0;
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive || soldier.Combat == null)
-                continue;
-
-            if (soldier.Combat.IsActiveAttacker)
-                count++;
-        }
-
-        return count;
-    }
-
-    bool CanSoldierStartNewEngagement(
-        SoldierController soldier,
-        float frontness,
-        int activeEngagementCount,
-        int activeEngagementBudget)
-    {
-        if (!squadCombatProfile.useSoftEngagementBudget)
-            return true;
-
-        if (soldier == null || soldier.Combat == null)
-            return false;
-
-        // Existing combat locks are allowed to finish their rhythm.
-        // The budget only gates fresh target acquisition.
-        if (soldier.Combat.HasTarget)
-            return true;
-
-        if (activeEngagementCount < activeEngagementBudget)
-            return true;
-
-        bool isFrontlineHome = frontness >= squadCombatProfile.activeEngagementFrontlineThreshold;
-
-        if (!isFrontlineHome)
-            return false;
-
-        return activeEngagementCount <
-               activeEngagementBudget + Mathf.Max(0, squadCombatProfile.activeEngagementFrontlineOverflow);
-    }
-
-    /// Builds combat state for the current style.
-    /// FormationMelee/RangedLine use formation-derived combat homes.
-    /// DEPRECIATED LooseMelee uses dynamic anchors seeded from current soldier positions.
-    void BuildCombatHomePositions()
-    {
-        BuildFormationCombatHomePositions();
-    }
-
-    /// Freezes each living soldier's combat home at engagement start for
-    /// FormationMelee and RangedLine.
-    void BuildFormationCombatHomePositions()
-    {
-        combatHomePositions.Clear();
-
-        if (roster == null)
-            return;
-
-        formation.UpdateSlots(
-            transform.position,
-            movement.DesiredFacing);
-
-        foreach (SoldierController soldier in roster.Soldiers)
-        {
-            if (soldier == null || !soldier.IsAlive)
-                continue;
-
-            Vector3 home;
-
-            if (formation.TryGetSlotForSoldier(soldier, out home))
-                combatHomePositions[soldier] = home;
-            else
-                combatHomePositions[soldier] = soldier.transform.position;
-        }
-    }
-
-    /// Gets a soldier's combat home / cohesion origin.
-    Vector3 GetCombatHomeForSoldier(SoldierController soldier)
-    {
-        if (soldier == null)
-            return transform.position;
-
-        if (combatHomePositions.TryGetValue(soldier, out Vector3 home))
-            return home;
-
-        return soldier.transform.position;
-    }
-
-    /// Gets the current direction from this squad toward the target squad.
-    Vector3 GetContactDirection()
-    {
-        if (targetSquad == null)
-            return movement != null ? movement.DesiredFacing : transform.forward;
-
-        Vector3 direction = targetSquad.transform.position - transform.position;
-        direction.y = 0f;
-
-        if (direction == Vector3.zero)
-            direction = movement != null ? movement.DesiredFacing : transform.forward;
-
-        direction.y = 0f;
-
-        if (direction == Vector3.zero)
-            return Vector3.forward;
-
-        return direction.normalized;
-    }
-
-    /// Finds rear/front scores across combat homes along the contact direction.
-    void GetCombatHomeFrontScoreRange(
-        out float rearScore,
-        out float frontScore)
-    {
-        rearScore = float.PositiveInfinity;
-        frontScore = float.NegativeInfinity;
-
-        if (combatHomePositions.Count == 0)
-        {
-            rearScore = 0f;
-            frontScore = 0f;
-            return;
-        }
-
-        foreach (KeyValuePair<SoldierController, Vector3> pair in combatHomePositions)
-        {
-            SoldierController soldier = pair.Key;
-
-            if (soldier == null || !soldier.IsAlive)
-                continue;
-
-            float score = Vector3.Dot(
-                pair.Value - transform.position,
-                combatContactDirection);
-
-            if (score < rearScore)
-                rearScore = score;
-
-            if (score > frontScore)
-                frontScore = score;
-        }
-
-        if (float.IsPositiveInfinity(rearScore) || float.IsPositiveInfinity(frontScore))
-        {
-            rearScore = 0f;
-            frontScore = 0f;
-        }
-    }
-
-    /// Returns 0 for rearmost combat home and 1 for frontmost combat home.
-    float GetCombatHomeFrontness(
-        Vector3 home,
-        float rearScore,
-        float frontScore)
-    {
-        float range = frontScore - rearScore;
-
-        if (range <= 0.01f)
-            return 1f;
-
-        float score = Vector3.Dot(
-            home - transform.position,
-            combatContactDirection);
-
-        return Mathf.Clamp01(
-            Mathf.InverseLerp(rearScore, frontScore, score));
-    }
-
-    /// ENGAGE allows more freedom. HOLD keeps the FormationMelee body tighter.
-    float GetFormationMeleeFreeEngageDistance(float frontness)
-    {
-        float distance = Mathf.Lerp(
-            squadCombatProfile.formationMeleeRearFreeEngageDistance,
-            squadCombatProfile.formationMeleeFrontFreeEngageDistance,
-            frontness);
-
-        switch (squad.Stance)
-        {
-            case SquadStance.HoldPosition:
-                return distance * 0.65f;
-
-            default:
-                return distance;
-        }
-    }
-    
-    /// Builds a FormationMelee pressure goal from the assigned formation combat home.
-    Vector3 GetFormationMeleePressureGoal(
-        Vector3 home,
-        float freeEngageDistance)
-    {
-        float basePressureDistance =
-            squadCombatProfile.formationMeleePressureDistance * GetPressureMultiplier();
-
-        float pressureDistance = Mathf.Min(
-            basePressureDistance,
-            Mathf.Max(0f, freeEngageDistance));
-
-        return home + combatContactDirection * pressureDistance;
-    }
-
-    /// Builds a RangedLine pressure goal from the assigned firing-line home.
-    Vector3 GetRangedLinePressureGoal(
-        Vector3 home,
-        float freeEngageDistance)
-    {
-        float pressureDistance = Mathf.Min(
-            squadCombatProfile.rangedPressureDistance,
-            Mathf.Max(0f, freeEngageDistance));
-
-        return home + combatContactDirection * pressureDistance;
-    }
-    
-
-    float GetPressureMultiplier()
-    {
-        switch (squad.Stance)
-        {
-            case SquadStance.HoldPosition:
-                return 0.65f;
-
-            default:
-                return 1f;
-        }
-    }
-
-    /// Clears local combat state on every soldier in this squad.
     void ClearSoldierCombatStates()
     {
         if (roster == null)
@@ -776,80 +892,38 @@ public class SquadCombat : MonoBehaviour
 
             soldier.SetCombatRole(SoldierRole.None);
             soldier.ClearCombatTarget();
-
-            if (soldier.Combat != null)
-                soldier.Combat.ClearCombat();
+            soldier.Combat?.ClearCombat();
         }
     }
 
-    /// Checks whether this squad can start an attack against a target.
     bool CanAttack(SquadController target)
     {
-        if (target == null)
+        if (target == null || target == squad)
             return false;
 
-        if (target == squad)
+        if (squad == null || !squad.IsInitialized)
             return false;
 
         if (!target.IsInitialized)
             return false;
 
-        if (target.Roster == null || !target.Roster.HasLivingSoldiers)
-            return false;
-
-        if (squad == null || !squad.IsInitialized)
-            return false;
-
         if (roster == null || !roster.HasLivingSoldiers)
+            return false;
+
+        if (target.Roster == null || !target.Roster.HasLivingSoldiers)
             return false;
 
         if (squad.Faction == null || target.Faction == null)
             return false;
 
-        if (squad.Faction.teamId == target.Faction.teamId)
-            return false;
-
-        // if (squad.Stance == SquadStance.NoAttack) // DEPRECIATED
-        //     return false;
-
-        return true;
+        return squad.Faction.teamId != target.Faction.teamId;
     }
 
-    /// Checks whether this squad can respond to a nearby melee engagement.
-    /// This intentionally ignores NoAttack, because NoAttack means "do not initiate"
-    /// for now, not "stand still while being killed."
     bool CanRespondToEngagement(SquadController attacker)
     {
-        if (attacker == null)
-            return false;
-
-        if (attacker == squad)
-            return false;
-
-        if (!attacker.IsInitialized)
-            return false;
-
-        if (attacker.Roster == null || !attacker.Roster.HasLivingSoldiers)
-            return false;
-
-        if (squad == null || !squad.IsInitialized)
-            return false;
-
-        if (roster == null || !roster.HasLivingSoldiers)
-            return false;
-
-        if (squad.Faction == null || attacker.Faction == null)
-            return false;
-
-        if (squad.Faction.teamId == attacker.Faction.teamId)
-            return false;
-
-        return true;
+        return CanAttack(attacker);
     }
 
-    /// Checks whether squads are close enough to begin combat.
-    /// FormationMelee use authored tactical contact ranges. RangedLine derives this
-    /// from WeaponProfile.ranged.attackRange so archers stop at missile range.
     bool IsCloseEnoughToStartEngagement(SquadController target)
     {
         if (target == null)
@@ -860,7 +934,6 @@ public class SquadCombat : MonoBehaviour
             target.transform.position) <= GetEffectiveCombatStartRange();
     }
 
-    /// Checks whether squads have drifted too far apart to remain in combat.
     bool IsWithinCombatBreakRange(SquadController target)
     {
         if (target == null)
@@ -871,25 +944,17 @@ public class SquadCombat : MonoBehaviour
             target.transform.position) <= GetEffectiveCombatBreakRange();
     }
 
-    /// Returns whether this squad should auto-scan for enemies.
     bool ShouldScan()
     {
-        if (!squadCombatProfile.autoTargetScanEnabled)
+        if (squadCombatProfile == null || !squadCombatProfile.autoTargetScanEnabled)
             return false;
 
-        if (squad == null)
-            return false;
-
-        // if (squad.Stance == SquadStance.NoAttack)
-        //     return false;
-
-        if (roster == null || !roster.HasLivingSoldiers)
+        if (squad == null || roster == null || !roster.HasLivingSoldiers)
             return false;
 
         return true;
     }
 
-    /// Finds the closest valid enemy squad inside this squad's scan range.
     bool TryFindTarget(out SquadController bestTarget)
     {
         bestTarget = null;
@@ -897,24 +962,24 @@ public class SquadCombat : MonoBehaviour
         if (SquadManager.Instance == null)
             return false;
 
-        float range = GetScanRange();
+        float range = GetEffectiveScanRange();
 
         if (range <= 0f)
             return false;
 
-        float bestDistance = range * range;
+        float bestDistanceSqr = range * range;
 
         foreach (SquadController candidate in SquadManager.Instance.Squads)
         {
             if (!CanAttack(candidate))
                 continue;
 
-            float distance = Vector3.SqrMagnitude(
+            float distanceSqr = Vector3.SqrMagnitude(
                 candidate.transform.position - transform.position);
 
-            if (distance < bestDistance)
+            if (distanceSqr < bestDistanceSqr)
             {
-                bestDistance = distance;
+                bestDistanceSqr = distanceSqr;
                 bestTarget = candidate;
             }
         }
@@ -922,19 +987,17 @@ public class SquadCombat : MonoBehaviour
         return bestTarget != null;
     }
 
-    /// Gets stance-based auto-scan range.
-    float GetScanRange()
-    {
-        return GetEffectiveScanRange();
-    }
+    #endregion
+
+    #region Range / Style Helpers
 
     SquadCombatStyle ResolveCombatStyle()
     {
         if (data == null)
-            return SquadCombatStyle.FormationMelee;
+            return SquadCombatStyle.PrototypeMelee;
 
-        if (data.defaultCombatStyle != SquadCombatStyle.FormationMelee)
-            return data.defaultCombatStyle;
+        if (data.defaultCombatStyle == SquadCombatStyle.RangedLine)
+            return SquadCombatStyle.RangedLine;
 
         WeaponProfile weaponProfile = GetSquadWeaponProfile();
 
@@ -944,7 +1007,7 @@ public class SquadCombat : MonoBehaviour
         if (data.category == SquadCategory.Ranged)
             return SquadCombatStyle.RangedLine;
 
-        return SquadCombatStyle.FormationMelee;
+        return SquadCombatStyle.PrototypeMelee;
     }
 
     bool IsRangedCombatStyle()
@@ -957,30 +1020,16 @@ public class SquadCombat : MonoBehaviour
         if (squad == null || squadCombatProfile == null)
             return 0f;
 
-        float baseRange = 0f;
-
-        switch (squad.Stance)
-        {
-            case SquadStance.EngageFreely:
-                baseRange = squadCombatProfile.engageStanceAutoTargetScanRange;
-                break;
-
-            case SquadStance.HoldPosition:
-                baseRange = squadCombatProfile.holdStanceAutoTargetScanRange;
-                break;
-        }
+        float baseRange = squad.Stance == SquadStance.Hold
+            ? squadCombatProfile.holdStanceAutoTargetScanRange
+            : squadCombatProfile.engageStanceAutoTargetScanRange;
 
         if (!IsRangedCombatStyle() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
             return baseRange;
 
-        // Do we really need this? (hard coded values)
-        float padding = squad.Stance == SquadStance.HoldPosition
-            ? 0f //squadCombatProfile.rangedHoldStanceScanRangePadding
-            : 4f; //squadCombatProfile.rangedEngageStanceScanRangePadding;
-
         return Mathf.Max(
             baseRange,
-            GetSquadWeaponAttackRange() + padding);
+            GetSquadWeaponAttackRange() + squadCombatProfile.rangedScanRangePadding);
     }
 
     float GetEffectiveCombatStartRange()
@@ -990,30 +1039,27 @@ public class SquadCombat : MonoBehaviour
 
         return Mathf.Max(
             0.1f,
-            GetSquadWeaponAttackRange() * squadCombatProfile.rangedCombatStartRangeFactor);
+            GetSquadWeaponAttackRange() * squadCombatProfile.rangedCombatStartRangeMultiplier);
     }
 
-    float GetEffectivePreferredEngagementRange()
+    float GetEffectiveApproachStopDistance()
     {
         if (!IsRangedCombatStyle() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
             return Mathf.Max(0f, squadCombatProfile.defaultApproachStopDistance);
 
         return Mathf.Max(
             0.1f,
-            GetSquadWeaponAttackRange() * squadCombatProfile.rangedPreferredRangeFactor);
-    }
-
-    float GetEffectiveApproachStopDistance()
-    {
-        return GetEffectivePreferredEngagementRange();
+            GetSquadWeaponAttackRange() * squadCombatProfile.rangedPreferredRangeMultiplier);
     }
 
     float GetEffectiveCombatBreakRange()
     {
         if (!IsRangedCombatStyle() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
+        {
             return Mathf.Max(
                 squadCombatProfile.defaultCombatStartRange,
                 squadCombatProfile.defaultCombatBreakRange);
+        }
 
         return Mathf.Max(
             GetEffectiveCombatStartRange(),
@@ -1025,7 +1071,9 @@ public class SquadCombat : MonoBehaviour
         WeaponProfile weaponProfile = GetSquadWeaponProfile();
 
         if (weaponProfile == null)
-            return 1.5f;
+            return squadCombatProfile != null
+                ? squadCombatProfile.prototypeFallbackMeleeAttackRange
+                : 1.5f;
 
         return weaponProfile.weaponKind == WeaponKind.Ranged
             ? Mathf.Max(0.1f, weaponProfile.ranged.attackRange)
@@ -1040,25 +1088,42 @@ public class SquadCombat : MonoBehaviour
         return data.soldierData.weaponProfile;
     }
 
-    /// Ends combat and tells the squad to reform.
-    /// Survivors return to the normal Line formation after combat.
-    void EndCombatAndReform()
+    WeaponProfile GetWeaponProfile(SoldierController soldier)
     {
-        ClearTargets();
-
-        approachRefreshTimer = 0f;
-        targetRefreshTimer = 0f;
-        scanTimer = 0f;
-
-        if (squad == null || roster == null || !roster.HasLivingSoldiers)
-            return;
-
-        if (formation != null)
-            formation.Rebuild();
-
-        if (movement != null)
-            movement.BeginReform(recenterFromSoldiers: true);
-
-        squad.SetState(SquadState.Reforming);
+        return soldier != null && soldier.Data != null
+            ? soldier.Data.weaponProfile
+            : null;
     }
+
+    bool IsRangedWeapon(WeaponProfile weaponProfile)
+    {
+        return weaponProfile != null && weaponProfile.weaponKind == WeaponKind.Ranged;
+    }
+
+    Vector3 GetContactDirection()
+    {
+        if (targetSquad == null)
+            return movement != null ? movement.DesiredFacing : transform.forward;
+
+        Vector3 direction = targetSquad.transform.position - transform.position;
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+            direction = movement != null ? movement.DesiredFacing : transform.forward;
+
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+            return Vector3.forward;
+
+        return direction.normalized;
+    }
+
+    Vector3 Flatten(Vector3 value)
+    {
+        value.y = 0f;
+        return value;
+    }
+
+    #endregion
 }

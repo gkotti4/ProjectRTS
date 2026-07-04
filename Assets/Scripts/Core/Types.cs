@@ -38,8 +38,7 @@ public enum SquadCategory
 
 public enum SquadCombatStyle
 {
-    FormationMelee = 0,
-    // LooseMelee, DEPRECIATED
+    PrototypeMelee = 0,
     RangedLine = 2,
 }
 
@@ -80,8 +79,8 @@ public enum SquadMoveMode
 
 public enum SquadStance
 {
-    EngageFreely,
-    HoldPosition,
+    Engage, // TODO: Rename to Chase? Free? EngageFreely? Loose Combat?
+    Hold,
     // StandGround,
     // NoAttack
 }
@@ -158,7 +157,6 @@ public enum CommandType
     // Attack,
     AttackMove,
     // Patrol,
-    // HoldPosition,
 
     // Worker
     Build=1,

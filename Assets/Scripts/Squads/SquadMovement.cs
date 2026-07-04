@@ -529,9 +529,13 @@ public class SquadMovement : MonoBehaviour
     {
         pathDirection.y = 0f;
 
+        Vector3 finalFacing = ResolveFacing(finalDestination);
+        
+        
+        
         Vector3 travelFacing = pathDirection.sqrMagnitude > 0.0001f
             ? pathDirection.normalized
-            : ResolveFacing(finalDestination);
+            : finalFacing;
 
         travelFacing = NormalizeFacing(travelFacing);
 

@@ -26,6 +26,7 @@ using UnityEngine.AI;
 [RequireComponent(typeof(SoldierHealth))]
 [RequireComponent(typeof(SoldierMotor))]
 [RequireComponent(typeof(SoldierCombat))]
+[RequireComponent(typeof(SoldierContactSensor))] // SESSION: PROTOTYPE COMBAT
 
 public class SoldierController : MonoBehaviour
 {
@@ -37,6 +38,7 @@ public class SoldierController : MonoBehaviour
     public SoldierRole Role { get; private set; } = SoldierRole.None;
     public SoldierController CombatTarget { get; private set; }
     public SoldierCombat Combat { get; private set; }
+    public SoldierContactSensor ContactSensor { get; private set; }
 
     public SoldierHealth Health { get; private set; }
     public SoldierMotor Motor { get; private set; }
@@ -89,6 +91,7 @@ public class SoldierController : MonoBehaviour
         Motor = GetComponent<SoldierMotor>();
         SoldierAnimator = GetComponentInChildren<SoldierAnimator>();
         Combat = GetComponent<SoldierCombat>();
+        ContactSensor = GetComponent<SoldierContactSensor>();
         SelectionVisual = GetComponentInChildren<SoldierSelectionVisualUI>();
 
         SetSelectionVisual(false);

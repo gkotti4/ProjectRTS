@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -9,16 +8,13 @@ using UnityEngine.Serialization;
 ///
 /// ScriptableObject blueprint for a squad type.
 /// Stores squad identity, icon, category, prefab, soldier composition, default
-/// stance/formation, movement profile, squad combat profile, soldier combat profile,
-/// morale data, and available command set.
+/// stance/formation, movement profile, squad combat profile, morale data, and
+/// available command set.
 ///
-/// This data defines what a squad is. Runtime systems read this data but should
-/// keep behavior logic in components rather than hardcoding unit-specific behavior.
+/// PrototypeMelee cleanup:
+/// SoldierCombatProfile is no longer required because the old formation-combat /
+/// old loose-combat soldier rhythm system has been removed.
 ///
-/// Design role:
-/// Designer-facing squad definition and profile hub.
-///
-
 [CreateAssetMenu(
     fileName = "SquadData_",
     menuName = "Scriptable Objects/Military/SquadData")]
@@ -29,13 +25,14 @@ public class SquadData : ScriptableObject
     public Sprite squadIcon;
     public SquadCategory category;
 
-    [FormerlySerializedAs("defaultCombatBehavior")] [FormerlySerializedAs("combatStyle")] [Header("Combat Behavior")]
-    public SquadCombatStyle defaultCombatStyle = SquadCombatStyle.FormationMelee;
-    
+    [FormerlySerializedAs("defaultCombatBehavior")]
+    [FormerlySerializedAs("combatStyle")]
+    [Header("Combat Behavior")]
+    public SquadCombatStyle defaultCombatStyle = SquadCombatStyle.PrototypeMelee;
+
     [Header("Profiles")]
     public SquadMovementProfile movementProfile;
     public SquadCombatProfile squadCombatProfile;
-    public SoldierCombatProfile soldierCombatProfile;
 
     [Header("Prefab")]
     public SquadController squadPrefab;
@@ -48,16 +45,15 @@ public class SquadData : ScriptableObject
 
     [Tooltip("Future reinforcement/replenishment cap. Not used by current starting spawn logic.")]
     [Min(1)] public int maxSoldierCount = 50;
-    
+
     [Header("Defaults")]
     public SquadFormation defaultFormation = SquadFormation.Line;
-    public SquadStance defaultStance = SquadStance.HoldPosition;
+    public SquadStance defaultStance = SquadStance.Hold;
 
     [Header("Formation")]
     [Min(1)] public int defaultUnitsPerRow = 10;
     [Min(0.1f)] public float defaultSpacing = 2.5f;
 
-    
     [Header("Morale")]
     public MoraleStats morale = MoraleStats.Default;
 
@@ -67,7 +63,6 @@ public class SquadData : ScriptableObject
     public int ResolvedStartingSoldierCount =>
         Mathf.Max(1, startingSoldierCount);
 }
-
 
 [CreateAssetMenu(
     fileName = "SquadCommandSet_",
