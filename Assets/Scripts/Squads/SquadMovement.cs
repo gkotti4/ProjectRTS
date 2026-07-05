@@ -326,7 +326,7 @@ public class SquadMovement : MonoBehaviour
         reformTimer = 0f;
     }
     
-    void ForceRefreshSlotDestinations() // NEW
+    void ForceRefreshSlotDestinations() // NEW-ish, Is this needed?
     {
         if (roster == null)
             return;
@@ -435,11 +435,27 @@ public class SquadMovement : MonoBehaviour
             nextAnchor = AdvanceAnchorAlongPath(moveDistance);
             pathDirection = GetCurrentPathDirectionFrom(nextAnchor);
         }
+        
+        // TODO
+        // Vector3 nextFacing = ResolveTravelFacing(pathDirection);
+        //
+        // float angleToFinalFacing = Vector3.Angle(nextFacing, finalFacing);
+        //
+        // if (angleToFinalFacing <= 100f)
+        // {
+        //     nextFacing = ResolveFinalApproachFacing(
+        //         nextAnchor,
+        //         pathDirection);
+        // }
 
-        Vector3 nextFacing = ResolveFinalApproachFacing(
-            nextAnchor,
-            pathDirection);
-
+        Vector3 nextFacing = ResolveTravelFacing(pathDirection); // NEW CHECK
+        float angleToFinalFacing = Vector3.Angle(nextFacing, finalFacing);
+        if (angleToFinalFacing <= 90f)
+        {
+            nextFacing = finalFacing; // CHECK
+        }
+        
+        
         Vector3 footprintProbeAnchor = nextAnchor;
 
         if (movementProfile.footprintLookAheadDistance > 0f &&
@@ -516,7 +532,37 @@ public class SquadMovement : MonoBehaviour
         CompleteMovementOrReform(allowArrivalStateChange);
     }
     
+    public void SyncRootToLivingSoldierCenter()
+    {
+        if (roster == null || !roster.HasLivingSoldiers)
+            return;
+
+        Vector3 center = GetAverageLivingSoldierPosition();
+
+        if (center == Vector3.zero)
+            return;
+
+        MoveRootToVirtualPoint(center);
+    }
     
+    // NEW: default travel squad rotation to facing
+    Vector3 ResolveTravelFacing(Vector3 pathDirection)
+    {
+        pathDirection.y = 0f;
+
+        if (pathDirection.sqrMagnitude > 0.0001f)
+            return NormalizeFacing(pathDirection);
+
+        Vector3 toDestination = finalDestination - transform.position;
+        toDestination.y = 0f;
+
+        if (toDestination.sqrMagnitude > 0.0001f)
+            return NormalizeFacing(toDestination);
+
+        return desiredFacing;
+    }
+    
+    // Rotates squad to final facing when moving and if in minimum distance from final destination
     /// Resolves the live formation slot facing during formed movement.
     ///
     /// Far from the destination, the formation uses path/travel facing so it marches
@@ -528,14 +574,10 @@ public class SquadMovement : MonoBehaviour
         Vector3 pathDirection)
     {
         pathDirection.y = 0f;
-
-        Vector3 finalFacing = ResolveFacing(finalDestination);
-        
-        
         
         Vector3 travelFacing = pathDirection.sqrMagnitude > 0.0001f
             ? pathDirection.normalized
-            : finalFacing;
+            : ResolveFacing(finalDestination);
 
         travelFacing = NormalizeFacing(travelFacing);
 
@@ -565,20 +607,16 @@ public class SquadMovement : MonoBehaviour
         return NormalizeFacing(blendedFacing);
     }
     
-    void CompleteMovementOrReform(bool allowArrivalStateChange) // new
-    {
-        BeginFinalOrderedReform();
-
-        if (allowArrivalStateChange)
-            squad.SetState(SquadState.Reforming);
-    }
     
     /// Starts the final move-order reform around the exact ordered destination and
     /// final drag-facing.
     ///
-    /// Soldiers are no longer children of the squad root, so moving this virtual root
-    /// to the ordered anchor does not physically drag the soldiers.
-    void BeginFinalOrderedReform()
+    /// Important:
+    /// When final facing changes, soldiers should NOT keep their previous slot indices.
+    /// Keeping old slot indices makes the whole unit appear to rotate/orbit around the
+    /// formation center. Instead, snap the formation facing, then assign each living
+    /// soldier to the nearest slot in the new layout.
+    void CompleteMovementOrReform(bool allowArrivalStateChange) // new
     {
         pathCorners.Clear();
         pathCornerIndex = 0;
@@ -586,15 +624,23 @@ public class SquadMovement : MonoBehaviour
 
         MoveRootToProjectedPoint(finalDestination);
 
-        desiredFacing = finalFacing;
+        desiredFacing = NormalizeFacing(finalFacing);
 
         formation.SetFacing(desiredFacing);
+
+        formation.ReassignLivingSoldiersToNearestSlots( // MUCH BETTER, fixes the weird flipping behavior for large difference in facing values when arriving
+            transform.position,
+            desiredFacing);
+
         formation.UpdateSlots(transform.position, desiredFacing);
 
         ForceRefreshSlotDestinations();
 
         reformTimer = 0f;
+        if (allowArrivalStateChange)
+            squad.SetState(SquadState.Reforming);
     }
+    
     
 
     void BeginLooseMove()
@@ -1208,9 +1254,7 @@ public class SquadMovement : MonoBehaviour
             transform.position);
     }
     
-    #region Squad unable to get to destination during loose move (stuck on obstacle)
     // CHECK virtual squad loose move fix attempt
-
     /// Moves the squad root as a pure virtual point.
     /// No NavMesh projection. No pathfinding. No obstacle collision.
     ///
@@ -1237,7 +1281,6 @@ public class SquadMovement : MonoBehaviour
             Mathf.Max(0f, maxDistance));
     }
     
-    #endregion
 
     Vector3 ProjectPointToNavMesh(
         Vector3 point,

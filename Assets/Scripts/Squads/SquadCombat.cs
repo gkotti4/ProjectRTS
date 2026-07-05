@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 /// -----------------------------------------------------------------------------
 /// SquadCombat
@@ -51,6 +52,24 @@ public class SquadCombat : MonoBehaviour
     private float approachRefreshTimer = 0f;
 
     // -----------------------------------------------------------------------------
+    // Prototype Reserve MVP Tuning
+    // -----------------------------------------------------------------------------
+    // Temporary hardcoded values for the first blocked-reserve experiment.
+    // If this feels good, these can move into SquadCombatProfile later.
+    // NEW: Reserve Movement
+    private const bool prototypeReserveEnabled = true;
+    private const float prototypeReserveBlockedDelay = 1.0f;
+    private const float prototypeReserveSearchInterval = 1.5f;
+    private const float prototypeReserveAnchorSearchRadius = 8f;
+    private const float prototypeReserveBackOffset = 1.0f;
+    private const float prototypeReserveSideOffset = 1.0f;
+    private const float prototypeReserveOccupancyRadius = 0.55f;
+    private const float prototypeReserveNavMeshProjectionRadius = 0.65f;
+    private const float prototypeReserveMinimumTargetGain = 0.35f;
+    private const float prototypeReserveMaxMoveDistance = prototypeReserveAnchorSearchRadius + 0.5f; // was 4.5f
+    private const float prototypeReserveProgressScoreWeight = 1.15f;
+
+    // -----------------------------------------------------------------------------
     // Prototype Runtime State
     // -----------------------------------------------------------------------------
     private readonly Dictionary<SoldierController, SoldierController> prototypeTargets =
@@ -62,11 +81,24 @@ public class SquadCombat : MonoBehaviour
     private readonly Dictionary<SoldierController, float> prototypeAttackTimers =
         new Dictionary<SoldierController, float>();
 
+    private readonly Dictionary<SoldierController, float> prototypeBlockedTimers =
+        new Dictionary<SoldierController, float>();
+
+    private readonly Dictionary<SoldierController, float> prototypeReserveSearchTimers =
+        new Dictionary<SoldierController, float>();
+
+    private readonly Dictionary<SoldierController, Vector3> prototypeReserveDestinations =
+        new Dictionary<SoldierController, Vector3>();
+
+    // NEW: Reserve Movement
+    private NavMeshPath prototypeReservePath; // can't be readonly, navmesh can't be initialized in constructor - must initialize somewhere else.
+
     private readonly Dictionary<SoldierController, SoldierController> prototypePendingProjectileTargets =
         new Dictionary<SoldierController, SoldierController>();
 
     private readonly Dictionary<SoldierController, WeaponProfile> prototypePendingProjectileWeapons =
         new Dictionary<SoldierController, WeaponProfile>();
+    // End Reserve Movement
 
     private bool hasLoggedMissingCombatProfile = false;
 
@@ -79,6 +111,14 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 
+
+
+    void Awake()
+    {
+        prototypeReservePath = new NavMeshPath(); // NEW: Reserve Movement
+    }
+    
+    
     #region Initialization
 
     /// Initializes squad-level combat references.
@@ -246,21 +286,6 @@ public class SquadCombat : MonoBehaviour
     /// Ticks active squad combat.
     public void TickCombat()
     {
-        TickPrototypeCombat();
-    }
-
-    #endregion
-
-    #region Prototype Combat
-
-    /// PrototypeMelee base:
-    /// - no combat homes
-    /// - no formation combat slots
-    /// - no old pressure/old row-scoring/support logic
-    /// - simple target crowding
-    /// - attack, advance, or wait if a friendly body blocks the forward lane
-    void TickPrototypeCombat()
-    {
         if (!HasCombatProfile())
             return;
 
@@ -275,7 +300,7 @@ public class SquadCombat : MonoBehaviour
             EndCombatAndReform();
             return;
         }
-
+        
         if (roster == null ||
             targetSquad == null ||
             targetSquad.Roster == null)
@@ -283,7 +308,27 @@ public class SquadCombat : MonoBehaviour
             EndCombatAndReform();
             return;
         }
+        
+        // Ranged should go here ...
+        
+        
+        TickPrototypeCombat();
+        
+        movement.SyncRootToLivingSoldierCenter(); // NEW: make squad virtually move with combat
+    }
 
+    #endregion
+
+    #region Prototype Combat
+
+    /// PrototypeMelee base:
+    /// - no combat homes
+    /// - no formation combat slots
+    /// - no old pressure/old row-scoring/support logic
+    /// - simple target crowding
+    /// - attack, advance, or wait if a friendly body blocks the forward lane
+    void TickPrototypeCombat()
+    {
         combatContactDirection = GetContactDirection();
 
         foreach (SoldierController soldier in roster.Soldiers)
@@ -398,11 +443,19 @@ public class SquadCombat : MonoBehaviour
             contactSensor.TryGetForwardBlockingFriendly(
                 soldier,
                 desiredMoveDirection,
-                out _))
+                out SoldierController blockingFriendly))
         {
-            soldier.Stop();
+            TickPrototypeBlockedByFriendly(
+                soldier,
+                currentTarget,
+                blockingFriendly,
+                attackRange,
+                stoppingDistance);
+
             return;
         }
+
+        ClearPrototypeReserveState(soldier);
 
         soldier.MoveToCombatPoint(
             moveDestination,
@@ -417,12 +470,483 @@ public class SquadCombat : MonoBehaviour
 
         if (!prototypeAttackTimers.ContainsKey(soldier))
             prototypeAttackTimers[soldier] = 0f;
+
+        if (!prototypeBlockedTimers.ContainsKey(soldier))
+            prototypeBlockedTimers[soldier] = 0f;
+
+        if (!prototypeReserveSearchTimers.ContainsKey(soldier))
+            prototypeReserveSearchTimers[soldier] = 0f;
     }
 
     void TickPrototypeTimers(SoldierController soldier)
     {
         prototypeTargetRefreshTimers[soldier] -= Time.deltaTime;
         prototypeAttackTimers[soldier] -= Time.deltaTime;
+        prototypeReserveSearchTimers[soldier] -= Time.deltaTime;
+    }
+
+    /// Handles the simple MVP reserve behavior for a soldier whose direct combat
+    /// lane is blocked by another friendly body.
+    ///
+    /// The goal is not to rebuild formation combat. The soldier waits briefly,
+    /// then periodically looks for a useful point behind a friendly that is already
+    /// closer to the current enemy target.
+    void TickPrototypeBlockedByFriendly(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        SoldierController blockingFriendly,
+        float attackRange,
+        float stoppingDistance)
+    {
+        if (soldier == null || currentTarget == null)
+            return;
+
+        if (!prototypeReserveEnabled)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        prototypeBlockedTimers[soldier] += Time.deltaTime;
+
+        soldier.FaceToward(currentTarget.transform.position);
+
+        if (prototypeBlockedTimers[soldier] < prototypeReserveBlockedDelay)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        if (TryUseCachedPrototypeReserveDestination(
+                soldier,
+                currentTarget,
+                attackRange,
+                stoppingDistance))
+        {
+            return;
+        }
+
+        if (prototypeReserveSearchTimers[soldier] > 0f)
+        {
+            soldier.Stop();
+            return;
+        }
+
+        prototypeReserveSearchTimers[soldier] = prototypeReserveSearchInterval;
+
+        if (TryFindPrototypeReservePointBehindFriendly(
+                soldier,
+                currentTarget,
+                blockingFriendly,
+                attackRange,
+                out Vector3 reservePoint))
+        {
+            prototypeReserveDestinations[soldier] = reservePoint;
+
+            soldier.MoveToCombatPoint(
+                reservePoint,
+                stoppingDistance,
+                squadCombatProfile.prototypeCombatMoveSpeedMultiplier);
+
+            return;
+        }
+
+        prototypeReserveDestinations.Remove(soldier);
+        soldier.Stop();
+    }
+
+    bool TryUseCachedPrototypeReserveDestination(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        float attackRange,
+        float stoppingDistance)
+    {
+        if (!prototypeReserveDestinations.TryGetValue(
+                soldier,
+                out Vector3 reservePoint))
+        {
+            return false;
+        }
+
+        if (!IsPrototypeReserveDestinationStillUseful(
+                soldier,
+                currentTarget,
+                reservePoint,
+                attackRange))
+        {
+            prototypeReserveDestinations.Remove(soldier);
+            return false;
+        }
+
+        soldier.MoveToCombatPoint(
+            reservePoint,
+            stoppingDistance,
+            squadCombatProfile.prototypeCombatMoveSpeedMultiplier);
+
+        return true;
+    }
+
+    bool TryFindPrototypeReservePointBehindFriendly(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        SoldierController blockingFriendly,
+        float attackRange,
+        out Vector3 bestReservePoint)
+    {
+        bestReservePoint = Vector3.zero;
+
+        if (soldier == null || currentTarget == null || roster == null)
+            return false;
+
+        float bestScore = float.PositiveInfinity;
+        bool foundPoint = false;
+
+        foreach (SoldierController friendly in roster.Soldiers)
+        {
+            if (!IsValidPrototypeReserveAnchor(
+                    soldier,
+                    currentTarget,
+                    friendly,
+                    blockingFriendly))
+            {
+                continue;
+            }
+
+            if (!TryEvaluatePrototypeReserveAnchor(
+                    soldier,
+                    currentTarget,
+                    friendly,
+                    attackRange,
+                    out Vector3 candidatePoint,
+                    out float candidateScore))
+            {
+                continue;
+            }
+
+            if (candidateScore >= bestScore)
+                continue;
+
+            bestScore = candidateScore;
+            bestReservePoint = candidatePoint;
+            foundPoint = true;
+        }
+
+        return foundPoint;
+    }
+
+    bool IsValidPrototypeReserveAnchor(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        SoldierController friendly,
+        SoldierController blockingFriendly)
+    {
+        if (soldier == null || currentTarget == null || friendly == null)
+            return false;
+
+        if (friendly == soldier)
+            return false;
+
+        if (!friendly.IsAlive)
+            return false;
+
+        if (friendly.Squad != squad)
+            return false;
+
+        float soldierTargetDistance = PrototypeFlatDistance(
+            soldier.transform.position,
+            currentTarget.transform.position);
+
+        float friendlyTargetDistance = PrototypeFlatDistance(
+            friendly.transform.position,
+            currentTarget.transform.position);
+
+        bool isBlockingFriendly = friendly == blockingFriendly;
+
+        if (!isBlockingFriendly)
+        {
+            float anchorDistance = PrototypeFlatDistance(
+                soldier.transform.position,
+                friendly.transform.position);
+
+            if (anchorDistance > prototypeReserveAnchorSearchRadius)
+                return false;
+        }
+
+        // Only stand behind friendlies that are already meaningfully ahead.
+        return friendlyTargetDistance <
+               soldierTargetDistance - prototypeReserveMinimumTargetGain;
+    }
+
+    bool TryEvaluatePrototypeReserveAnchor(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        SoldierController friendlyAnchor,
+        float attackRange,
+        out Vector3 bestPoint,
+        out float bestScore)
+    {
+        bestPoint = Vector3.zero;
+        bestScore = float.PositiveInfinity;
+
+        Vector3 awayFromTarget =
+            friendlyAnchor.transform.position - currentTarget.transform.position;
+
+        awayFromTarget.y = 0f;
+
+        if (awayFromTarget.sqrMagnitude <= 0.0001f)
+            return false;
+
+        awayFromTarget.Normalize();
+
+        Vector3 side = new Vector3(
+            awayFromTarget.z,
+            0f,
+            -awayFromTarget.x);
+
+        Vector3 centerPoint =
+            friendlyAnchor.transform.position +
+            awayFromTarget * prototypeReserveBackOffset;
+
+        Vector3 leftPoint =
+            centerPoint + side * prototypeReserveSideOffset;
+
+        Vector3 rightPoint =
+            centerPoint - side * prototypeReserveSideOffset;
+
+        bool foundPoint = false;
+
+        TryReplaceBestPrototypeReserveCandidate(
+            soldier,
+            currentTarget,
+            centerPoint,
+            attackRange,
+            ref bestPoint,
+            ref bestScore,
+            ref foundPoint);
+
+        TryReplaceBestPrototypeReserveCandidate(
+            soldier,
+            currentTarget,
+            leftPoint,
+            attackRange,
+            ref bestPoint,
+            ref bestScore,
+            ref foundPoint);
+
+        TryReplaceBestPrototypeReserveCandidate(
+            soldier,
+            currentTarget,
+            rightPoint,
+            attackRange,
+            ref bestPoint,
+            ref bestScore,
+            ref foundPoint);
+
+        return foundPoint;
+    }
+
+    void TryReplaceBestPrototypeReserveCandidate(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        Vector3 rawCandidatePoint,
+        float attackRange,
+        ref Vector3 bestPoint,
+        ref float bestScore,
+        ref bool foundPoint)
+    {
+        if (!TryScorePrototypeReserveCandidate(
+                soldier,
+                currentTarget,
+                rawCandidatePoint,
+                attackRange,
+                out Vector3 projectedPoint,
+                out float candidateScore))
+        {
+            return;
+        }
+
+        if (candidateScore >= bestScore)
+            return;
+
+        bestPoint = projectedPoint;
+        bestScore = candidateScore;
+        foundPoint = true;
+    }
+
+    bool TryScorePrototypeReserveCandidate(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        Vector3 rawCandidatePoint,
+        float attackRange,
+        out Vector3 projectedPoint,
+        out float score)
+    {
+        projectedPoint = Vector3.zero;
+        score = float.PositiveInfinity;
+
+        if (soldier == null || currentTarget == null)
+            return false;
+
+        if (!TryProjectPrototypeReservePointToNavMesh(
+                rawCandidatePoint,
+                out projectedPoint))
+        {
+            return false;
+        }
+
+        float moveDistance = PrototypeFlatDistance(
+            soldier.transform.position,
+            projectedPoint);
+
+        if (moveDistance > prototypeReserveMaxMoveDistance)
+            return false;
+
+        float currentTargetDistance = PrototypeFlatDistance(
+            soldier.transform.position,
+            currentTarget.transform.position);
+
+        float candidateTargetDistance = PrototypeFlatDistance(
+            projectedPoint,
+            currentTarget.transform.position);
+
+        float targetGain = currentTargetDistance - candidateTargetDistance;
+
+        if (targetGain < prototypeReserveMinimumTargetGain)
+            return false;
+
+        // Do not reserve-step practically inside the enemy. If the candidate is
+        // this close, normal attack logic should take over instead.
+        float minimumEnemyDistance = Mathf.Max(
+            0.1f,
+            attackRange * 0.75f);
+
+        if (candidateTargetDistance < minimumEnemyDistance)
+            return false;
+
+        SoldierContactSensor contactSensor = soldier.ContactSensor;
+
+        if (contactSensor != null &&
+            contactSensor.IsPointOccupiedByLivingSoldier(
+                soldier,
+                projectedPoint,
+                prototypeReserveOccupancyRadius))
+        {
+            return false;
+        }
+
+        if (!HasCompletePrototypeReservePath(
+                soldier.transform.position,
+                projectedPoint))
+        {
+            return false;
+        }
+
+        // Lower is better: prefer short moves, but reward forward progress.
+        score = moveDistance - targetGain * prototypeReserveProgressScoreWeight;
+        return true;
+    }
+
+    bool IsPrototypeReserveDestinationStillUseful(
+        SoldierController soldier,
+        SoldierController currentTarget,
+        Vector3 reservePoint,
+        float attackRange)
+    {
+        if (soldier == null || currentTarget == null)
+            return false;
+
+        float currentTargetDistance = PrototypeFlatDistance(
+            soldier.transform.position,
+            currentTarget.transform.position);
+
+        float reserveTargetDistance = PrototypeFlatDistance(
+            reservePoint,
+            currentTarget.transform.position);
+
+        float targetGain = currentTargetDistance - reserveTargetDistance;
+
+        if (targetGain < prototypeReserveMinimumTargetGain * 0.5f)
+            return false;
+
+        float minimumEnemyDistance = Mathf.Max(
+            0.1f,
+            attackRange * 0.75f);
+
+        if (reserveTargetDistance < minimumEnemyDistance)
+            return false;
+
+        SoldierContactSensor contactSensor = soldier.ContactSensor;
+
+        if (contactSensor != null &&
+            contactSensor.IsPointOccupiedByLivingSoldier(
+                soldier,
+                reservePoint,
+                prototypeReserveOccupancyRadius))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool TryProjectPrototypeReservePointToNavMesh(
+        Vector3 rawPoint,
+        out Vector3 projectedPoint)
+    {
+        projectedPoint = rawPoint;
+
+        if (!NavMesh.SamplePosition(
+                rawPoint,
+                out NavMeshHit navHit,
+                prototypeReserveNavMeshProjectionRadius,
+                NavMesh.AllAreas))
+        {
+            return false;
+        }
+
+        projectedPoint = navHit.position;
+        return true;
+    }
+
+    bool HasCompletePrototypeReservePath(
+        Vector3 startPoint,
+        Vector3 endPoint)
+    {
+        if (!NavMesh.CalculatePath(
+                startPoint,
+                endPoint,
+                NavMesh.AllAreas,
+                prototypeReservePath))
+        {
+            return false;
+        }
+
+        return prototypeReservePath.status == NavMeshPathStatus.PathComplete;
+    }
+
+    void ClearPrototypeReserveState(SoldierController soldier)
+    {
+        if (soldier == null)
+            return;
+
+        prototypeBlockedTimers[soldier] = 0f;
+        prototypeReserveSearchTimers[soldier] = 0f;
+        prototypeReserveDestinations.Remove(soldier);
+    }
+
+    Vector3 PrototypeFlat(Vector3 value)
+    {
+        value.y = 0f;
+        return value;
+    }
+
+    float PrototypeFlatDistance(
+        Vector3 a,
+        Vector3 b)
+    {
+        return Vector3.Distance(
+            PrototypeFlat(a),
+            PrototypeFlat(b));
     }
 
     SoldierController FindBestPrototypeTarget(
@@ -769,6 +1293,10 @@ public class SquadCombat : MonoBehaviour
     {
         prototypeTargets.Clear();
         prototypeTargetRefreshTimers.Clear();
+        prototypeBlockedTimers.Clear();
+        prototypeReserveSearchTimers.Clear();
+        prototypeReserveDestinations.Clear();
+
         prototypePendingProjectileTargets.Clear();
         prototypePendingProjectileWeapons.Clear();
 
@@ -893,6 +1421,9 @@ public class SquadCombat : MonoBehaviour
             soldier.SetCombatRole(SoldierRole.None);
             soldier.ClearCombatTarget();
             soldier.Combat?.ClearCombat();
+            
+            //soldier.CancelCurrentAction(notifyCombat: false); // DEBUG: Soldiers getting stuck/locked during combat (thought is that is is an action without release)
+
         }
     }
 

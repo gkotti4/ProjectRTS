@@ -88,6 +88,10 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Preferred soldier firing distance as a multiplier of ranged weapon range.")]
     [Range(0.1f, 1f)] public float prototypeRangedPreferredDistanceMultiplier = 0.82f;
 
+    
+    
+    
+    
     void OnValidate()
     {
         autoTargetScanInterval = Mathf.Max(0.01f, autoTargetScanInterval);
