@@ -399,6 +399,7 @@ public class SoldierAnimator : MonoBehaviour
         switch (soldierController.Squad.State)
         {
             case SquadState.InCombat:
+            case SquadState.EngagementRunUp:
             case SquadState.Charging:
                 return true;
 

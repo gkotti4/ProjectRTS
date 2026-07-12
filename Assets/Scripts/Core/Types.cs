@@ -66,7 +66,11 @@ public enum SquadState
     Charging,
     Withdrawing,
     Reforming,
-    Routing
+    Routing,
+
+    // Short per-soldier melee rush between formation approach and normal combat.
+    // Appended to preserve the existing serialized numeric values above.
+    EngagementRunUp
 }
 
 public enum SquadMoveMode
@@ -376,8 +380,8 @@ public struct MovementStats
     public static MovementStats Default => new MovementStats
     {
         moveSpeed = 4f,
-        acceleration = 11f, // patch default 12f
-        deceleration = 16f, // patch default 18f
+        acceleration = 12f,
+        deceleration = 18f,
         turnSpeed = 540f
     };
 }

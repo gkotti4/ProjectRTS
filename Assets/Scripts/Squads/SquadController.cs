@@ -279,6 +279,10 @@ public class SquadController : MonoBehaviour,
                 Combat.TickApproachingCombat();
                 break;
 
+            case SquadState.EngagementRunUp:
+                Combat.TickEngagementRunUp();
+                break;
+
             case SquadState.InCombat:
                 Combat.TickCombat();
                 break;
@@ -385,6 +389,7 @@ public class SquadController : MonoBehaviour,
     {
         if (State == SquadState.InCombat ||
             State == SquadState.ApproachingCombat ||
+            State == SquadState.EngagementRunUp ||
             State == SquadState.Charging)
         {
             return;
