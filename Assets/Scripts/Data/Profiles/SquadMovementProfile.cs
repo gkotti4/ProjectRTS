@@ -19,7 +19,7 @@ public class SquadMovementProfile : ScriptableObject
     [Header("Formed Movement")]
 
     [Tooltip("Maximum sideways/slot-error correction speed soldiers use to drift back toward assigned slots during formed movement. Catchup speed is controlled by the shared Catchup values below.")]
-    [Min(0f)] public float formedSlotCorrectionSpeed = 1.75f;
+    [Min(0f)] public float formedSlotCorrectionSpeed = 1.35f;
 
     [Tooltip("Extreme slot error distance where the virtual anchor pauses so a badly scattered formation can recover. Normal slot error does not slow the anchor; soldiers catch up instead.")]
     [FormerlySerializedAs("formedEmergencyPauseDistance")]

@@ -62,6 +62,13 @@ public static class Calc
         return Vector3.Distance(a, b);
     }
 
+    public static float RealFlatDistance(Vector3 a, Vector3 b)
+    {
+        a.y = 0f;
+        b.y = 0f;
+        return Vector3.Distance(a, b);;
+    }
+
     /// Returns the perpendicular direction to a given direction on the horizontal XZ plane.
     /// Useful for formation slot positioning.
     public static Vector3 Perpendicular(Vector3 direction)

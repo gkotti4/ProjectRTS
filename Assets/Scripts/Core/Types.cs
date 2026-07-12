@@ -363,14 +363,22 @@ public struct HealthStats
 public struct MovementStats
 {
     [Min(0f)] public float moveSpeed;
+
+    [Tooltip("How quickly this soldier accelerates toward requested movement velocity. Old 99999-style values are treated as legacy instant values and remapped by SoldierMotor to a weighted default.")]
     [Min(0f)] public float acceleration;
+
+    [Tooltip("How quickly this soldier bleeds speed when stopping or making sharp direction changes. If left at 0, SoldierMotor derives it from acceleration.")]
+    [Min(0f)] public float deceleration;
+
+    [Tooltip("Visual/body turn speed in degrees per second. Lower values make heavy units, especially cavalry, take wider-feeling turns.")]
     [Min(0f)] public float turnSpeed;
 
     public static MovementStats Default => new MovementStats
     {
         moveSpeed = 4f,
-        acceleration = 99999f,
-        turnSpeed = 900f
+        acceleration = 11f, // patch default 12f
+        deceleration = 16f, // patch default 18f
+        turnSpeed = 540f
     };
 }
 

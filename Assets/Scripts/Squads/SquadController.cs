@@ -271,6 +271,7 @@ public class SquadController : MonoBehaviour,
                 break;
 
             case SquadState.Moving:
+                Combat.TickCombatLocks();
                 Movement.TickMoving();
                 break;
 
@@ -293,6 +294,7 @@ public class SquadController : MonoBehaviour,
                 break;
 
             case SquadState.Withdrawing:
+                Combat.TickCombatLocks();
                 Movement.TickMoving();
                 break;
 
@@ -327,7 +329,10 @@ public class SquadController : MonoBehaviour,
         Vector3 facing,
         float requestedFormationWidth = -1f)
     {
-        Combat.ClearTargets();
+        if (State == SquadState.InCombat)
+            Combat.BeginCombatLockedMoveOrder();
+        else
+            Combat.ClearTargets();
 
         Movement.OrderMove(
             destination,
@@ -365,7 +370,10 @@ public class SquadController : MonoBehaviour,
 
     public void OrderWithdraw(Vector3 destination) // UNUSED 
     {
-        Combat.ClearTargets();
+        if (State == SquadState.InCombat)
+            Combat.BeginCombatLockedMoveOrder();
+        else
+            Combat.ClearTargets();
 
         Vector3 facing = Movement.ResolveFacing(destination);
         Movement.OrderMove(destination, facing);

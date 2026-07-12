@@ -14,31 +14,102 @@ public class SoldierContactSensor : MonoBehaviour
 {
     private readonly Collider[] overlapBuffer = new Collider[32];
 
-    /// Returns true if a living friendly soldier is occupying the space directly
-    /// ahead of the owner along the desired movement direction.
-    public bool IsForwardBlockedByFriendly(
-        SoldierController owner,
-        Vector3 desiredMoveDirection)
-    {
-        return TryGetForwardBlockingFriendly(
-            owner,
-            desiredMoveDirection,
-            out _);
-    }
+    // /// Returns true if a living friendly soldier is occupying the space directly
+    // /// ahead of the owner along the desired movement direction.
+    // public bool IsForwardBlockedByFriendly(
+    //     SoldierController owner,
+    //     Vector3 desiredMoveDirection)
+    // {
+    //     return TryGetForwardBlockingFriendly(
+    //         owner,
+    //         desiredMoveDirection,
+    //         out _);
+    // }
 
-    /// Finds the specific friendly body blocking the owner's forward movement.
-    /// This is intentionally only a local body-space query.
-    public bool TryGetForwardBlockingFriendly(
+    // /// Finds the specific friendly body blocking the owner's forward movement.
+    // /// This is intentionally only a local body-space query.
+    // public bool TryGetForwardBlockingFriendly(
+    //     SoldierController owner,
+    //     Vector3 desiredMoveDirection,
+    //     out SoldierController blockingFriendly)
+    // {
+    //     blockingFriendly = null;
+    //
+    //     float forwardCheckDistance = 0.65f;
+    //     float bodyCheckRadius = 0.45f;
+    //     float minimumForwardDot = 0.35f;
+    //
+    //     if (owner == null || !owner.IsAlive)
+    //         return false;
+    //
+    //     desiredMoveDirection = NormalizeFlat(desiredMoveDirection);
+    //
+    //     if (desiredMoveDirection == Vector3.zero)
+    //         return false;
+    //
+    //     Vector3 checkCenter =
+    //         owner.transform.position +
+    //         desiredMoveDirection * forwardCheckDistance;
+    //
+    //     int hitCount = Physics.OverlapSphereNonAlloc(
+    //         checkCenter,
+    //         bodyCheckRadius,
+    //         overlapBuffer,
+    //         ~0,
+    //         QueryTriggerInteraction.Collide);
+    //
+    //     float bestForwardDistance = float.PositiveInfinity;
+    //
+    //     for (int i = 0; i < hitCount; i++)
+    //     {
+    //         Collider hit = overlapBuffer[i];
+    //
+    //         if (hit == null)
+    //             continue;
+    //
+    //         SoldierController other =
+    //             hit.GetComponentInParent<SoldierController>();
+    //
+    //         if (!IsValidFriendlyBody(owner, other))
+    //             continue;
+    //
+    //         Vector3 toOther =
+    //             other.transform.position - owner.transform.position;
+    //
+    //         toOther.y = 0f;
+    //
+    //         if (toOther.sqrMagnitude <= 0.0001f)
+    //             continue;
+    //
+    //         float forwardDot = Vector3.Dot(
+    //             desiredMoveDirection,
+    //             toOther.normalized);
+    //
+    //         if (forwardDot < minimumForwardDot)
+    //             continue;
+    //
+    //         float forwardDistance = Vector3.Dot(
+    //             desiredMoveDirection,
+    //             toOther);
+    //
+    //         if (forwardDistance < bestForwardDistance)
+    //         {
+    //             bestForwardDistance = forwardDistance;
+    //             blockingFriendly = other;
+    //         }
+    //     }
+    //
+    //     return blockingFriendly != null;
+    // }
+
+    /// Returns true when no living friendly body occupies the requested forward
+    /// gap. SquadCombat uses this as permission for reserve soldiers to move up.
+    public bool IsForwardFriendlyGapOpen(
         SoldierController owner,
         Vector3 desiredMoveDirection,
-        out SoldierController blockingFriendly)
+        float gapDistance,
+        float gapRadius)
     {
-        blockingFriendly = null;
-
-        float forwardCheckDistance = 0.65f;
-        float bodyCheckRadius = 0.45f;
-        float minimumForwardDot = 0.35f;
-
         if (owner == null || !owner.IsAlive)
             return false;
 
@@ -47,18 +118,24 @@ public class SoldierContactSensor : MonoBehaviour
         if (desiredMoveDirection == Vector3.zero)
             return false;
 
-        Vector3 checkCenter =
-            owner.transform.position +
-            desiredMoveDirection * forwardCheckDistance;
+        gapDistance = Mathf.Max(0.05f, gapDistance);
+        gapRadius = Mathf.Max(0.01f, gapRadius);
 
-        int hitCount = Physics.OverlapSphereNonAlloc(
-            checkCenter,
-            bodyCheckRadius,
+        Vector3 startPoint =
+            owner.transform.position +
+            desiredMoveDirection * 0.25f;
+
+        Vector3 endPoint =
+            owner.transform.position +
+            desiredMoveDirection * gapDistance;
+
+        int hitCount = Physics.OverlapCapsuleNonAlloc(
+            startPoint,
+            endPoint,
+            gapRadius,
             overlapBuffer,
             ~0,
             QueryTriggerInteraction.Collide);
-
-        float bestForwardDistance = float.PositiveInfinity;
 
         for (int i = 0; i < hitCount; i++)
         {
@@ -70,41 +147,61 @@ public class SoldierContactSensor : MonoBehaviour
             SoldierController other =
                 hit.GetComponentInParent<SoldierController>();
 
-            if (!IsValidFriendlyBody(owner, other))
-                continue;
-
-            Vector3 toOther =
-                other.transform.position - owner.transform.position;
-
-            toOther.y = 0f;
-
-            if (toOther.sqrMagnitude <= 0.0001f)
-                continue;
-
-            float forwardDot = Vector3.Dot(
-                desiredMoveDirection,
-                toOther.normalized);
-
-            if (forwardDot < minimumForwardDot)
-                continue;
-
-            float forwardDistance = Vector3.Dot(
-                desiredMoveDirection,
-                toOther);
-
-            if (forwardDistance < bestForwardDistance)
-            {
-                bestForwardDistance = forwardDistance;
-                blockingFriendly = other;
-            }
+            if (IsValidFriendlyBody(owner, other))
+                return false;
         }
 
-        return blockingFriendly != null;
+        return true;
+    }
+
+    /// Returns true if a living friendly soldier is occupying one side of the owner.
+    /// This is intentionally only a side-boundary query; SquadCombat decides what
+    /// to do with the result.
+    public bool IsSideBlockedByFriendly(
+        SoldierController owner,
+        Vector3 sideDirection)
+    {
+        float sideCheckDistance = 0.75f;
+        float bodyCheckRadius = 0.45f;
+
+        if (owner == null || !owner.IsAlive)
+            return false;
+
+        sideDirection = NormalizeFlat(sideDirection);
+
+        if (sideDirection == Vector3.zero)
+            return false;
+
+        Vector3 checkCenter =
+            owner.transform.position +
+            sideDirection * sideCheckDistance;
+
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            checkCenter,
+            bodyCheckRadius,
+            overlapBuffer,
+            ~0,
+            QueryTriggerInteraction.Collide);
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider hit = overlapBuffer[i];
+
+            if (hit == null)
+                continue;
+
+            SoldierController other =
+                hit.GetComponentInParent<SoldierController>();
+
+            if (IsValidFriendlyBody(owner, other))
+                return true;
+        }
+
+        return false;
     }
 
     /// Returns true if any living soldier body occupies this point.
-    /// This is kept for later tiny experiments, but PrototypeMelee fresh base does
-    /// not use reserve slot or open-zone logic.
+    /// Used by small local combat movement checks. It still does not decide behavior.
     public bool IsPointOccupiedByLivingSoldier(
         SoldierController owner,
         Vector3 point,

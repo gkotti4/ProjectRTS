@@ -83,6 +83,11 @@ public class SoldierController : MonoBehaviour
         ActionState == SoldierActionState.HitReact ||
         ActionState == SoldierActionState.Death;
 
+    public bool IsCombatMoveLocked =>
+        Squad != null &&
+        Squad.Combat != null &&
+        Squad.Combat.IsSoldierCombatLocked(this);
+
     #region Unity Lifecycle
 
     void Awake()
@@ -209,7 +214,7 @@ public class SoldierController : MonoBehaviour
         Roster = roster;
 
         EnsureSelectableTarget();
-        Combat?.ApplyProfileFromSquad();
+        // Combat?.ApplyProfileFromSquad(); // not currently needed for Prototype Combat, we don't use profile for soldier
 
         // -------------------------------------------------------------------------
         // Validation
@@ -255,7 +260,7 @@ public class SoldierController : MonoBehaviour
         float stoppingDistance = 0.1f,
         float speedMultiplier = 1f)
     {
-        if (!IsAlive || IsMovementLocked)
+        if (!IsAlive || IsMovementLocked || IsCombatMoveLocked)
             return;
 
         if (!Calc.OutOfRange(LastSlotPosition, slotPosition, updateThreshold))
@@ -274,7 +279,7 @@ public class SoldierController : MonoBehaviour
         float stoppingDistance = 0.1f,
         float speedMultiplier = 1f)
     {
-        if (!IsAlive || IsMovementLocked)
+        if (!IsAlive || IsMovementLocked || IsCombatMoveLocked)
             return;
 
         Motor.MoveTo(
@@ -532,13 +537,13 @@ public class SoldierController : MonoBehaviour
         float stoppingDistance,
         float speedMultiplier = 1f)
     {
-        if (!IsAlive || IsMovementLocked)
+        if (!IsAlive || IsMovementLocked || IsCombatMoveLocked)
             return;
 
         Motor.MoveTo(position, stoppingDistance, speedMultiplier);
     }
 
-    public void FaceToward(Vector3 position, float turnSpeed = 900f)
+    public void FaceToward(Vector3 position, float turnSpeed = 350f)
     {
         Vector3 dir = position - transform.position;
         dir.y = 0f;

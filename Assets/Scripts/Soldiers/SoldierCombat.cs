@@ -35,12 +35,12 @@ public class SoldierCombat : MonoBehaviour
         soldier = owner;
     }
 
-    /// Kept as a compatibility no-op so existing SoldierController.SetSquad code
-    /// does not need profile wiring.
-    public void ApplyProfileFromSquad()
-    {
-        // PrototypeMelee no longer uses SoldierCombatProfile.
-    }
+    // /// Kept as a compatibility no-op so existing SoldierController.SetSquad code
+    // /// does not need profile wiring.
+    // public void ApplyProfileFromSquad()
+    // {
+    //     // PrototypeMelee no longer uses SoldierCombatProfile.
+    // }
 
     /// Clears local event-bridge state.
     public void ClearCombat()
@@ -94,15 +94,15 @@ public class SoldierCombat : MonoBehaviour
             newAction);
     }
 
-    /// Backward-compatible hook for older animation-event wiring.
-    public void NotifyAttackAnimationEnded()
-    {
-        soldier?.CompleteAction(SoldierActionState.Attack);
-    }
-
-    /// Compatibility no-op. Old local combat randomized an internal attack timer.
-    public void RandomizeInitialAttackTimer(float maxDelay)
-    {
-        // PrototypeMelee attack timers live in SquadCombat.
-    }
+    // /// Backward-compatible hook for older animation-event wiring.
+    // public void NotifyAttackAnimationEnded()
+    // {
+    //     soldier?.CompleteAction(SoldierActionState.Attack);
+    // }
+    //
+    // /// Compatibility no-op. Old local combat randomized an internal attack timer.
+    // public void RandomizeInitialAttackTimer(float maxDelay)
+    // {
+    //     // PrototypeMelee attack timers live in SquadCombat.
+    // }
 }

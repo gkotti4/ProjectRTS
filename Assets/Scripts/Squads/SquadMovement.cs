@@ -980,6 +980,12 @@ public class SquadMovement : MonoBehaviour
             if (soldier == null || !soldier.IsAlive || soldier.IsMovementLocked)
                 continue;
 
+            if (soldier.IsCombatMoveLocked)
+            {
+                soldier.Stop();
+                continue;
+            }
+
             int slotIndex = soldier.SlotIndex;
 
             if (slotIndex < 0 || slotIndex >= oldSlots.Count || slotIndex >= newSlots.Count)
