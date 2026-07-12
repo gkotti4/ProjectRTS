@@ -13,13 +13,6 @@ using UnityEngine.AI;
 /// HitReact, Death, and temporary combat-lock withdrawal delays cannot be
 /// overridden by normal movement requests.
 ///
-/// Weight pass:
-/// Normal NavMesh destination movement uses MovementStats acceleration.
-/// Formation-delta movement uses a local weighted velocity so slot-following no
-/// longer snaps instantly to every requested delta. This gives infantry subtle
-/// body weight and gives cavalry a real place to tune acceleration/deceleration
-/// and turn speed later.
-///
 /// This class should not decide why the soldier moves. It only executes movement
 /// requests when movement is allowed.
 ///
@@ -35,31 +28,38 @@ public class SoldierMotor : MonoBehaviour
     [SerializeField] private ObstacleAvoidanceType obstacleAvoidanceType =
         ObstacleAvoidanceType.HighQualityObstacleAvoidance;
 
-    [SerializeField] private int avoidancePriorityMin = 40;
-    [SerializeField] private int avoidancePriorityMax = 60;
-    
     [SerializeField] private float defaultStoppingDistance = 0.1f;
 
+    [SerializeField] private int avoidancePriorityMin = 40;
+    [SerializeField] private int avoidancePriorityMax = 60;
+
+    // -----------------------------------------------------------------------------
+    // Prototype Soft Separation MVP Tuning
+    // -----------------------------------------------------------------------------
+    // Lightweight kinematic body pressure. This is not Rigidbody collision and it
+    // does not decide combat behavior. It only adds a small NavMeshAgent.Move
+    // correction when living soldiers become visually too close.
+    private const bool prototypeSoftSeparationEnabled = true;               // Enables lightweight local spacing correction between nearby living soldiers.
+    private const float prototypeSoftSeparationPreferredDistance = 0.85f;   // Distance soldiers try to maintain before separation pressure is applied.
+    private const float prototypeSoftSeparationStrength = 1.5f;             // Controls how strongly overlap depth contributes to the separation correction.
+    private const float prototypeSoftSeparationMaximumSpeed = 0.35f;        // Maximum movement speed contributed by the separation correction alone.
+    private const float prototypeSoftSeparationFrontlineMultiplier = 0.30f; // Reduces separation strength for active frontline soldiers to limit attack sliding.
+    private const int prototypeSoftSeparationMaximumNeighbors = 12;         // Maximum nearby soldiers considered when calculating one separation correction.
+    
+    
     private NavMeshAgent agent;
     private SoldierController soldierController;
 
-    private const float legacyInstantAccelerationThreshold = 9000f;
-    private const float defaultWeightedAcceleration = 12f;
-    private const float defaultWeightedDeceleration = 18f;
-    private const float defaultWeightedTurnSpeed = 540f;
-    private const float manualMovementVelocityValidDuration = 0.12f;
-    private const float sharpTurnDotThreshold = 0.15f;
-
     private float baseMoveSpeed = 4f;
-    private float acceleration = defaultWeightedAcceleration;
-    private float deceleration = defaultWeightedDeceleration;
-    private float turnSpeed = defaultWeightedTurnSpeed;
+    private float turnSpeed = 900f;
     private float velocityRotationSuppressedUntil = 0f;
 
+    private readonly Collider[] prototypeSoftSeparationOverlapBuffer =
+        new Collider[prototypeSoftSeparationMaximumNeighbors];
+
     // Formation movement uses NavMeshAgent.Move rather than SetDestination.
-    // NavMeshAgent.Move does not create a path, so we maintain a short-lived
-    // weighted manual velocity for animation, movement-state queries, and
-    // formation-delta inertia.
+    // NavMeshAgent.Move does not create a path, so we cache a short-lived manual
+    // velocity for animation and movement-state queries.
     private Vector3 manualMovementVelocity = Vector3.zero;
     private float manualMovementVelocityValidUntil = 0f;
 
@@ -99,29 +99,200 @@ public class SoldierMotor : MonoBehaviour
             avoidancePriorityMax + 1);
 
         agent.angularSpeed = 99999f;
-        agent.acceleration = defaultWeightedAcceleration;
+        agent.acceleration = 99999f;
         agent.autoBraking = false;
         agent.updateRotation = false;
     }
 
     void Update()
     {
+        TickPrototypeSoftSeparation();
         RotateTowardVelocity();
     }
+
+
+    #region Prototype Soft Separation
+
+    void TickPrototypeSoftSeparation()
+    {
+        if (!prototypeSoftSeparationEnabled)
+            return;
+
+        if (!CanMove() || IsMovementRequestLocked())
+            return;
+
+        if (soldierController == null || !soldierController.IsAlive)
+            return;
+
+        float separationMultiplier = GetPrototypeSoftSeparationMultiplier();
+
+        if (separationMultiplier <= 0f)
+            return;
+
+        float queryRadius =
+            prototypeSoftSeparationPreferredDistance;
+
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            transform.position,
+            queryRadius,
+            prototypeSoftSeparationOverlapBuffer,
+            ~0,
+            QueryTriggerInteraction.Collide);
+
+        Vector3 separationVelocity = Vector3.zero;
+        int contributingNeighbors = 0;
+
+        for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
+        {
+            Collider hit = prototypeSoftSeparationOverlapBuffer[hitIndex];
+
+            if (hit == null)
+                continue;
+
+            SoldierController otherSoldier =
+                hit.GetComponentInParent<SoldierController>();
+
+            if (!IsValidPrototypeSoftSeparationNeighbor(otherSoldier))
+                continue;
+
+            if (WasPrototypeSoftSeparationNeighborAlreadyCounted(
+                    hitIndex,
+                    otherSoldier))
+            {
+                continue;
+            }
+
+            Vector3 awayFromNeighbor =
+                transform.position - otherSoldier.transform.position;
+
+            awayFromNeighbor.y = 0f;
+
+            float distance = awayFromNeighbor.magnitude;
+
+            if (distance >= prototypeSoftSeparationPreferredDistance)
+                continue;
+
+            if (distance <= 0.0001f)
+            {
+                awayFromNeighbor = GetPrototypeSoftSeparationFallbackDirection(
+                    otherSoldier);
+                distance = 0f;
+            }
+            else
+            {
+                awayFromNeighbor /= distance;
+            }
+
+            float overlapDepth =
+                prototypeSoftSeparationPreferredDistance - distance;
+
+            separationVelocity +=
+                awayFromNeighbor * (overlapDepth * prototypeSoftSeparationStrength);
+
+            contributingNeighbors++;
+        }
+
+        if (contributingNeighbors <= 0)
+            return;
+
+        separationVelocity /= contributingNeighbors;
+        separationVelocity *= separationMultiplier;
+        separationVelocity = Vector3.ClampMagnitude(
+            separationVelocity,
+            prototypeSoftSeparationMaximumSpeed);
+
+        Vector3 separationDelta =
+            separationVelocity * Time.deltaTime;
+
+        if (separationDelta.sqrMagnitude <= 0.000001f)
+            return;
+
+        agent.Move(separationDelta);
+
+        // Keep animation/movement queries aware of the correction when the soldier
+        // is otherwise being moved through direct formation deltas.
+        if (!agent.hasPath)
+        {
+            manualMovementVelocity = separationVelocity;
+            manualMovementVelocityValidUntil = Time.time + 0.12f;
+        }
+    }
+
+    float GetPrototypeSoftSeparationMultiplier()
+    {
+        if (soldierController == null)
+            return 0f;
+
+        if (soldierController.Role == SoldierRole.Frontline &&
+            soldierController.Squad != null &&
+            soldierController.Squad.State == SquadState.InCombat)
+        {
+            return prototypeSoftSeparationFrontlineMultiplier;
+        }
+
+        return 1f;
+    }
+
+    bool IsValidPrototypeSoftSeparationNeighbor(
+        SoldierController otherSoldier)
+    {
+        if (otherSoldier == null || otherSoldier == soldierController)
+            return false;
+
+        return otherSoldier.IsAlive;
+    }
+
+    bool WasPrototypeSoftSeparationNeighborAlreadyCounted(
+        int currentHitIndex,
+        SoldierController candidateSoldier)
+    {
+        for (int previousHitIndex = 0;
+             previousHitIndex < currentHitIndex;
+             previousHitIndex++)
+        {
+            Collider previousHit =
+                prototypeSoftSeparationOverlapBuffer[previousHitIndex];
+
+            if (previousHit == null)
+                continue;
+
+            SoldierController previousSoldier =
+                previousHit.GetComponentInParent<SoldierController>();
+
+            if (previousSoldier == candidateSoldier)
+                return true;
+        }
+
+        return false;
+    }
+
+    Vector3 GetPrototypeSoftSeparationFallbackDirection(
+        SoldierController otherSoldier)
+    {
+        int ownId = gameObject.GetInstanceID();
+        int otherId = otherSoldier != null
+            ? otherSoldier.gameObject.GetInstanceID()
+            : 0;
+
+        return ownId <= otherId
+            ? Vector3.right
+            : Vector3.left;
+    }
+
+    #endregion
 
     public void Initialize(MovementStats movement)
     {
         baseMoveSpeed = movement.moveSpeed > 0f ? movement.moveSpeed : baseMoveSpeed;
-        acceleration = ResolveAcceleration(movement.acceleration);
-        deceleration = ResolveDeceleration(movement.deceleration, acceleration);
-        turnSpeed = movement.turnSpeed > 0f ? movement.turnSpeed : defaultWeightedTurnSpeed;
+        turnSpeed = movement.turnSpeed > 0f ? movement.turnSpeed : turnSpeed;
 
         if (agent == null)
             return;
 
         agent.speed = baseMoveSpeed;
-        agent.acceleration = acceleration;
-        agent.angularSpeed = turnSpeed;
+        agent.acceleration = movement.acceleration > 0f
+            ? movement.acceleration
+            : 99999f;
     }
 
     public void MoveTo(
@@ -135,13 +306,8 @@ public class SoldierMotor : MonoBehaviour
         if (IsMovementRequestLocked())
             return;
 
-        ClearManualMovementVelocity();
-
-        float resolvedSpeedMultiplier = Mathf.Max(0.1f, speedMultiplier);
-
         agent.isStopped = false;
-        agent.speed = baseMoveSpeed * resolvedSpeedMultiplier;
-        agent.acceleration = acceleration * Mathf.Max(1f, resolvedSpeedMultiplier);
+        agent.speed = baseMoveSpeed * Mathf.Max(0.1f, speedMultiplier);
         agent.stoppingDistance = stoppingDistance >= 0f
             ? stoppingDistance
             : defaultStoppingDistance;
@@ -182,32 +348,33 @@ public class SoldierMotor : MonoBehaviour
         agent.isStopped = false;
         agent.stoppingDistance = 0f;
         agent.speed = resolvedSpeedLimit;
-        agent.acceleration = acceleration;
 
         movementDelta.y = 0f;
 
-        Vector3 desiredVelocity = ResolveDesiredManualVelocity(
-            movementDelta,
-            resolvedSpeedLimit);
+        float maxDistanceThisFrame =
+            Mathf.Max(0f, resolvedSpeedLimit) * Time.deltaTime;
 
-        Vector3 weightedVelocity = ResolveWeightedManualVelocity(
-            desiredVelocity,
-            resolvedSpeedLimit);
+        if (maxDistanceThisFrame > 0f &&
+            movementDelta.magnitude > maxDistanceThisFrame)
+        {
+            movementDelta = movementDelta.normalized * maxDistanceThisFrame;
+        }
 
-        Vector3 weightedMovementDelta = weightedVelocity * Time.deltaTime;
+        manualMovementVelocity = Time.deltaTime > 0f
+            ? movementDelta / Time.deltaTime
+            : Vector3.zero;
 
-        manualMovementVelocity = weightedVelocity;
-        manualMovementVelocityValidUntil = Time.time + manualMovementVelocityValidDuration;
+        manualMovementVelocityValidUntil = Time.time + 0.12f;
 
-        if (weightedMovementDelta.sqrMagnitude > 0.000001f)
-            agent.Move(weightedMovementDelta);
+        if (movementDelta.sqrMagnitude > 0.000001f)
+            agent.Move(movementDelta);
 
         Vector3 visualFacingDirection = fallbackFacingDirection;
 
         if (faceMovementDirection &&
-            weightedVelocity.sqrMagnitude > 0.0001f)
+            movementDelta.sqrMagnitude > 0.000001f)
         {
-            visualFacingDirection = weightedVelocity;
+            visualFacingDirection = movementDelta;
         }
 
         RotateTowardDirection(visualFacingDirection);
@@ -235,15 +402,13 @@ public class SoldierMotor : MonoBehaviour
         agent.ResetPath();
         agent.isStopped = false;
         agent.speed = baseMoveSpeed;
-        agent.acceleration = acceleration;
 
-        ClearManualMovementVelocity();
+        manualMovementVelocity = Vector3.zero;
+        manualMovementVelocityValidUntil = 0f;
     }
 
     public void Warp(Vector3 position)
     {
-        ClearManualMovementVelocity();
-
         if (agent != null && agent.enabled && agent.isOnNavMesh)
             agent.Warp(position);
         else
@@ -278,112 +443,6 @@ public class SoldierMotor : MonoBehaviour
         return soldierController != null &&
                (soldierController.IsMovementLocked ||
                 soldierController.IsCombatMoveLocked);
-    }
-
-    float ResolveAcceleration(float requestedAcceleration)
-    {
-        if (requestedAcceleration > 0f &&
-            requestedAcceleration < legacyInstantAccelerationThreshold)
-        {
-            return requestedAcceleration;
-        }
-
-        return defaultWeightedAcceleration;
-    }
-
-    float ResolveDeceleration(
-        float requestedDeceleration,
-        float resolvedAcceleration)
-    {
-        if (requestedDeceleration > 0f)
-            return requestedDeceleration;
-
-        if (resolvedAcceleration > 0f)
-            return resolvedAcceleration * 1.5f;
-
-        return defaultWeightedDeceleration;
-    }
-
-    Vector3 ResolveDesiredManualVelocity(
-        Vector3 movementDelta,
-        float speedLimit)
-    {
-        if (Time.deltaTime <= 0f)
-            return Vector3.zero;
-
-        Vector3 desiredVelocity = movementDelta / Time.deltaTime;
-        desiredVelocity.y = 0f;
-
-        float maxSpeed = Mathf.Max(0f, speedLimit);
-
-        if (maxSpeed > 0f && desiredVelocity.magnitude > maxSpeed)
-            desiredVelocity = desiredVelocity.normalized * maxSpeed;
-
-        return desiredVelocity;
-    }
-
-    Vector3 ResolveWeightedManualVelocity(
-        Vector3 desiredVelocity,
-        float speedLimit)
-    {
-        Vector3 currentVelocity = HasManualMovementVelocity
-            ? manualMovementVelocity
-            : agent.velocity;
-
-        currentVelocity.y = 0f;
-        desiredVelocity.y = 0f;
-
-        float currentSpeed = currentVelocity.magnitude;
-        float desiredSpeed = desiredVelocity.magnitude;
-
-        float rate = GetManualVelocityChangeRate(
-            currentVelocity,
-            desiredVelocity,
-            currentSpeed,
-            desiredSpeed);
-
-        Vector3 weightedVelocity = Vector3.MoveTowards(
-            currentVelocity,
-            desiredVelocity,
-            rate * Time.deltaTime);
-
-        float maxSpeed = Mathf.Max(0f, speedLimit);
-
-        if (maxSpeed > 0f && weightedVelocity.magnitude > maxSpeed)
-            weightedVelocity = weightedVelocity.normalized * maxSpeed;
-
-        return weightedVelocity;
-    }
-
-    float GetManualVelocityChangeRate(
-        Vector3 currentVelocity,
-        Vector3 desiredVelocity,
-        float currentSpeed,
-        float desiredSpeed)
-    {
-        if (desiredSpeed <= 0.01f)
-            return deceleration;
-
-        if (currentSpeed <= 0.01f)
-            return acceleration;
-
-        float directionDot = Vector3.Dot(
-            currentVelocity.normalized,
-            desiredVelocity.normalized);
-
-        if (directionDot < sharpTurnDotThreshold)
-            return deceleration;
-
-        if (desiredSpeed < currentSpeed)
-            return deceleration;
-
-        return acceleration;
-    }
-
-    void ClearManualMovementVelocity()
-    {
-        manualMovementVelocity = Vector3.zero;
-        manualMovementVelocityValidUntil = 0f;
     }
 
     void RotateTowardVelocity()
@@ -423,3 +482,4 @@ public class SoldierMotor : MonoBehaviour
             turnSpeed * Time.deltaTime);
     }
 }
+
