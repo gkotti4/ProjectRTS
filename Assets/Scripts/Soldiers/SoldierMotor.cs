@@ -33,20 +33,43 @@ public class SoldierMotor : MonoBehaviour
     [SerializeField] private int avoidancePriorityMin = 40;
     [SerializeField] private int avoidancePriorityMax = 60;
 
+    [Header("Custom Body")]
+    [Tooltip("Relative body mass used for collision correction and received impulses. One impulse unit applied to one mass unit produces one meter-per-second of initial push velocity.")]
+    [Min(0.01f)]
+    [SerializeField] private float bodyMass = 1f;
+
     // -----------------------------------------------------------------------------
-    // Prototype Soft Separation MVP Tuning
+    // Prototype Infantry Body Pressure MVP Tuning
     // -----------------------------------------------------------------------------
-    // Lightweight kinematic body pressure. This is not Rigidbody collision and it
-    // does not decide combat behavior. It only adds a small NavMeshAgent.Move
-    // correction when living soldiers become visually too close.
-    private const bool prototypeSoftSeparationEnabled = true;               // Enables lightweight local spacing correction between nearby living soldiers.
-    private const float prototypeSoftSeparationPreferredDistance = 0.85f;   // Distance soldiers try to maintain before separation pressure is applied.
-    private const float prototypeSoftSeparationStrength = 1.5f;             // Controls how strongly overlap depth contributes to the separation correction.
-    private const float prototypeSoftSeparationMaximumSpeed = 0.35f;        // Maximum movement speed contributed by the separation correction alone.
-    private const float prototypeSoftSeparationFrontlineMultiplier = 0.30f; // Reduces separation strength for active frontline soldiers to limit attack sliding.
-    private const int prototypeSoftSeparationMaximumNeighbors = 12;         // Maximum nearby soldiers considered when calculating one separation correction.
-    
-    
+    // NavMeshAgent remains the locomotion authority. This layer only modifies direct
+    // formation deltas and applies pair-owned NavMeshAgent.Move corrections so living
+    // soldiers behave like compressible bodies instead of freely passing through one
+    // another. It is intentionally not Rigidbody physics and does not decide combat.
+    private const bool prototypeBodyPressureEnabled = true;                    // Master toggle for the custom infantry body model.
+    private const float prototypeBodyPreferredDistance = 0.88f;                // Soft pressure begins inside this center-to-center distance.
+    private const float prototypeBodyFriendlyMinimumDistance = 0.64f;          // Friendlies may compress more tightly before direct inward movement is blocked.
+    private const float prototypeBodyEnemyMinimumDistance = 0.78f;             // Enemies create a firmer body wall and resist direct penetration sooner.
+    private const float prototypeBodySoftPressureStrength = 1.35f;              // Converts soft-zone overlap depth into separation velocity.
+    private const float prototypeBodyHardCorrectionStrength = 7.0f;             // Converts minimum-distance penetration into a fast corrective velocity.
+    private const float prototypeBodyMaximumCorrectionSpeed = 1.15f;            // Caps total body correction so contacts remain stable rather than snapping.
+    private const float prototypeBodyFriendlyCorrectionMultiplier = 0.70f;      // Friendlies yield softly so formations can compress and flow.
+    private const float prototypeBodyEnemyCorrectionMultiplier = 1.20f;         // Enemy contacts separate more firmly than friendly contacts.
+    private const float prototypeBodyFrontlineSoftPressureMultiplier = 0.30f;   // Reduces cosmetic soft sliding for active melee frontlines.
+    private const float prototypeBodyFriendlyInwardBlockingMultiplier = 0.45f;  // Friendlies resist direct inward movement partially so formations can still compress and pass.
+    private const float prototypeBodyEnemyInwardBlockingMultiplier = 1.00f;     // Enemies remove all movement that would violate their minimum body distance.
+    private const int prototypeBodyMaximumNeighbors = 16;                       // Maximum collider hits considered by one local body query.
+
+    // -----------------------------------------------------------------------------
+    // Prototype External Impulse MVP Tuning
+    // -----------------------------------------------------------------------------
+    // Impulse is authored as mass * velocity. The receiver converts it to initial
+    // push velocity with receivedPushSpeed = impulseMagnitude / BodyMass, then the
+    // stored velocity decays over the requested duration. All push movement still
+    // passes through the same directional body blocking used by normal locomotion.
+    private const float prototypeImpulseDefaultDuration = 0.15f;               // Default time over which received push velocity decays to zero.
+    private const float prototypeImpulseMaximumPushSpeed = 8.0f;                // Safety cap for accumulated push velocity.
+    private const float prototypeImpulseMinimumPushSpeed = 0.03f;               // Velocities below this are cleared to avoid tiny endless movement.
+
     private NavMeshAgent agent;
     private SoldierController soldierController;
 
@@ -54,8 +77,11 @@ public class SoldierMotor : MonoBehaviour
     private float turnSpeed = 900f;
     private float velocityRotationSuppressedUntil = 0f;
 
-    private readonly Collider[] prototypeSoftSeparationOverlapBuffer =
-        new Collider[prototypeSoftSeparationMaximumNeighbors];
+    private Vector3 prototypeExternalPushVelocity = Vector3.zero;
+    private float prototypeExternalPushTimeRemaining = 0f;
+
+    private readonly Collider[] prototypeBodyOverlapBuffer =
+        new Collider[prototypeBodyMaximumNeighbors];
 
     // Formation movement uses NavMeshAgent.Move rather than SetDestination.
     // NavMeshAgent.Move does not create a path, so we cache a short-lived manual
@@ -69,6 +95,10 @@ public class SoldierMotor : MonoBehaviour
 
     public NavMeshAgent Agent => agent;
     public bool HasPath => agent != null && (agent.hasPath || HasManualMovementVelocity);
+    public float BodyMass => Mathf.Max(0.01f, bodyMass);
+    public Vector3 ExternalPushVelocity => prototypeExternalPushVelocity;
+    public bool IsBeingPushed => prototypeExternalPushTimeRemaining > 0f &&
+                                 prototypeExternalPushVelocity.sqrMagnitude > 0.0001f;
 
     public Vector3 Velocity
     {
@@ -85,6 +115,11 @@ public class SoldierMotor : MonoBehaviour
         agent != null
             ? Mathf.Max(0.001f, agent.speed)
             : Mathf.Max(0.001f, baseMoveSpeed); // used in SoldierAnimator for calculating speed
+
+    void OnValidate()
+    {
+        bodyMass = Mathf.Max(0.01f, bodyMass);
+    }
 
     void Awake()
     {
@@ -106,16 +141,24 @@ public class SoldierMotor : MonoBehaviour
 
     void Update()
     {
-        TickPrototypeSoftSeparation();
+        TickPrototypeExternalImpulse();
+        TickPrototypePathDirectionalBlocking();
+        TickPrototypeBodyPressure();
         RotateTowardVelocity();
     }
 
 
-    #region Prototype Soft Separation
+    #region Prototype Infantry Body Pressure
 
-    void TickPrototypeSoftSeparation()
+
+    /// Applies directional body resistance to normal SetDestination movement.
+    /// NavMesh avoidance still chooses the desired velocity, but any portion that
+    /// would move directly through a nearby soldier is removed while tangential
+    /// movement is preserved. Formed movement uses the same resolver before its
+    /// direct NavMeshAgent.Move call.
+    void TickPrototypePathDirectionalBlocking()
     {
-        if (!prototypeSoftSeparationEnabled)
+        if (!prototypeBodyPressureEnabled)
             return;
 
         if (!CanMove() || IsMovementRequestLocked())
@@ -124,27 +167,51 @@ public class SoldierMotor : MonoBehaviour
         if (soldierController == null || !soldierController.IsAlive)
             return;
 
-        float separationMultiplier = GetPrototypeSoftSeparationMultiplier();
-
-        if (separationMultiplier <= 0f)
+        if (!agent.hasPath || agent.pathPending || Time.deltaTime <= 0f)
             return;
 
-        float queryRadius =
-            prototypeSoftSeparationPreferredDistance;
+        Vector3 requestedDelta = agent.desiredVelocity * Time.deltaTime;
+        requestedDelta.y = 0f;
+
+        if (requestedDelta.sqrMagnitude <= 0.000001f)
+            return;
+
+        Vector3 resolvedDelta = ResolvePrototypeBodyBlockedMovementDelta(
+            requestedDelta);
+
+        Vector3 blockingAdjustment = resolvedDelta - requestedDelta;
+        blockingAdjustment.y = 0f;
+
+        if (blockingAdjustment.sqrMagnitude <= 0.000001f)
+            return;
+
+        // The agent simulation supplies the requested path movement. This opposite
+        // correction cancels only the blocked inward component, leaving lateral
+        // steering intact so soldiers can slide around shoulders and exposed edges.
+        agent.Move(blockingAdjustment);
+    }
+
+    void TickPrototypeBodyPressure()
+    {
+        if (!prototypeBodyPressureEnabled)
+            return;
+
+        if (!CanMove())
+            return;
+
+        if (soldierController == null || !soldierController.IsAlive)
+            return;
 
         int hitCount = Physics.OverlapSphereNonAlloc(
             transform.position,
-            queryRadius,
-            prototypeSoftSeparationOverlapBuffer,
+            prototypeBodyPreferredDistance,
+            prototypeBodyOverlapBuffer,
             ~0,
             QueryTriggerInteraction.Collide);
 
-        Vector3 separationVelocity = Vector3.zero;
-        int contributingNeighbors = 0;
-
         for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
-            Collider hit = prototypeSoftSeparationOverlapBuffer[hitIndex];
+            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
 
             if (hit == null)
                 continue;
@@ -152,88 +219,233 @@ public class SoldierMotor : MonoBehaviour
             SoldierController otherSoldier =
                 hit.GetComponentInParent<SoldierController>();
 
-            if (!IsValidPrototypeSoftSeparationNeighbor(otherSoldier))
+            if (!IsValidPrototypeBodyNeighbor(otherSoldier))
                 continue;
 
-            if (WasPrototypeSoftSeparationNeighborAlreadyCounted(
+            if (WasPrototypeBodyNeighborAlreadyCounted(
                     hitIndex,
                     otherSoldier))
             {
                 continue;
             }
 
-            Vector3 awayFromNeighbor =
-                transform.position - otherSoldier.transform.position;
-
-            awayFromNeighbor.y = 0f;
-
-            float distance = awayFromNeighbor.magnitude;
-
-            if (distance >= prototypeSoftSeparationPreferredDistance)
+            // Strict pair ownership prevents both SoldierMotors from resolving the
+            // same contact and doubling the correction in one frame.
+            if (!OwnsPrototypeBodyPair(otherSoldier))
                 continue;
 
-            if (distance <= 0.0001f)
-            {
-                awayFromNeighbor = GetPrototypeSoftSeparationFallbackDirection(
-                    otherSoldier);
-                distance = 0f;
-            }
-            else
-            {
-                awayFromNeighbor /= distance;
-            }
+            ResolvePrototypeBodyPair(otherSoldier);
+        }
+    }
 
-            float overlapDepth =
-                prototypeSoftSeparationPreferredDistance - distance;
+    void ResolvePrototypeBodyPair(SoldierController otherSoldier)
+    {
+        if (otherSoldier == null || otherSoldier.Motor == null)
+            return;
 
-            separationVelocity +=
-                awayFromNeighbor * (overlapDepth * prototypeSoftSeparationStrength);
+        Vector3 awayFromOther =
+            transform.position - otherSoldier.transform.position;
 
-            contributingNeighbors++;
+        awayFromOther.y = 0f;
+
+        float distance = awayFromOther.magnitude;
+
+        if (distance >= prototypeBodyPreferredDistance)
+            return;
+
+        if (distance <= 0.0001f)
+        {
+            awayFromOther = GetPrototypeBodyFallbackDirection(otherSoldier);
+            distance = 0f;
+        }
+        else
+        {
+            awayFromOther /= distance;
         }
 
-        if (contributingNeighbors <= 0)
-            return;
+        bool isFriendly = IsPrototypeBodyFriendly(otherSoldier);
+        float minimumDistance = isFriendly
+            ? prototypeBodyFriendlyMinimumDistance
+            : prototypeBodyEnemyMinimumDistance;
 
-        separationVelocity /= contributingNeighbors;
-        separationVelocity *= separationMultiplier;
-        separationVelocity = Vector3.ClampMagnitude(
-            separationVelocity,
-            prototypeSoftSeparationMaximumSpeed);
+        float softOverlap =
+            prototypeBodyPreferredDistance - distance;
 
-        Vector3 separationDelta =
-            separationVelocity * Time.deltaTime;
+        float correctionSpeed =
+            softOverlap * prototypeBodySoftPressureStrength;
 
-        if (separationDelta.sqrMagnitude <= 0.000001f)
-            return;
-
-        agent.Move(separationDelta);
-
-        // Keep animation/movement queries aware of the correction when the soldier
-        // is otherwise being moved through direct formation deltas.
-        if (!agent.hasPath)
+        if (distance < minimumDistance)
         {
-            manualMovementVelocity = separationVelocity;
+            float hardPenetration = minimumDistance - distance;
+            correctionSpeed +=
+                hardPenetration * prototypeBodyHardCorrectionStrength;
+        }
+
+        correctionSpeed *= isFriendly
+            ? prototypeBodyFriendlyCorrectionMultiplier
+            : prototypeBodyEnemyCorrectionMultiplier;
+
+        correctionSpeed = Mathf.Min(
+            correctionSpeed,
+            prototypeBodyMaximumCorrectionSpeed);
+
+        if (correctionSpeed <= 0f)
+            return;
+
+        float ownInverseMass = 1f / BodyMass;
+        float otherInverseMass = 1f / otherSoldier.Motor.BodyMass;
+        float totalInverseMass = ownInverseMass + otherInverseMass;
+
+        float ownShare = totalInverseMass > 0f
+            ? ownInverseMass / totalInverseMass
+            : 0.5f;
+
+        float otherShare = totalInverseMass > 0f
+            ? otherInverseMass / totalInverseMass
+            : 0.5f;
+
+        Vector3 pairCorrectionDelta =
+            awayFromOther * correctionSpeed * Time.deltaTime;
+
+        ApplyPrototypeBodyCorrection(
+            pairCorrectionDelta * ownShare,
+            isHardCorrection: distance < minimumDistance);
+
+        otherSoldier.Motor.ApplyPrototypeBodyCorrection(
+            -pairCorrectionDelta * otherShare,
+            isHardCorrection: distance < minimumDistance);
+    }
+
+    void ApplyPrototypeBodyCorrection(
+        Vector3 correctionDelta,
+        bool isHardCorrection)
+    {
+        if (!prototypeBodyPressureEnabled)
+            return;
+
+        if (!CanMove())
+            return;
+
+        if (soldierController == null || !soldierController.IsAlive)
+            return;
+
+        correctionDelta.y = 0f;
+
+        if (correctionDelta.sqrMagnitude <= 0.000001f)
+            return;
+
+        // Active melee soldiers retain only a small amount of cosmetic soft
+        // separation, but hard minimum-distance correction always remains active.
+        if (!isHardCorrection &&
+            soldierController.Role == SoldierRole.Frontline &&
+            soldierController.Squad != null &&
+            soldierController.Squad.State == SquadState.InCombat)
+        {
+            correctionDelta *= prototypeBodyFrontlineSoftPressureMultiplier;
+        }
+
+        agent.Move(correctionDelta);
+
+        if (!agent.hasPath && Time.deltaTime > 0f)
+        {
+            manualMovementVelocity = correctionDelta / Time.deltaTime;
             manualMovementVelocityValidUntil = Time.time + 0.12f;
         }
     }
 
-    float GetPrototypeSoftSeparationMultiplier()
+    Vector3 ResolvePrototypeBodyBlockedMovementDelta(Vector3 requestedDelta)
     {
-        if (soldierController == null)
-            return 0f;
+        if (!prototypeBodyPressureEnabled)
+            return requestedDelta;
 
-        if (soldierController.Role == SoldierRole.Frontline &&
-            soldierController.Squad != null &&
-            soldierController.Squad.State == SquadState.InCombat)
+        if (soldierController == null || !soldierController.IsAlive)
+            return requestedDelta;
+
+        requestedDelta.y = 0f;
+
+        if (requestedDelta.sqrMagnitude <= 0.000001f)
+            return requestedDelta;
+
+        float queryRadius =
+            prototypeBodyPreferredDistance + requestedDelta.magnitude;
+
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            transform.position,
+            queryRadius,
+            prototypeBodyOverlapBuffer,
+            ~0,
+            QueryTriggerInteraction.Collide);
+
+        Vector3 resolvedDelta = requestedDelta;
+
+        for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
-            return prototypeSoftSeparationFrontlineMultiplier;
+            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
+
+            if (hit == null)
+                continue;
+
+            SoldierController otherSoldier =
+                hit.GetComponentInParent<SoldierController>();
+
+            if (!IsValidPrototypeBodyNeighbor(otherSoldier))
+                continue;
+
+            if (WasPrototypeBodyNeighborAlreadyCounted(
+                    hitIndex,
+                    otherSoldier))
+            {
+                continue;
+            }
+
+            Vector3 toOther =
+                otherSoldier.transform.position - transform.position;
+
+            toOther.y = 0f;
+
+            float currentDistance = toOther.magnitude;
+
+            if (currentDistance <= 0.0001f)
+                continue;
+
+            Vector3 contactNormal = toOther / currentDistance;
+            float inwardDistance = Vector3.Dot(
+                resolvedDelta,
+                contactNormal);
+
+            if (inwardDistance <= 0f)
+                continue;
+
+            bool isFriendly = IsPrototypeBodyFriendly(otherSoldier);
+            float minimumDistance = isFriendly
+                ? prototypeBodyFriendlyMinimumDistance
+                : prototypeBodyEnemyMinimumDistance;
+
+            float allowedInwardDistance = Mathf.Max(
+                0f,
+                currentDistance - minimumDistance);
+
+            if (inwardDistance <= allowedInwardDistance)
+                continue;
+
+            // Remove only the excess inward component. The perpendicular/tangent
+            // component survives, allowing shoulder sliding and edge flow instead
+            // of turning every contact into a complete stop.
+            float blockedInwardDistance =
+                inwardDistance - allowedInwardDistance;
+
+            float blockingMultiplier = isFriendly
+                ? prototypeBodyFriendlyInwardBlockingMultiplier
+                : prototypeBodyEnemyInwardBlockingMultiplier;
+
+            resolvedDelta -=
+                contactNormal * (blockedInwardDistance * blockingMultiplier);
         }
 
-        return 1f;
+        return resolvedDelta;
     }
 
-    bool IsValidPrototypeSoftSeparationNeighbor(
+    bool IsValidPrototypeBodyNeighbor(
         SoldierController otherSoldier)
     {
         if (otherSoldier == null || otherSoldier == soldierController)
@@ -242,7 +454,7 @@ public class SoldierMotor : MonoBehaviour
         return otherSoldier.IsAlive;
     }
 
-    bool WasPrototypeSoftSeparationNeighborAlreadyCounted(
+    bool WasPrototypeBodyNeighborAlreadyCounted(
         int currentHitIndex,
         SoldierController candidateSoldier)
     {
@@ -251,7 +463,7 @@ public class SoldierMotor : MonoBehaviour
              previousHitIndex++)
         {
             Collider previousHit =
-                prototypeSoftSeparationOverlapBuffer[previousHitIndex];
+                prototypeBodyOverlapBuffer[previousHitIndex];
 
             if (previousHit == null)
                 continue;
@@ -266,7 +478,28 @@ public class SoldierMotor : MonoBehaviour
         return false;
     }
 
-    Vector3 GetPrototypeSoftSeparationFallbackDirection(
+    bool OwnsPrototypeBodyPair(SoldierController otherSoldier)
+    {
+        if (otherSoldier == null)
+            return false;
+
+        return gameObject.GetInstanceID() <
+               otherSoldier.gameObject.GetInstanceID();
+    }
+
+    bool IsPrototypeBodyFriendly(SoldierController otherSoldier)
+    {
+        if (soldierController == null || otherSoldier == null)
+            return false;
+
+        if (soldierController.Faction == null || otherSoldier.Faction == null)
+            return soldierController.Squad == otherSoldier.Squad;
+
+        return soldierController.Faction.teamId ==
+               otherSoldier.Faction.teamId;
+    }
+
+    Vector3 GetPrototypeBodyFallbackDirection(
         SoldierController otherSoldier)
     {
         int ownId = gameObject.GetInstanceID();
@@ -277,6 +510,157 @@ public class SoldierMotor : MonoBehaviour
         return ownId <= otherId
             ? Vector3.right
             : Vector3.left;
+    }
+
+    #endregion
+
+    #region Prototype External Impulse
+
+    /// Applies an authored impulse that does not depend on another unit's movement.
+    /// One impulse unit applied to one body-mass unit produces one meter-per-second
+    /// of initial push velocity before duration-based decay and safety clamping.
+    public void ApplyExternalImpulse(
+        Vector3 direction,
+        float impulseMagnitude,
+        float duration = prototypeImpulseDefaultDuration)
+    {
+        ApplyResolvedImpulse(
+            direction,
+            impulseMagnitude,
+            duration);
+    }
+
+    /// Calculates a body-driven impulse from the source motor's mass and closing
+    /// speed, then feeds the exact same receiver pipeline as an external impulse.
+    /// A sideways or stationary source contributes little or no body impulse.
+    public void ApplyBodyImpulse(
+        SoldierMotor sourceMotor,
+        Vector3 direction,
+        float impulseMultiplier = 1f,
+        float duration = prototypeImpulseDefaultDuration)
+    {
+        if (sourceMotor == null)
+            return;
+
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+            return;
+
+        Vector3 normalizedDirection = direction.normalized;
+        Vector3 sourceVelocity = sourceMotor.Velocity;
+        sourceVelocity.y = 0f;
+
+        float closingSpeed = Mathf.Max(
+            0f,
+            Vector3.Dot(sourceVelocity, normalizedDirection));
+
+        float resolvedImpulseMagnitude =
+            sourceMotor.BodyMass *
+            closingSpeed *
+            Mathf.Max(0f, impulseMultiplier);
+
+        ApplyResolvedImpulse(
+            normalizedDirection,
+            resolvedImpulseMagnitude,
+            duration);
+    }
+
+    /// Clears all currently stored custom push velocity. Normal path/formation
+    /// movement is not affected.
+    public void ClearExternalImpulse()
+    {
+        prototypeExternalPushVelocity = Vector3.zero;
+        prototypeExternalPushTimeRemaining = 0f;
+    }
+
+    void ApplyResolvedImpulse(
+        Vector3 direction,
+        float impulseMagnitude,
+        float duration)
+    {
+        if (soldierController == null || !soldierController.IsAlive)
+            return;
+
+        direction.y = 0f;
+        impulseMagnitude = Mathf.Max(0f, impulseMagnitude);
+        duration = Mathf.Max(0.01f, duration);
+
+        if (direction.sqrMagnitude <= 0.0001f || impulseMagnitude <= 0f)
+            return;
+
+        float receivedPushSpeed = impulseMagnitude / BodyMass;
+
+        prototypeExternalPushVelocity +=
+            direction.normalized * receivedPushSpeed;
+
+        prototypeExternalPushVelocity = Vector3.ClampMagnitude(
+            prototypeExternalPushVelocity,
+            prototypeImpulseMaximumPushSpeed);
+
+        prototypeExternalPushTimeRemaining = Mathf.Max(
+            prototypeExternalPushTimeRemaining,
+            duration);
+    }
+
+    void TickPrototypeExternalImpulse()
+    {
+        if (!CanMove()) // check if this applies when attacking in combat and if we want this.
+            return;
+
+        if (soldierController == null || !soldierController.IsAlive)
+        {
+            ClearExternalImpulse();
+            return;
+        }
+
+        if (prototypeExternalPushTimeRemaining <= 0f ||
+            prototypeExternalPushVelocity.sqrMagnitude <=
+            prototypeImpulseMinimumPushSpeed * prototypeImpulseMinimumPushSpeed)
+        {
+            ClearExternalImpulse();
+            return;
+        }
+
+        float deltaTime = Time.deltaTime;
+
+        if (deltaTime <= 0f)
+            return;
+
+        Vector3 requestedPushDelta =
+            prototypeExternalPushVelocity * deltaTime;
+
+        requestedPushDelta.y = 0f;
+
+        Vector3 resolvedPushDelta = ResolvePrototypeBodyBlockedMovementDelta(
+            requestedPushDelta);
+
+        if (resolvedPushDelta.sqrMagnitude > 0.000001f)
+            agent.Move(resolvedPushDelta);
+
+        manualMovementVelocity = resolvedPushDelta / deltaTime;
+        manualMovementVelocityValidUntil = Time.time + 0.12f;
+
+        float previousTimeRemaining = prototypeExternalPushTimeRemaining;
+        prototypeExternalPushTimeRemaining = Mathf.Max(
+            0f,
+            prototypeExternalPushTimeRemaining - deltaTime);
+
+        float decaySpeed = previousTimeRemaining > 0f
+            ? prototypeExternalPushVelocity.magnitude / previousTimeRemaining
+            : prototypeExternalPushVelocity.magnitude;
+
+        prototypeExternalPushVelocity = Vector3.MoveTowards(
+            prototypeExternalPushVelocity,
+            Vector3.zero,
+            decaySpeed * deltaTime);
+
+        if (prototypeExternalPushTimeRemaining <= 0f ||
+            prototypeExternalPushVelocity.sqrMagnitude <=
+            prototypeImpulseMinimumPushSpeed * prototypeImpulseMinimumPushSpeed)
+        {
+            ClearExternalImpulse();
+        }
     }
 
     #endregion
@@ -360,6 +744,9 @@ public class SoldierMotor : MonoBehaviour
             movementDelta = movementDelta.normalized * maxDistanceThisFrame;
         }
 
+        movementDelta = ResolvePrototypeBodyBlockedMovementDelta(
+            movementDelta);
+
         manualMovementVelocity = Time.deltaTime > 0f
             ? movementDelta / Time.deltaTime
             : Vector3.zero;
@@ -409,6 +796,8 @@ public class SoldierMotor : MonoBehaviour
 
     public void Warp(Vector3 position)
     {
+        ClearExternalImpulse();
+
         if (agent != null && agent.enabled && agent.isOnNavMesh)
             agent.Warp(position);
         else
@@ -479,7 +868,7 @@ public class SoldierMotor : MonoBehaviour
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
             targetRotation,
-            turnSpeed * Time.deltaTime);
+            turnSpeed * Time.deltaTime * 1.15f); // DEBUG: *1.15f to help increase turn speed based on current delta (trying to help prevent sideways movement) though we could just adjust turnspeed directly.
     }
 }
 
