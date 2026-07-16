@@ -18,13 +18,13 @@ public class SquadCombatProfile : ScriptableObject
     public bool autoTargetScanEnabled = true;
 
     [Tooltip("How often this squad checks for nearby enemy squads while auto target scanning is enabled.")]
-    [Min(0.01f)] public float autoTargetScanInterval = 0.35f;
+    [Min(0.01f)] public float autoTargetScanInterval = 0.5f;
 
     [Tooltip("How far this squad scans for enemy targets while in Engage stance.")]
-    [Min(0f)] public float engageStanceAutoTargetScanRange = 14f;
+    [Min(0f)] public float engageStanceAutoTargetScanRange = 9f;
 
     [Tooltip("How far this squad scans for enemy targets while in Hold stance.")]
-    [Min(0f)] public float holdStanceAutoTargetScanRange = 8f;
+    [Min(0f)] public float holdStanceAutoTargetScanRange = 1f;
 
 
     [Header("Approach And Combat Exit")]

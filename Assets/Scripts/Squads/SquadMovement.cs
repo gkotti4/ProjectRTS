@@ -285,7 +285,9 @@ public class SquadMovement : MonoBehaviour
     /// Updates squad movement while traveling to an ordered destination.
     public void TickMoving()
     {
-        TickMovementCore(allowArrivalStateChange: true);
+        TickMovementCore(
+            allowArrivalStateChange: true,
+            movementSpeedMultiplier: 1f);
     }
 
     public void TickReforming()
@@ -300,9 +302,11 @@ public class SquadMovement : MonoBehaviour
     
     /// Ticks movement without forcing normal move-order state transitions.
     /// This is used by approach/charge states where combat owns the high-level state.
-    public void TickFormationFollow()
+    public void TickFormationFollow(float movementSpeedMultiplier = 1f)
     {
-        TickMovementCore(allowArrivalStateChange: false);
+        TickMovementCore(
+            allowArrivalStateChange: false,
+            movementSpeedMultiplier: movementSpeedMultiplier);
     }
     
 
@@ -351,28 +355,36 @@ public class SquadMovement : MonoBehaviour
         return dir.normalized;
     }
 
-    void TickMovementCore(bool allowArrivalStateChange)
+    void TickMovementCore(
+        bool allowArrivalStateChange,
+        float movementSpeedMultiplier)
     {
         if (!HasMovementProfile())
             return;
 
+        movementSpeedMultiplier = Mathf.Max(0.1f, movementSpeedMultiplier);
+
         switch (moveMode)
         {
             case SquadMoveMode.FormedMove:
-                TickFormedMove(allowArrivalStateChange);
+                TickFormedMove(
+                    allowArrivalStateChange,
+                    movementSpeedMultiplier);
                 return;
 
             case SquadMoveMode.LooseMove:
-                TickLooseMove(allowArrivalStateChange);
+                TickLooseMove(
+                    allowArrivalStateChange,
+                    movementSpeedMultiplier);
                 return;
 
             case SquadMoveMode.Reforming:
-                TickReformingCore(allowStateChange: allowArrivalStateChange);
+                TickReformingCore(allowStateChange: allowArrivalStateChange); // recently changed to not use CatchupMultiplier in UpdateSoldiersToCurrentSlots
                 return;
 
             case SquadMoveMode.IdleFormed:
             default:
-                UpdateSoldiersToCurrentSlots();
+                UpdateSoldiersToCurrentSlots(); // recently changed to not use CatchupMultiplier
                 return;
         }
     }
@@ -406,7 +418,9 @@ public class SquadMovement : MonoBehaviour
 
 
     
-    void TickFormedMove(bool allowArrivalStateChange)
+    void TickFormedMove(
+        bool allowArrivalStateChange,
+        float movementSpeedMultiplier)
     {
         if (roster == null || formation == null)
             return;
@@ -431,7 +445,10 @@ public class SquadMovement : MonoBehaviour
 
         if (!shouldEmergencyPauseAnchor && !anchorAtDestination)
         {
-            float moveDistance = effectiveAnchorMoveSpeed * Time.deltaTime;
+            float moveDistance =
+                effectiveAnchorMoveSpeed *
+                movementSpeedMultiplier *
+                Time.deltaTime;
             nextAnchor = AdvanceAnchorAlongPath(moveDistance);
             pathDirection = GetCurrentPathDirectionFrom(nextAnchor);
         }
@@ -483,7 +500,8 @@ public class SquadMovement : MonoBehaviour
         MoveSoldiersByFormationSlots(
             oldSlots,
             newSlots,
-            desiredFacing);
+            desiredFacing,
+            movementSpeedMultiplier);
 
         if (HasAnchorReachedDestination())
             CompleteMovementOrReform(allowArrivalStateChange);
@@ -491,7 +509,9 @@ public class SquadMovement : MonoBehaviour
     
     
     
-    void TickLooseMove(bool allowArrivalStateChange)
+    void TickLooseMove(
+        bool allowArrivalStateChange,
+        float movementSpeedMultiplier)
     {
         if (roster == null || formation == null)
             return;
@@ -505,7 +525,7 @@ public class SquadMovement : MonoBehaviour
         MoveSoldiersIndividuallyToSlots(
             finalSlots,
             movementProfile.memberStoppingDistance,
-            1f);
+            movementSpeedMultiplier);
 
         // The squad root is visual/representational during LooseMove.
         // It should not be NavMesh-projected or treated like a physical unit.
@@ -514,7 +534,10 @@ public class SquadMovement : MonoBehaviour
         if (center != Vector3.zero)
         {
             float maxRootFollowDistance =
-                Mathf.Max(0.1f, memberBaseMoveSpeed) * Time.deltaTime;
+                Mathf.Max(
+                    0.1f,
+                    memberBaseMoveSpeed * movementSpeedMultiplier) *
+                Time.deltaTime;
 
             MoveRootTowardVirtualPoint(
                 center,
@@ -616,7 +639,7 @@ public class SquadMovement : MonoBehaviour
     /// Keeping old slot indices makes the whole unit appear to rotate/orbit around the
     /// formation center. Instead, snap the formation facing, then assign each living
     /// soldier to the nearest slot in the new layout.
-    void CompleteMovementOrReform(bool allowArrivalStateChange) // new
+    void CompleteMovementOrReform(bool allowArrivalStateChange)
     {
         pathCorners.Clear();
         pathCornerIndex = 0;
@@ -624,19 +647,32 @@ public class SquadMovement : MonoBehaviour
 
         MoveRootToProjectedPoint(finalDestination);
 
-        desiredFacing = NormalizeFacing(finalFacing);
+        Vector3 previousFacing = NormalizeFacing(desiredFacing);
+        Vector3 resolvedFinalFacing = NormalizeFacing(finalFacing);
+
+        float arrivalFacingAngle = Vector3.Angle(
+            previousFacing,
+            resolvedFinalFacing);
+
+        desiredFacing = resolvedFinalFacing;
 
         formation.SetFacing(desiredFacing);
 
-        formation.ReassignLivingSoldiersToNearestSlots( // MUCH BETTER, fixes the weird flipping behavior for large difference in facing values when arriving
+        if (arrivalFacingAngle > 110f)
+        {
+            formation.ReassignLivingSoldiersToNearestSlots(
+                transform.position,
+                desiredFacing);
+        }
+
+        formation.UpdateSlots(
             transform.position,
             desiredFacing);
-
-        formation.UpdateSlots(transform.position, desiredFacing);
 
         ForceRefreshSlotDestinations();
 
         reformTimer = 0f;
+
         if (allowArrivalStateChange)
             squad.SetState(SquadState.Reforming);
     }
@@ -970,7 +1006,8 @@ public class SquadMovement : MonoBehaviour
     void MoveSoldiersByFormationSlots(
         IReadOnlyList<Vector3> oldSlots,
         IReadOnlyList<Vector3> newSlots,
-        Vector3 facing)
+        Vector3 facing,
+        float movementSpeedMultiplier)
     {
         if (roster == null || oldSlots == null || newSlots == null)
             return;
@@ -999,7 +1036,11 @@ public class SquadMovement : MonoBehaviour
 
             float slotErrorDistance = slotError.magnitude;
             float catchupMultiplier = GetFormedCatchupSpeedMultiplier(slotErrorDistance);
-            float speedLimit = Mathf.Max(0.1f, memberBaseMoveSpeed * catchupMultiplier);
+            float speedLimit = Mathf.Max(
+                0.1f,
+                memberBaseMoveSpeed *
+                movementSpeedMultiplier *
+                catchupMultiplier);
 
             // Correction is the steering force back into the assigned slot.
             // Catchup raises the soldier speed budget; correction itself remains
@@ -1084,7 +1125,7 @@ public class SquadMovement : MonoBehaviour
 
     /// Moves each living soldier toward its assigned formation slot using normal
     /// individual NavMeshAgent destinations. Used by idle/reforming/hold behavior.
-    void UpdateSoldiersToCurrentSlots()
+    void UpdateSoldiersToCurrentSlots(float maxSpeedMultiplier=1.1f)
     {
         if (!HasMovementProfile())
             return;
@@ -1112,7 +1153,9 @@ public class SquadMovement : MonoBehaviour
                 soldier.transform.position,
                 slot);
 
-            float speedMultiplier = GetCatchupMultiplier(distance);
+            float speedMultiplier = Mathf.Min(
+                GetCatchupMultiplier(distance),
+                maxSpeedMultiplier);            
 
             soldier.MoveToSlot(
                 slot,

@@ -102,19 +102,21 @@ public class SquadCombat : MonoBehaviour
     private const float prototypeApproachSettleMinimumReadyRange = 2.75f; // Minimum ready-check radius so very small combat start ranges still count nearby soldiers.
 
     // -----------------------------------------------------------------------------
-    // Prototype Engagement Run-Up MVP Tuning
+    // Prototype Universal Charge MVP Tuning
     // -----------------------------------------------------------------------------
-    // Short final melee rush between formation approach and normal combat. This is
-    // intentionally separate from the future cavalry charge / momentum system.
-    private const bool prototypeEngagementRunUpEnabled = true; // Enables the short per-soldier melee rush before normal combat begins.
-    private const float prototypeEngagementRunUpStartDistance = 6.5f; // Closest soldier-to-enemy distance that starts the run-up state.
-    private const float prototypeEngagementRunUpSpeedMultiplier = 2.5f; // Movement speed multiplier used while melee soldiers rush their assigned targets.
-    private const float prototypeEngagementRunUpMaximumDuration = 2.0f; // Safety limit before the squad enters normal combat even if clean contact was not detected.
+    // Every melee-capable squad uses the same broad charge phase. Unit identity will
+    // later come from data-driven charge values, mass, momentum, and impact behavior.
+    // For this MVP, charging is only a formation-wide speed surge before contact.
+    private const bool prototypeChargeEnabled = true; // Enables the shared melee charge phase between approach and combat.
+    private const float prototypeChargeStartDistance = 10.0f; // Closest living soldier distance that allows a melee squad to begin charging.
+    private const float prototypeChargeSpeedMultiplier = 1.65f; // Formation-wide movement multiplier while charging.
+    private const float prototypeChargeMaximumDuration = 3.0f; // Safety cap before the squad enters combat even if contact detection is imperfect.
+    private const float prototypeChargeContactReadyRatio = 0.15f; // Fraction of living melee soldiers that must reach personal attack range to finish the charge.
 
     // -----------------------------------------------------------------------------
-    // Prototype Engagement Run-Up MVP Runtime State
+    // Prototype Universal Charge MVP Runtime State
     // -----------------------------------------------------------------------------
-    private float prototypeEngagementRunUpTimer = 0f;
+    private float prototypeChargeTimer = 0f;
 
     // -----------------------------------------------------------------------------
     // Prototype Active Attacker Combat Lock MVP Tuning
@@ -135,7 +137,7 @@ public class SquadCombat : MonoBehaviour
     // to orbit the enemy; it only queues behind a friendly body.
     private const bool prototypeReserveBehindFriendlyRepositionEnabled = true; // Enables blocked reserves to move into an open pocket behind a better-positioned friendly.
     private const float prototypeReserveBehindFriendlySearchInterval = 2.35f; // Cooldown between behind-friendly reposition searches for each reserve soldier.
-    private const float prototypeReserveBehindFriendlyAnchorSearchRadius = 5.5f; // Max distance for finding friendly anchors that the reserve can queue behind.
+    private const float prototypeReserveBehindFriendlyAnchorSearchRadius = 6.0f; // Max distance for finding friendly anchors that the reserve can queue behind.
     private const float prototypeReserveBehindFriendlyBackOffset = 1.45f; // Distance behind the chosen friendly anchor where the reserve tries to move.
     private const float prototypeReserveBehindFriendlySideOffset = 0.65f; // Optional left/right offset from the behind point if side probes are enabled.
     private const float prototypeReserveBehindFriendlyNavMeshProjectionRadius = 1.05f; // Max distance allowed when projecting the candidate pocket onto the NavMesh.
@@ -281,17 +283,16 @@ public class SquadCombat : MonoBehaviour
 
         ClearPrototypeRuntimeState(clearAttackTimers: false);
 
-        if (ShouldUsePrototypeEngagementRunUp())
-        {
-            if (IsCloseEnoughToStartPrototypeEngagementRunUp(targetSquad))
-            {
-                BeginPrototypeEngagementRunUp();
-                return;
-            }
-        }
-        else if (IsCloseEnoughToStartEngagement(targetSquad))
+        if (IsCloseEnoughToStartEngagement(targetSquad))
         {
             BeginEngagement(notifyTarget: true);
+            return;
+        }
+
+        if (ShouldUsePrototypeCharge() &&
+            IsCloseEnoughToStartPrototypeCharge(targetSquad))
+        {
+            BeginPrototypeCharge();
             return;
         }
 
@@ -328,7 +329,7 @@ public class SquadCombat : MonoBehaviour
         currentEngagementType = SquadEngagementReason.None;
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
-        prototypeEngagementRunUpTimer = 0f;
+        prototypeChargeTimer = 0f;
 
         ClearPrototypeRuntimeState(clearAttackTimers: true);
         ClearSoldierCombatStates();
@@ -358,7 +359,8 @@ public class SquadCombat : MonoBehaviour
         TickScan();
     }
 
-    /// Moves toward the current attack target until close enough to enter combat.
+    /// Moves toward the current attack target until close enough to begin a melee
+    /// charge or enter ranged/direct combat.
     public void TickApproachingCombat()
     {
         if (!HasCombatProfile())
@@ -372,15 +374,7 @@ public class SquadCombat : MonoBehaviour
 
         movement.TickFormationFollow();
 
-        if (ShouldUsePrototypeEngagementRunUp())
-        {
-            if (IsCloseEnoughToStartPrototypeEngagementRunUp(targetSquad))
-            {
-                BeginPrototypeEngagementRunUp();
-                return;
-            }
-        }
-        else if (IsCloseEnoughToStartEngagement(targetSquad))
+        if (IsCloseEnoughToStartEngagement(targetSquad))
         {
             if (ShouldHoldInitialEngagementForApproachSettle(targetSquad))
                 return;
@@ -389,28 +383,25 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
-        approachEngagementSettleTimer = 0f;
-        approachRefreshTimer -= Time.deltaTime;
-
-        if (approachRefreshTimer > 0f)
+        if (ShouldUsePrototypeCharge() &&
+            IsCloseEnoughToStartPrototypeCharge(targetSquad))
+        {
+            BeginPrototypeCharge();
             return;
+        }
 
-        approachRefreshTimer = Mathf.Max(0.01f, squadCombatProfile.combatApproachRefreshInterval);
-
-        MoveTowardCombatTarget();
+        approachEngagementSettleTimer = 0f;
+        TickCombatApproachRefresh();
     }
 
-    /// Ticks the short per-soldier melee run-up before normal combat starts.
-    public void TickEngagementRunUp()
+    /// Ticks the shared melee charge phase. The full formation surges forward while
+    /// individual front soldiers naturally become the first contacts. Charge ends
+    /// when a meaningful fraction reaches personal melee range or the safety timer
+    /// expires.
+    public void TickCharging()
     {
         if (!HasCombatProfile())
             return;
-
-        if (!ShouldUsePrototypeEngagementRunUp())
-        {
-            BeginEngagement(notifyTarget: true);
-            return;
-        }
 
         if (!CanAttack(targetSquad))
         {
@@ -418,143 +409,44 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
-        prototypeEngagementRunUpTimer -= Time.deltaTime;
-
-        bool hasMadeMeleeContact = false;
-
-        foreach (SoldierController soldier in roster.Soldiers)
+        if (!ShouldUsePrototypeCharge())
         {
-            if (TickPrototypeEngagementRunUpSoldier(soldier))
-                hasMadeMeleeContact = true;
+            BeginApproachingCombat();
+            return;
         }
 
-        if (hasMadeMeleeContact ||
-            prototypeEngagementRunUpTimer <= 0f)
+        prototypeChargeTimer -= Time.deltaTime;
+
+        movement.TickFormationFollow(prototypeChargeSpeedMultiplier);
+
+        if (HasPrototypeChargeReachedContactRatio(targetSquad) ||
+            prototypeChargeTimer <= 0f)
         {
             BeginEngagement(notifyTarget: true);
+            return;
         }
+
+        TickCombatApproachRefresh();
+    }
+
+    void TickCombatApproachRefresh()
+    {
+        approachRefreshTimer -= Time.deltaTime;
+
+        if (approachRefreshTimer > 0f)
+            return;
+
+        approachRefreshTimer = Mathf.Max(
+            0.01f,
+            squadCombatProfile.combatApproachRefreshInterval);
+
+        MoveTowardCombatTarget();
     }
 
     /// Ticks active squad combat.
     public void TickCombat()
     {
         TickPrototypeCombat();
-    }
-
-    #endregion
-
-    #region Prototype Engagement Run-Up
-
-    bool TickPrototypeEngagementRunUpSoldier(SoldierController soldier)
-    {
-        if (soldier == null || !soldier.IsAlive)
-            return false;
-
-        if (soldier.IsMovementLocked || soldier.IsCombatMoveLocked)
-        {
-            soldier.Stop();
-            return false;
-        }
-
-        SoldierController currentTarget =
-            GetOrAssignPrototypeEngagementRunUpTarget(soldier);
-
-        if (currentTarget == null)
-        {
-            soldier.Stop();
-            soldier.SetCombatRole(SoldierRole.None);
-            soldier.ClearCombatTarget();
-            return false;
-        }
-
-        WeaponProfile weaponProfile = GetWeaponProfile(soldier);
-        bool isRangedWeapon = IsRangedWeapon(weaponProfile);
-
-        if (isRangedWeapon)
-        {
-            soldier.Stop();
-            soldier.SetCombatRole(SoldierRole.Ranged);
-            soldier.SetCombatTarget(currentTarget);
-            return false;
-        }
-
-        GetPrototypeAttackValues(
-            weaponProfile,
-            false,
-            out _,
-            out _,
-            out float attackRange,
-            out _,
-            out float stoppingDistance);
-
-        soldier.SetCombatTarget(currentTarget);
-
-        float distanceToTarget = Vector3.Distance(
-            Flatten(soldier.transform.position),
-            Flatten(currentTarget.transform.position));
-
-        if (distanceToTarget <= attackRange)
-        {
-            soldier.SetCombatRole(SoldierRole.Frontline);
-            soldier.Stop();
-            soldier.FaceToward(currentTarget.transform.position);
-            return true;
-        }
-
-        soldier.SetCombatRole(SoldierRole.Reserve);
-        soldier.MoveToCombatPoint(
-            currentTarget.transform.position,
-            stoppingDistance,
-            prototypeEngagementRunUpSpeedMultiplier);
-
-        return false;
-    }
-
-    SoldierController GetOrAssignPrototypeEngagementRunUpTarget(
-        SoldierController soldier)
-    {
-        if (soldier == null)
-            return null;
-
-        prototypeTargets.TryGetValue(
-            soldier,
-            out SoldierController currentTarget);
-
-        bool needsTarget =
-            !IsValidPrototypeTarget(currentTarget) ||
-            currentTarget.Squad != targetSquad;
-
-        if (needsTarget)
-        {
-            currentTarget = FindBestPrototypeEngagementRunUpTarget(
-                soldier,
-                currentTarget);
-
-            prototypeTargets[soldier] = currentTarget;
-        }
-
-        return currentTarget;
-    }
-
-    SoldierController FindBestPrototypeEngagementRunUpTarget(
-        SoldierController soldier,
-        SoldierController currentTarget)
-    {
-        if (soldier == null || targetSquad == null)
-            return null;
-
-        SoldierController bestTarget = null;
-        float bestScore = float.PositiveInfinity;
-
-        ScorePrototypeTargetsFromSquad(
-            soldier,
-            currentTarget,
-            targetSquad,
-            true,
-            ref bestTarget,
-            ref bestScore);
-
-        return bestTarget;
     }
 
     #endregion
@@ -887,6 +779,7 @@ public class SquadCombat : MonoBehaviour
         currentEngagementType = SquadEngagementReason.None;
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
+        prototypeChargeTimer = 0f;
 
         ClearPrototypeRuntimeState(
             clearAttackTimers: false,
@@ -1729,6 +1622,7 @@ public class SquadCombat : MonoBehaviour
         prototypeReserveSideStepTimers[soldier] -= Time.deltaTime;
         prototypeReserveBlockedSitTimers[soldier] -= Time.deltaTime;
         prototypeReserveBehindFriendlySearchTimers[soldier] -= Time.deltaTime;
+
     }
 
     bool TryFindImmediatePrototypeContactTarget(
@@ -2248,63 +2142,11 @@ public class SquadCombat : MonoBehaviour
     {
         ClearSoldierCombatStates();
         approachEngagementSettleTimer = 0f;
-        prototypeEngagementRunUpTimer = 0f;
 
         if (squad != null)
             squad.SetState(SquadState.ApproachingCombat);
 
         MoveTowardCombatTarget();
-    }
-
-    bool ShouldUsePrototypeEngagementRunUp()
-    {
-        return prototypeEngagementRunUpEnabled &&
-               !IsRangedCombatStyle();
-    }
-
-    bool IsCloseEnoughToStartPrototypeEngagementRunUp(
-        SquadController target)
-    {
-        if (!CanAttack(target))
-            return false;
-
-        if (!TryGetClosestLivingSoldierDistanceSqr(
-                roster,
-                target.Roster,
-                out float distanceSqr))
-        {
-            return false;
-        }
-
-        float startDistance = Mathf.Max(
-            GetSquadWeaponAttackRange(),
-            prototypeEngagementRunUpStartDistance);
-
-        return distanceSqr <= startDistance * startDistance;
-    }
-
-    void BeginPrototypeEngagementRunUp()
-    {
-        if (!ShouldUsePrototypeEngagementRunUp() ||
-            !CanAttack(targetSquad))
-        {
-            BeginEngagement(notifyTarget: true);
-            return;
-        }
-
-        currentCombatStyle = ResolveCombatStyle();
-        combatContactDirection = GetContactDirection();
-        approachEngagementSettleTimer = 0f;
-
-        ClearPrototypeRuntimeState(clearAttackTimers: false);
-        ClearSoldierCombatStates();
-
-        prototypeEngagementRunUpTimer = Mathf.Max(
-            0.01f,
-            prototypeEngagementRunUpMaximumDuration);
-
-        if (squad != null)
-            squad.SetState(SquadState.EngagementRunUp);
     }
 
     bool ShouldHoldInitialEngagementForApproachSettle(SquadController target)
@@ -2394,6 +2236,104 @@ public class SquadCombat : MonoBehaviour
         return false;
     }
 
+    bool ShouldUsePrototypeCharge()
+    {
+        return prototypeChargeEnabled &&
+               !IsRangedCombatStyle();
+    }
+
+    bool IsCloseEnoughToStartPrototypeCharge(SquadController target)
+    {
+        if (!ShouldUsePrototypeCharge() || target == null)
+            return false;
+
+        if (!TryGetClosestLivingSoldierDistanceSqr(
+                roster,
+                target.Roster,
+                out float distanceSqr))
+        {
+            return false;
+        }
+
+        float chargeStartDistance = Mathf.Max(
+            GetEffectiveCombatStartRange(),
+            prototypeChargeStartDistance);
+
+        return distanceSqr <= chargeStartDistance * chargeStartDistance;
+    }
+
+    void BeginPrototypeCharge()
+    {
+        if (!ShouldUsePrototypeCharge() ||
+            targetSquad == null ||
+            !CanAttack(targetSquad))
+        {
+            BeginApproachingCombat();
+            return;
+        }
+
+        approachEngagementSettleTimer = 0f;
+        approachRefreshTimer = 0f;
+        prototypeChargeTimer = Mathf.Max(
+            0.01f,
+            prototypeChargeMaximumDuration);
+
+        if (squad != null)
+            squad.SetState(SquadState.Charging);
+
+        MoveTowardCombatTarget();
+    }
+
+    bool HasPrototypeChargeReachedContactRatio(SquadController target)
+    {
+        if (roster == null || target == null || target.Roster == null)
+            return false;
+
+        int livingMeleeSoldiers = 0;
+        int contactReadySoldiers = 0;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            WeaponProfile weaponProfile = GetWeaponProfile(soldier);
+
+            if (IsRangedWeapon(weaponProfile))
+                continue;
+
+            livingMeleeSoldiers++;
+
+            GetPrototypeAttackValues(
+                weaponProfile,
+                false,
+                out _,
+                out _,
+                out float attackRange,
+                out _,
+                out _);
+
+            if (IsSoldierNearAnyLivingEnemyInSquad(
+                    soldier,
+                    target.Roster,
+                    attackRange * attackRange))
+            {
+                contactReadySoldiers++;
+            }
+        }
+
+        if (livingMeleeSoldiers <= 0)
+            return true;
+
+        int requiredContactSoldiers = Mathf.Clamp(
+            Mathf.CeilToInt(
+                livingMeleeSoldiers * prototypeChargeContactReadyRatio),
+            1,
+            livingMeleeSoldiers);
+
+        return contactReadySoldiers >= requiredContactSoldiers;
+    }
+
     void BeginEngagement(bool notifyTarget)
     {
         if (targetSquad == null)
@@ -2403,7 +2343,6 @@ public class SquadCombat : MonoBehaviour
         currentCombatStyle = ResolveCombatStyle();
         combatContactDirection = GetContactDirection();
         approachEngagementSettleTimer = 0f;
-        prototypeEngagementRunUpTimer = 0f;
 
         ClearPrototypeRuntimeState(clearAttackTimers: false);
 
