@@ -302,11 +302,16 @@ public class SquadMovement : MonoBehaviour
     
     /// Ticks movement without forcing normal move-order state transitions.
     /// This is used by approach/charge states where combat owns the high-level state.
-    public void TickFormationFollow(float movementSpeedMultiplier = 1f)
+    public void TickFormationFollow(
+        float movementSpeedMultiplier = 1f,
+        ISet<SoldierController> leadSoldiers = null,
+        float leadSoldierSpeedMultiplier = 1f)
     {
         TickMovementCore(
             allowArrivalStateChange: false,
-            movementSpeedMultiplier: movementSpeedMultiplier);
+            movementSpeedMultiplier: movementSpeedMultiplier,
+            leadSoldiers: leadSoldiers,
+            leadSoldierSpeedMultiplier: leadSoldierSpeedMultiplier);
     }
     
 
@@ -357,7 +362,9 @@ public class SquadMovement : MonoBehaviour
 
     void TickMovementCore(
         bool allowArrivalStateChange,
-        float movementSpeedMultiplier)
+        float movementSpeedMultiplier,
+        ISet<SoldierController> leadSoldiers = null,
+        float leadSoldierSpeedMultiplier = 1f)
     {
         if (!HasMovementProfile())
             return;
@@ -369,7 +376,9 @@ public class SquadMovement : MonoBehaviour
             case SquadMoveMode.FormedMove:
                 TickFormedMove(
                     allowArrivalStateChange,
-                    movementSpeedMultiplier);
+                    movementSpeedMultiplier,
+                    leadSoldiers,
+                    leadSoldierSpeedMultiplier);
                 return;
 
             case SquadMoveMode.LooseMove:
@@ -420,7 +429,9 @@ public class SquadMovement : MonoBehaviour
     
     void TickFormedMove(
         bool allowArrivalStateChange,
-        float movementSpeedMultiplier)
+        float movementSpeedMultiplier,
+        ISet<SoldierController> leadSoldiers,
+        float leadSoldierSpeedMultiplier)
     {
         if (roster == null || formation == null)
             return;
@@ -501,7 +512,9 @@ public class SquadMovement : MonoBehaviour
             oldSlots,
             newSlots,
             desiredFacing,
-            movementSpeedMultiplier);
+            movementSpeedMultiplier,
+            leadSoldiers,
+            leadSoldierSpeedMultiplier);
 
         if (HasAnchorReachedDestination())
             CompleteMovementOrReform(allowArrivalStateChange);
@@ -1007,7 +1020,9 @@ public class SquadMovement : MonoBehaviour
         IReadOnlyList<Vector3> oldSlots,
         IReadOnlyList<Vector3> newSlots,
         Vector3 facing,
-        float movementSpeedMultiplier)
+        float movementSpeedMultiplier,
+        ISet<SoldierController> leadSoldiers,
+        float leadSoldierSpeedMultiplier)
     {
         if (roster == null || oldSlots == null || newSlots == null)
             return;
@@ -1050,6 +1065,36 @@ public class SquadMovement : MonoBehaviour
             Vector3 correction = Vector3.ClampMagnitude(
                 slotError,
                 maxCorrectionThisFrame);
+
+            bool isLeadSoldier =
+                leadSoldiers != null &&
+                leadSoldiers.Contains(soldier);
+
+            float resolvedLeadSpeedMultiplier = isLeadSoldier
+                ? Mathf.Max(1f, leadSoldierSpeedMultiplier)
+                : 1f;
+
+            if (resolvedLeadSpeedMultiplier > 1f)
+            {
+                Vector3 leadDirection = facing;
+                leadDirection.y = 0f;
+
+                if (leadDirection.sqrMagnitude > 0.0001f)
+                {
+                    leadDirection.Normalize();
+
+                    float additionalLeadDistance =
+                        memberBaseMoveSpeed *
+                        movementSpeedMultiplier *
+                        (resolvedLeadSpeedMultiplier - 1f) *
+                        Time.deltaTime;
+
+                    slotDelta +=
+                        leadDirection * additionalLeadDistance;
+                }
+            }
+
+            speedLimit *= resolvedLeadSpeedMultiplier;
 
             Vector3 movementDelta = slotDelta + correction;
 

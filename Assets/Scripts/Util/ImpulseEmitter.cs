@@ -48,7 +48,9 @@ public static class ImpulseEmitter
         SoldierController sourceSoldier = null,
         bool affectFriendlies = false,
         float minimumFalloff = 0.15f,
-        LayerMask layerMask = default)
+        LayerMask layerMask = default,
+        ISet<SoldierController> excludedTargets = null,
+        ISet<SoldierController> affectedTargets = null)
     {
         radius = Mathf.Max(0.01f, radius);
         impulseMagnitude = Mathf.Max(0f, impulseMagnitude);
@@ -82,6 +84,12 @@ public static class ImpulseEmitter
                 continue;
             }
 
+            if (excludedTargets != null &&
+                excludedTargets.Contains(targetSoldier))
+            {
+                continue;
+            }
+
             if (!impulseUniqueTargets.Add(targetSoldier))
                 continue;
 
@@ -107,6 +115,8 @@ public static class ImpulseEmitter
                 radialDirection,
                 impulseMagnitude * distanceStrength,
                 duration);
+
+            affectedTargets?.Add(targetSoldier);
         }
 
         return impulseUniqueTargets.Count;
@@ -132,7 +142,9 @@ public static class ImpulseEmitter
         bool affectFriendlies = false,
         float radialBlend = 0.15f,
         float minimumFalloff = 0.35f,
-        LayerMask layerMask = default)
+        LayerMask layerMask = default,
+        ISet<SoldierController> excludedTargets = null,
+        ISet<SoldierController> affectedTargets = null)
     {
         capsuleRadius = Mathf.Max(0.01f, capsuleRadius);
         impulseMagnitude = Mathf.Max(0f, impulseMagnitude);
@@ -178,6 +190,12 @@ public static class ImpulseEmitter
                 continue;
             }
 
+            if (excludedTargets != null &&
+                excludedTargets.Contains(targetSoldier))
+            {
+                continue;
+            }
+
             if (!impulseUniqueTargets.Add(targetSoldier))
                 continue;
 
@@ -214,6 +232,8 @@ public static class ImpulseEmitter
                 resolvedDirection,
                 impulseMagnitude * distanceStrength,
                 duration);
+
+            affectedTargets?.Add(targetSoldier);
         }
 
         return impulseUniqueTargets.Count;

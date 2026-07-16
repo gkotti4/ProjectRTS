@@ -109,14 +109,43 @@ public class SquadCombat : MonoBehaviour
     // For this MVP, charging is only a formation-wide speed surge before contact.
     private const bool prototypeChargeEnabled = true; // Enables the shared melee charge phase between approach and combat.
     private const float prototypeChargeStartDistance = 10.0f; // Closest living soldier distance that allows a melee squad to begin charging.
-    private const float prototypeChargeSpeedMultiplier = 1.65f; // Formation-wide movement multiplier while charging.
+    private const float prototypeChargeSpeedMultiplier = 1.25f; // Formation-wide movement multiplier while charging.
     private const float prototypeChargeMaximumDuration = 3.0f; // Safety cap before the squad enters combat even if contact detection is imperfect.
     private const float prototypeChargeContactReadyRatio = 0.15f; // Fraction of living melee soldiers that must reach personal attack range to finish the charge.
+
+    // Light contact pressure emitted by each charging soldier. A target can only be
+    // affected once during the current squad charge, preventing per-frame stacking.
+    private const bool prototypeChargeImpulseEnabled = true; // Enables the very light directional contact impulse during the infantry charge MVP.
+    private const float prototypeChargeImpulseMagnitude = 1.55f; // Small authored impulse applied to enemies touched by a charging soldier's forward capsule.
+    private const float prototypeChargeImpulseDuration = 0.09f; // Short decay keeps this as contact weight rather than visible knockback.
+    private const float prototypeChargeImpulseForwardDistance = 0.85f; // Length of the contact capsule projected in front of each charging soldier.
+    private const float prototypeChargeImpulseRadius = 0.52f; // Width of each charging soldier's forward contact capsule.
+    private const float prototypeChargeImpulseRadialBlend = 0.10f; // Mostly forward force with a small outward spread.
+
+    // The closest 15% of living melee soldiers become the leading edge and receive
+    // a slight additional forward movement allowance while the squad is charging.
+    private const bool prototypeChargeLeadSpeedEnabled = true; // Enables a small speed edge for the soldiers currently closest to the enemy.
+    private const float prototypeChargeLeadSoldierRatio = 0.15f; // 0.15 means 15% of living melee soldiers, rounded up to at least one soldier.
+    private const float prototypeChargeLeadSpeedMultiplier = 1.5f; // Additional per-soldier charge movement multiplier for the current leading edge.
+
+    // Successful ordinary melee hits receive a small authored impulse after damage.
+    private const bool prototypeMeleeHitImpulseEnabled = true; // Enables physical movement feedback on successful melee damage.
+    private const float prototypeMeleeHitImpulseMagnitude = 4.0f; // Baseline successful-hit impulse before receiver body mass is applied.
+    private const float prototypeMeleeHitImpulseDuration = 0.18f; // Short decay gives a visible strike response without sustained sliding.
 
     // -----------------------------------------------------------------------------
     // Prototype Universal Charge MVP Runtime State
     // -----------------------------------------------------------------------------
     private float prototypeChargeTimer = 0f;
+
+    private readonly HashSet<SoldierController> prototypeChargeImpactedTargets =
+        new HashSet<SoldierController>();
+
+    private readonly HashSet<SoldierController> prototypeChargeLeadSoldiers =
+        new HashSet<SoldierController>();
+
+    private readonly List<SoldierController> prototypeChargeLeadCandidates =
+        new List<SoldierController>();
 
     // -----------------------------------------------------------------------------
     // Prototype Active Attacker Combat Lock MVP Tuning
@@ -137,7 +166,7 @@ public class SquadCombat : MonoBehaviour
     // to orbit the enemy; it only queues behind a friendly body.
     private const bool prototypeReserveBehindFriendlyRepositionEnabled = true; // Enables blocked reserves to move into an open pocket behind a better-positioned friendly.
     private const float prototypeReserveBehindFriendlySearchInterval = 2.35f; // Cooldown between behind-friendly reposition searches for each reserve soldier.
-    private const float prototypeReserveBehindFriendlyAnchorSearchRadius = 6.0f; // Max distance for finding friendly anchors that the reserve can queue behind.
+    private const float prototypeReserveBehindFriendlyAnchorSearchRadius = 5.5f; // Max distance for finding friendly anchors that the reserve can queue behind.
     private const float prototypeReserveBehindFriendlyBackOffset = 1.45f; // Distance behind the chosen friendly anchor where the reserve tries to move.
     private const float prototypeReserveBehindFriendlySideOffset = 0.65f; // Optional left/right offset from the behind point if side probes are enabled.
     private const float prototypeReserveBehindFriendlyNavMeshProjectionRadius = 1.05f; // Max distance allowed when projecting the candidate pocket onto the NavMesh.
@@ -330,6 +359,9 @@ public class SquadCombat : MonoBehaviour
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
         prototypeChargeTimer = 0f;
+        prototypeChargeImpactedTargets.Clear();
+        prototypeChargeLeadSoldiers.Clear();
+        prototypeChargeLeadCandidates.Clear();
 
         ClearPrototypeRuntimeState(clearAttackTimers: true);
         ClearSoldierCombatStates();
@@ -417,7 +449,14 @@ public class SquadCombat : MonoBehaviour
 
         prototypeChargeTimer -= Time.deltaTime;
 
-        movement.TickFormationFollow(prototypeChargeSpeedMultiplier);
+        RefreshPrototypeChargeLeadSoldiers();
+
+        movement.TickFormationFollow(
+            prototypeChargeSpeedMultiplier,
+            prototypeChargeLeadSoldiers,
+            prototypeChargeLeadSpeedMultiplier);
+
+        TickPrototypeChargeImpulseEmitters();
 
         if (HasPrototypeChargeReachedContactRatio(targetSquad) ||
             prototypeChargeTimer <= 0f)
@@ -1937,8 +1976,34 @@ public class SquadCombat : MonoBehaviour
             damageResult.normalDamage,
             damageResult.armorPiercingDamage);
 
+        ApplyPrototypeMeleeHitImpulse(attacker, target);
+
         if (target.IsAlive)
             target.TryBeginAction(SoldierActionState.HitReact);
+    }
+
+    void ApplyPrototypeMeleeHitImpulse(
+        SoldierController attacker,
+        SoldierController target)
+    {
+        if (!prototypeMeleeHitImpulseEnabled)
+            return;
+
+        if (attacker == null || target == null || target.Motor == null)
+            return;
+
+        Vector3 impactDirection =
+            target.transform.position - attacker.transform.position;
+
+        impactDirection.y = 0f;
+
+        if (impactDirection.sqrMagnitude <= 0.0001f)
+            impactDirection = attacker.transform.forward;
+
+        target.Motor.ApplyExternalImpulse(
+            impactDirection,
+            prototypeMeleeHitImpulseMagnitude,
+            prototypeMeleeHitImpulseDuration);
     }
 
     void BeginPrototypeRangedAttack(
@@ -2274,6 +2339,9 @@ public class SquadCombat : MonoBehaviour
 
         approachEngagementSettleTimer = 0f;
         approachRefreshTimer = 0f;
+        prototypeChargeImpactedTargets.Clear();
+        prototypeChargeLeadSoldiers.Clear();
+        prototypeChargeLeadCandidates.Clear();
         prototypeChargeTimer = Mathf.Max(
             0.01f,
             prototypeChargeMaximumDuration);
@@ -2282,6 +2350,140 @@ public class SquadCombat : MonoBehaviour
             squad.SetState(SquadState.Charging);
 
         MoveTowardCombatTarget();
+    }
+
+    void RefreshPrototypeChargeLeadSoldiers()
+    {
+        prototypeChargeLeadSoldiers.Clear();
+        prototypeChargeLeadCandidates.Clear();
+
+        if (!prototypeChargeLeadSpeedEnabled ||
+            roster == null ||
+            targetSquad == null ||
+            targetSquad.Roster == null)
+        {
+            return;
+        }
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            if (IsRangedWeapon(GetWeaponProfile(soldier)))
+                continue;
+
+            prototypeChargeLeadCandidates.Add(soldier);
+        }
+
+        prototypeChargeLeadCandidates.Sort((left, right) =>
+        {
+            float leftDistance = GetClosestLivingEnemyDistanceSqr(
+                left,
+                targetSquad.Roster);
+
+            float rightDistance = GetClosestLivingEnemyDistanceSqr(
+                right,
+                targetSquad.Roster);
+
+            int distanceComparison = leftDistance.CompareTo(rightDistance);
+
+            if (distanceComparison != 0)
+                return distanceComparison;
+
+            return left.gameObject.GetInstanceID().CompareTo(
+                right.gameObject.GetInstanceID());
+        });
+
+        int leadCount = Mathf.Clamp(
+            Mathf.CeilToInt(
+                prototypeChargeLeadCandidates.Count *
+                prototypeChargeLeadSoldierRatio),
+            0,
+            prototypeChargeLeadCandidates.Count);
+
+        for (int index = 0; index < leadCount; index++)
+            prototypeChargeLeadSoldiers.Add(
+                prototypeChargeLeadCandidates[index]);
+    }
+
+    float GetClosestLivingEnemyDistanceSqr(
+        SoldierController soldier,
+        SquadRoster enemyRoster)
+    {
+        if (soldier == null || enemyRoster == null)
+            return float.PositiveInfinity;
+
+        float closestDistanceSqr = float.PositiveInfinity;
+        Vector3 soldierPosition = Flatten(soldier.transform.position);
+
+        foreach (SoldierController enemy in enemyRoster.Soldiers)
+        {
+            if (enemy == null || !enemy.IsAlive)
+                continue;
+
+            float distanceSqr = Vector3.SqrMagnitude(
+                Flatten(enemy.transform.position) - soldierPosition);
+
+            if (distanceSqr < closestDistanceSqr)
+                closestDistanceSqr = distanceSqr;
+        }
+
+        return closestDistanceSqr;
+    }
+
+    void TickPrototypeChargeImpulseEmitters()
+    {
+        if (!prototypeChargeImpulseEnabled ||
+            roster == null ||
+            targetSquad == null)
+        {
+            return;
+        }
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive || soldier.Motor == null)
+                continue;
+
+            if (IsRangedWeapon(GetWeaponProfile(soldier)))
+                continue;
+
+            Vector3 chargeDirection = soldier.Motor.Velocity;
+            chargeDirection.y = 0f;
+
+            if (chargeDirection.sqrMagnitude <= 0.0001f)
+                chargeDirection = combatContactDirection;
+
+            chargeDirection.y = 0f;
+
+            if (chargeDirection.sqrMagnitude <= 0.0001f)
+                chargeDirection = soldier.transform.forward;
+
+            chargeDirection.Normalize();
+
+            Vector3 capsuleStart =
+                soldier.transform.position +
+                chargeDirection * 0.15f;
+
+            Vector3 capsuleEnd =
+                capsuleStart +
+                chargeDirection * prototypeChargeImpulseForwardDistance;
+
+            ImpulseEmitter.EmitDirectionalCapsule(
+                capsuleStart,
+                capsuleEnd,
+                prototypeChargeImpulseRadius,
+                chargeDirection,
+                prototypeChargeImpulseMagnitude,
+                prototypeChargeImpulseDuration,
+                sourceSoldier: soldier,
+                affectFriendlies: false,
+                radialBlend: prototypeChargeImpulseRadialBlend,
+                minimumFalloff: 0.65f,
+                excludedTargets: prototypeChargeImpactedTargets,
+                affectedTargets: prototypeChargeImpactedTargets);
+        }
     }
 
     bool HasPrototypeChargeReachedContactRatio(SquadController target)
