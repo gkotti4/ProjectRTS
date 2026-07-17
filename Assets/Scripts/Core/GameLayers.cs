@@ -11,11 +11,16 @@ public class GameLayers : MonoBehaviour
     [Header("Interaction")]
     [SerializeField] private LayerMask selectableLayers;
     // [SerializeField] private LayerMask targetableLayers;
+    
+    [Header("Units")]
+    [SerializeField] private LayerMask unitLayer;
 
     public LayerMask GroundLayers => groundLayers;
     public LayerMask ObstacleLayers => obstacleLayers;
     public LayerMask SelectableLayers => selectableLayers;
     // public LayerMask TargetableLayers => targetableLayers;
+    
+    public LayerMask UnitLayer => unitLayer;
 
     void Awake()
     {

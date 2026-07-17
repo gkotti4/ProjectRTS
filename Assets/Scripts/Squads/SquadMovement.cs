@@ -79,7 +79,7 @@ public class SquadMovement : MonoBehaviour
     // While far away, the formation faces travel direction.
     // Inside this distance, slots gradually rotate toward the drag-order final facing.
     private const float finalFacingBlendStartDistance = 9f;
-    private const float finalFacingBlendCompleteDistance = 2.25f;
+    private const float finalFacingBlendCompleteDistance = 2f;
 
     // -----------------------------------------------------------------------------
     // Public Read-Only Access

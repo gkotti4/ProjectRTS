@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -290,9 +291,14 @@ public static class ImpulseEmitter
 
     static int ResolveLayerMask(LayerMask layerMask)
     {
-        // LayerMask defaults to zero when omitted. Treat zero as "all layers" so
-        // callers can use the simple overload without needing project layer setup.
-        return layerMask.value == 0 ? ~0 : layerMask.value;
+        int unitMask = GameLayers.Instance != null
+            ? GameLayers.Instance.UnitLayer.value
+            : ~0;
+
+        if (layerMask.value == 0)
+            return unitMask;
+
+        return layerMask.value & unitMask;
     }
 
     static Vector3 ResolveFallbackDirection(
@@ -326,3 +332,5 @@ public static class ImpulseEmitter
         return position;
     }
 }
+
+

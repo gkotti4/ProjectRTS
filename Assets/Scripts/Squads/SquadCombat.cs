@@ -58,15 +58,15 @@ public class SquadCombat : MonoBehaviour
     // Super simple pass: reserve soldiers only move forward when there is a real
     // friendly-body gap. If they get blocked, they sit for a minimum time before
     // any side-step escape is allowed.
-    private const float prototypeReserveForwardGapDistance = 1.20f; // How far ahead a reserve checks for a friendly-body gap before moving forward.
-    private const float prototypeReserveForwardGapRadius = 0.60f; // Width/radius of the forward gap check; higher means reserves need a wider lane.
+    private const float prototypeReserveForwardGapDistance = 1.35f; // Tune // How far ahead a reserve checks for a friendly-body gap before moving forward.
+    private const float prototypeReserveForwardGapRadius = 0.75f; // Tune // Width/radius of the forward gap check; higher means reserves need a wider lane.
     private const float prototypeReserveMinimumBlockedSitTimeMin = 0.35f; // Shortest randomized time a newly blocked reserve must wait before repositioning.
     private const float prototypeReserveMinimumBlockedSitTimeMax = 1.35f; // Longest randomized time a newly blocked reserve must wait before repositioning.
 
     private const bool prototypeReserveSideStepEnabled = false; // Enables the small local side-step fallback for blocked reserve soldiers.
     private const float prototypeReserveSideStepIntervalMin = 5.0f; // Shortest randomized cooldown before a reserve can attempt another side-step.
     private const float prototypeReserveSideStepIntervalMax = 10.0f; // Longest randomized cooldown before a reserve can attempt another side-step.
-    private const float prototypeReserveSideStepDistance = 1.20f; // How far sideways a reserve tries to step when using the side-step fallback.
+    private const float prototypeReserveSideStepDistance = 0.65f; // How far sideways a reserve tries to step when using the side-step fallback.
     private const float prototypeReserveSideStepOccupancyRadius = 0.85f; // Radius used to reject side-step points already occupied by living soldiers.
     private const float prototypeReserveSideStepSpeedMultiplier = 0.50f; // Movement speed multiplier used while performing a reserve side-step.
 
@@ -77,7 +77,7 @@ public class SquadCombat : MonoBehaviour
     // can also select nearby enemy soldiers from other hostile squads so flanks and
     // multi-squad pileups are answered locally.
     private const bool prototypeMultiSquadLocalTargetingEnabled = true; // Allows soldiers to locally target nearby enemies from non-primary hostile squads.
-    private const float prototypeLocalEnemyTargetSearchRadius = 8.0f; // Max distance for considering non-primary enemy soldiers as local reaction targets.
+    private const float prototypeLocalEnemyTargetSearchRadius = 8.5f; // Max distance for considering non-primary enemy soldiers as local reaction targets.
     private const float prototypeNonPrimaryTargetPenalty = 1.25f; // Score penalty for non-primary enemies so soldiers still prefer the ordered target squad.
 
     // -----------------------------------------------------------------------------
@@ -118,8 +118,8 @@ public class SquadCombat : MonoBehaviour
     private const bool prototypeChargeImpulseEnabled = true; // Enables the very light directional contact impulse during the infantry charge MVP.
     private const float prototypeChargeImpulseMagnitude = 1.55f; // Small authored impulse applied to enemies touched by a charging soldier's forward capsule.
     private const float prototypeChargeImpulseDuration = 0.09f; // Short decay keeps this as contact weight rather than visible knockback.
-    private const float prototypeChargeImpulseForwardDistance = 0.80f; // Length of the contact capsule projected in front of each charging soldier.
-    private const float prototypeChargeImpulseRadius = 0.52f; // Width of each charging soldier's forward contact capsule.
+    private const float prototypeChargeImpulseForwardDistance = 0.95f; // Length of the contact capsule projected in front of each charging soldier.
+    private const float prototypeChargeImpulseRadius = 0.55f; // Width of each charging soldier's forward contact capsule.
     private const float prototypeChargeImpulseRadialBlend = 0.10f; // Mostly forward force with a small outward spread.
 
     // The closest 15% of living melee soldiers become the leading edge and receive

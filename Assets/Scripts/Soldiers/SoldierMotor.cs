@@ -39,25 +39,52 @@ public class SoldierMotor : MonoBehaviour
     [SerializeField] private float bodyMass = 1f;
 
     // -----------------------------------------------------------------------------
-    // Prototype Infantry Body Pressure MVP Tuning
+    // Body Collision Master Tuning
     // -----------------------------------------------------------------------------
-    // NavMeshAgent remains the locomotion authority. This layer only modifies direct
-    // formation deltas and applies pair-owned NavMeshAgent.Move corrections so living
-    // soldiers behave like compressible bodies instead of freely passing through one
-    // another. It is intentionally not Rigidbody physics and does not decide combat.
-    private const bool prototypeBodyPressureEnabled = true;                    // Master toggle for the custom infantry body model.
-    private const float prototypeBodyPreferredDistance = 0.88f;                // Soft pressure begins inside this center-to-center distance.
-    private const float prototypeBodyFriendlyMinimumDistance = 0.70f;          // Friendlies may compress more tightly before direct inward movement is blocked.
-    private const float prototypeBodyEnemyMinimumDistance = 0.80f;             // Enemies create a firmer body wall and resist direct penetration sooner.
-    private const float prototypeBodySoftPressureStrength = 1.35f;              // Converts soft-zone overlap depth into separation velocity.
-    private const float prototypeBodyHardCorrectionStrength = 10.0f;             // Converts minimum-distance penetration into a fast corrective velocity.
-    private const float prototypeBodyMaximumCorrectionSpeed = 1.50f;            // Caps total body correction so contacts remain stable rather than snapping.
-    private const float prototypeBodyFriendlyCorrectionMultiplier = 0.70f;      // Friendlies yield softly so formations can compress and flow.
-    private const float prototypeBodyEnemyCorrectionMultiplier = 1.20f;         // Enemy contacts separate more firmly than friendly contacts.
-    private const float prototypeBodyFrontlineSoftPressureMultiplier = 0.30f;   // Reduces cosmetic soft sliding for active melee frontlines.
-    private const float prototypeBodyFriendlyInwardBlockingMultiplier = 0.45f;  // Friendlies resist direct inward movement partially so formations can still compress and pass.
-    private const float prototypeBodyEnemyInwardBlockingMultiplier = 1.00f;     // Enemies remove all movement that would violate their minimum body distance.
-    private const int prototypeBodyMaximumNeighbors = 16;                       // Maximum collider hits considered by one local body query.
+    // NavMeshAgent remains locomotion authority. The custom body layer is split into
+    // three searchable systems: HardBodyConstraint, SoftBodyPressure, and
+    // DirectionalBodyBlocking.
+    private const bool bodyCollisionEnabled = true;
+    private const int bodyCollisionMaximumNeighbors = 16;
+
+    // -----------------------------------------------------------------------------
+    // Hard Body Constraint Tuning
+    // -----------------------------------------------------------------------------
+    // Enforces a near-nonpenetrating minimum body distance through positional
+    // projection. This runs even while soldiers are idle or action-locked because
+    // action locks stop voluntary movement, not physical body separation.
+    private const bool hardBodyConstraintEnabled = true; // Master toggle for positional overlap correction between soldier bodies.
+    private const int hardBodyConstraintSolverIterations = 2; // Number of overlap-resolution passes performed each frame; higher values settle dense crowds more firmly but cost more and may increase jitter.
+    private const float hardBodyConstraintFriendlyMinimumDistance = 0.70f; // Minimum allowed center-to-center distance between friendly soldiers before positional separation is applied.
+    private const float hardBodyConstraintEnemyMinimumDistance = 0.80f; // Minimum allowed center-to-center distance between enemy soldiers; slightly larger to create a firmer opposing frontline.
+    private const float hardBodyConstraintProjectionPercent = 0.90f; // Fraction of detected penetration removed during each solver pass; 1.0 removes the full overlap immediately.
+    private const float hardBodyConstraintMaximumProjectionPerIteration = 0.20f; // Maximum distance one soldier may be moved by a single solver pass, preventing large visible pops from deep overlaps.
+    private const float hardBodyConstraintMinimumMassShare = 0.15f; // Minimum portion of the separation assigned to either body, preventing extreme mass differences from making one soldier absorb nearly all correction.
+
+
+    // -----------------------------------------------------------------------------
+    // Soft Body Pressure Tuning
+    // -----------------------------------------------------------------------------
+    // Adds compressible crowd feel outside the hard minimum distance. Unlike the
+    // hard constraint, this remains a velocity-like cosmetic correction.
+
+    private const bool softBodyPressureEnabled = true; // Master toggle for the softer spacing force outside the hard body radius.
+    private const float softBodyPressurePreferredDistance = 0.88f; // Preferred center-to-center spacing; soldiers inside this distance receive gradual outward pressure until they reach the hard minimum.
+    private const float softBodyPressureStrength = 1.35f; // Scales how strongly soft overlap is converted into outward correction speed.
+    private const float softBodyPressureMaximumCorrectionSpeed = 1.15f; // Maximum soft-pressure movement speed, preventing compressed groups from rapidly exploding apart.
+    private const float softBodyPressureFriendlyMultiplier = 0.70f; // Multiplier applied to soft pressure between friendly soldiers; lower values allow friendlies to compress and flow more easily.
+    private const float softBodyPressureEnemyMultiplier = 1.20f; // Multiplier applied to soft pressure between enemies; higher values make opposing bodies resist interpenetration more strongly.
+    private const float softBodyPressureFrontlineMultiplier = 0.30f; // Additional multiplier for active frontline soldiers during combat, reducing sideways drifting while they are fighting.
+
+
+    // -----------------------------------------------------------------------------
+    // Directional Body Blocking Tuning
+    // -----------------------------------------------------------------------------
+    // Clips only the inward portion of requested movement while preserving tangent
+    // movement, allowing soldiers to slide around shoulders and exposed edges.
+    private const bool directionalBodyBlockingEnabled = true; // Master toggle for removing movement that would push directly through another soldier.
+    private const float directionalBodyBlockingFriendlyStrength = 0.45f; // Fraction of inward movement blocked against friendly soldiers; lower values allow more shoulder sliding and formation flow.
+    private const float directionalBodyBlockingEnemyStrength = 1.00f; // Fraction of inward movement blocked against enemies; 1.0 prevents voluntary movement from advancing through an opposing body.
 
     // -----------------------------------------------------------------------------
     // Prototype External Impulse MVP Tuning
@@ -67,7 +94,7 @@ public class SoldierMotor : MonoBehaviour
     // stored velocity decays over the requested duration. All push movement still
     // passes through the same directional body blocking used by normal locomotion.
     private const float prototypeImpulseDefaultDuration = 0.15f;               // Default time over which received push velocity decays to zero.
-    private const float prototypeImpulseMaximumPushSpeed = 8.0f;                // Safety cap for accumulated push velocity.
+    private const float prototypeImpulseMaximumPushSpeed = 20.0f;                // Safety cap for accumulated push velocity. // WAS: 8.0f
     private const float prototypeImpulseMinimumPushSpeed = 0.03f;               // Velocities below this are cleared to avoid tiny endless movement.
 
     // -----------------------------------------------------------------------------
@@ -100,7 +127,7 @@ public class SoldierMotor : MonoBehaviour
     private float prototypeImpulseTransferCooldownRemaining = 0f;
 
     private readonly Collider[] prototypeBodyOverlapBuffer =
-        new Collider[prototypeBodyMaximumNeighbors];
+        new Collider[bodyCollisionMaximumNeighbors];
 
     // Formation movement uses NavMeshAgent.Move rather than SetDestination.
     // NavMeshAgent.Move does not create a path, so we cache a short-lived manual
@@ -161,23 +188,269 @@ public class SoldierMotor : MonoBehaviour
     void Update()
     {
         TickPrototypeExternalImpulse();
-        TickPrototypePathDirectionalBlocking();
-        TickPrototypeBodyPressure();
+        TickDirectionalBodyBlocking();
+        TickBodyCollision();
         RotateTowardVelocity();
     }
 
 
-    #region Prototype Infantry Body Pressure
+    #region Custom Body Collision
 
+    void TickBodyCollision()
+    {
+        if (!bodyCollisionEnabled)
+            return;
+
+        if (!CanMove())
+            return;
+
+        if (soldierController == null || !soldierController.IsAlive)
+            return;
+
+        if (hardBodyConstraintEnabled)
+        {
+            int iterationCount = Mathf.Max(1, hardBodyConstraintSolverIterations);
+
+            for (int iteration = 0; iteration < iterationCount; iteration++)
+                TickHardBodyConstraints();
+        }
+
+        if (softBodyPressureEnabled)
+            TickSoftBodyPressure();
+    }
+
+    /// Enforces the minimum body radius through positional projection. This does
+    /// not check voluntary movement locks, so idle, attacking, and hit-reacting
+    /// soldiers still behave as physical bodies.
+    void TickHardBodyConstraints()
+    {
+        float queryRadius = Mathf.Max(
+            hardBodyConstraintFriendlyMinimumDistance,
+            hardBodyConstraintEnemyMinimumDistance);
+
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            transform.position,
+            queryRadius,
+            prototypeBodyOverlapBuffer,
+            GetBodyQueryLayerMask(),
+            QueryTriggerInteraction.Collide);
+
+        for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
+        {
+            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
+
+            if (hit == null)
+                continue;
+
+            SoldierController otherSoldier =
+                hit.GetComponentInParent<SoldierController>();
+
+            if (!IsValidBodyNeighbor(otherSoldier))
+                continue;
+
+            if (WasBodyNeighborAlreadyCounted(hitIndex, otherSoldier))
+                continue;
+
+            if (!OwnsBodyPair(otherSoldier))
+                continue;
+
+            ResolveHardBodyConstraintPair(otherSoldier);
+        }
+    }
+
+    void ResolveHardBodyConstraintPair(SoldierController otherSoldier)
+    {
+        if (otherSoldier == null || otherSoldier.Motor == null)
+            return;
+
+        Vector3 awayFromOther =
+            transform.position - otherSoldier.transform.position;
+
+        awayFromOther.y = 0f;
+
+        float distance = awayFromOther.magnitude;
+        bool isFriendly = IsBodyFriendly(otherSoldier);
+        float minimumDistance = isFriendly
+            ? hardBodyConstraintFriendlyMinimumDistance
+            : hardBodyConstraintEnemyMinimumDistance;
+
+        if (distance >= minimumDistance)
+            return;
+
+        if (distance <= 0.0001f)
+        {
+            awayFromOther = GetBodyFallbackDirection(otherSoldier);
+            distance = 0f;
+        }
+        else
+        {
+            awayFromOther /= distance;
+        }
+
+        float penetration = minimumDistance - distance;
+        float projectedDistance = Mathf.Min(
+            penetration * Mathf.Clamp01(hardBodyConstraintProjectionPercent),
+            hardBodyConstraintMaximumProjectionPerIteration);
+
+        if (projectedDistance <= 0f)
+            return;
+
+        ResolveBodyMassShares(
+            otherSoldier.Motor,
+            out float ownShare,
+            out float otherShare);
+
+        Vector3 pairProjection = awayFromOther * projectedDistance;
+
+        ApplyHardBodyConstraintProjection(pairProjection * ownShare);
+        otherSoldier.Motor.ApplyHardBodyConstraintProjection(
+            -pairProjection * otherShare);
+    }
+
+    void ApplyHardBodyConstraintProjection(Vector3 projectionDelta)
+    {
+        if (!bodyCollisionEnabled || !hardBodyConstraintEnabled)
+            return;
+
+        if (!CanMove())
+            return;
+
+        if (soldierController == null || !soldierController.IsAlive)
+            return;
+
+        projectionDelta.y = 0f;
+
+        if (projectionDelta.sqrMagnitude <= 0.000001f)
+            return;
+
+        agent.Move(projectionDelta);
+        CacheManualMovementVelocity(projectionDelta);
+    }
+
+    void TickSoftBodyPressure()
+    {
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            transform.position,
+            softBodyPressurePreferredDistance,
+            prototypeBodyOverlapBuffer,
+            GetBodyQueryLayerMask(),
+            QueryTriggerInteraction.Collide);
+
+        for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
+        {
+            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
+
+            if (hit == null)
+                continue;
+
+            SoldierController otherSoldier =
+                hit.GetComponentInParent<SoldierController>();
+
+            if (!IsValidBodyNeighbor(otherSoldier))
+                continue;
+
+            if (WasBodyNeighborAlreadyCounted(hitIndex, otherSoldier))
+                continue;
+
+            if (!OwnsBodyPair(otherSoldier))
+                continue;
+
+            ResolveSoftBodyPressurePair(otherSoldier);
+        }
+    }
+
+    void ResolveSoftBodyPressurePair(SoldierController otherSoldier)
+    {
+        if (otherSoldier == null || otherSoldier.Motor == null)
+            return;
+
+        Vector3 awayFromOther =
+            transform.position - otherSoldier.transform.position;
+
+        awayFromOther.y = 0f;
+
+        float distance = awayFromOther.magnitude;
+
+        if (distance >= softBodyPressurePreferredDistance)
+            return;
+
+        if (distance <= 0.0001f)
+            awayFromOther = GetBodyFallbackDirection(otherSoldier);
+        else
+            awayFromOther /= distance;
+
+        bool isFriendly = IsBodyFriendly(otherSoldier);
+        float minimumDistance = isFriendly
+            ? hardBodyConstraintFriendlyMinimumDistance
+            : hardBodyConstraintEnemyMinimumDistance;
+
+        // The hard solver owns penetration. Soft pressure only owns the compressible
+        // band between minimum distance and preferred distance.
+        if (distance < minimumDistance)
+            return;
+
+        float overlap = softBodyPressurePreferredDistance - distance;
+        float correctionSpeed = overlap * softBodyPressureStrength;
+
+        correctionSpeed *= isFriendly
+            ? softBodyPressureFriendlyMultiplier
+            : softBodyPressureEnemyMultiplier;
+
+        correctionSpeed = Mathf.Min(
+            correctionSpeed,
+            softBodyPressureMaximumCorrectionSpeed);
+
+        if (correctionSpeed <= 0f)
+            return;
+
+        ResolveBodyMassShares(
+            otherSoldier.Motor,
+            out float ownShare,
+            out float otherShare);
+
+        Vector3 pairCorrectionDelta =
+            awayFromOther * correctionSpeed * Time.deltaTime;
+
+        ApplySoftBodyPressureCorrection(pairCorrectionDelta * ownShare);
+        otherSoldier.Motor.ApplySoftBodyPressureCorrection(
+            -pairCorrectionDelta * otherShare);
+    }
+
+    void ApplySoftBodyPressureCorrection(Vector3 correctionDelta)
+    {
+        if (!bodyCollisionEnabled || !softBodyPressureEnabled)
+            return;
+
+        if (!CanMove())
+            return;
+
+        if (soldierController == null || !soldierController.IsAlive)
+            return;
+
+        correctionDelta.y = 0f;
+
+        if (correctionDelta.sqrMagnitude <= 0.000001f)
+            return;
+
+        if (soldierController.Role == SoldierRole.Frontline &&
+            soldierController.Squad != null &&
+            soldierController.Squad.State == SquadState.InCombat)
+        {
+            correctionDelta *= softBodyPressureFrontlineMultiplier;
+        }
+
+        agent.Move(correctionDelta);
+        CacheManualMovementVelocity(correctionDelta);
+    }
 
     /// Applies directional body resistance to normal SetDestination movement.
     /// NavMesh avoidance still chooses the desired velocity, but any portion that
     /// would move directly through a nearby soldier is removed while tangential
     /// movement is preserved. Formed movement uses the same resolver before its
     /// direct NavMeshAgent.Move call.
-    void TickPrototypePathDirectionalBlocking()
+    void TickDirectionalBodyBlocking()
     {
-        if (!prototypeBodyPressureEnabled)
+        if (!bodyCollisionEnabled || !directionalBodyBlockingEnabled)
             return;
 
         if (!CanMove() || IsMovementRequestLocked())
@@ -195,186 +468,19 @@ public class SoldierMotor : MonoBehaviour
         if (requestedDelta.sqrMagnitude <= 0.000001f)
             return;
 
-        Vector3 resolvedDelta = ResolvePrototypeBodyBlockedMovementDelta(
-            requestedDelta);
-
+        Vector3 resolvedDelta = ResolveBodyBlockedMovementDelta(requestedDelta);
         Vector3 blockingAdjustment = resolvedDelta - requestedDelta;
         blockingAdjustment.y = 0f;
 
         if (blockingAdjustment.sqrMagnitude <= 0.000001f)
             return;
 
-        // The agent simulation supplies the requested path movement. This opposite
-        // correction cancels only the blocked inward component, leaving lateral
-        // steering intact so soldiers can slide around shoulders and exposed edges.
         agent.Move(blockingAdjustment);
     }
 
-    void TickPrototypeBodyPressure()
+    Vector3 ResolveBodyBlockedMovementDelta(Vector3 requestedDelta)
     {
-        if (!prototypeBodyPressureEnabled)
-            return;
-
-        if (!CanMove())
-            return;
-
-        if (soldierController == null || !soldierController.IsAlive)
-            return;
-
-        int hitCount = Physics.OverlapSphereNonAlloc(
-            transform.position,
-            prototypeBodyPreferredDistance,
-            prototypeBodyOverlapBuffer,
-            ~0,
-            QueryTriggerInteraction.Collide);
-
-        for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
-        {
-            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
-
-            if (hit == null)
-                continue;
-
-            SoldierController otherSoldier =
-                hit.GetComponentInParent<SoldierController>();
-
-            if (!IsValidPrototypeBodyNeighbor(otherSoldier))
-                continue;
-
-            if (WasPrototypeBodyNeighborAlreadyCounted(
-                    hitIndex,
-                    otherSoldier))
-            {
-                continue;
-            }
-
-            // Strict pair ownership prevents both SoldierMotors from resolving the
-            // same contact and doubling the correction in one frame.
-            if (!OwnsPrototypeBodyPair(otherSoldier))
-                continue;
-
-            ResolvePrototypeBodyPair(otherSoldier);
-        }
-    }
-
-    void ResolvePrototypeBodyPair(SoldierController otherSoldier)
-    {
-        if (otherSoldier == null || otherSoldier.Motor == null)
-            return;
-
-        Vector3 awayFromOther =
-            transform.position - otherSoldier.transform.position;
-
-        awayFromOther.y = 0f;
-
-        float distance = awayFromOther.magnitude;
-
-        if (distance >= prototypeBodyPreferredDistance)
-            return;
-
-        if (distance <= 0.0001f)
-        {
-            awayFromOther = GetPrototypeBodyFallbackDirection(otherSoldier);
-            distance = 0f;
-        }
-        else
-        {
-            awayFromOther /= distance;
-        }
-
-        bool isFriendly = IsPrototypeBodyFriendly(otherSoldier);
-        float minimumDistance = isFriendly
-            ? prototypeBodyFriendlyMinimumDistance
-            : prototypeBodyEnemyMinimumDistance;
-
-        float softOverlap =
-            prototypeBodyPreferredDistance - distance;
-
-        float correctionSpeed =
-            softOverlap * prototypeBodySoftPressureStrength;
-
-        if (distance < minimumDistance)
-        {
-            float hardPenetration = minimumDistance - distance;
-            correctionSpeed +=
-                hardPenetration * prototypeBodyHardCorrectionStrength;
-        }
-
-        correctionSpeed *= isFriendly
-            ? prototypeBodyFriendlyCorrectionMultiplier
-            : prototypeBodyEnemyCorrectionMultiplier;
-
-        correctionSpeed = Mathf.Min(
-            correctionSpeed,
-            prototypeBodyMaximumCorrectionSpeed);
-
-        if (correctionSpeed <= 0f)
-            return;
-
-        float ownInverseMass = 1f / BodyMass;
-        float otherInverseMass = 1f / otherSoldier.Motor.BodyMass;
-        float totalInverseMass = ownInverseMass + otherInverseMass;
-
-        float ownShare = totalInverseMass > 0f
-            ? ownInverseMass / totalInverseMass
-            : 0.5f;
-
-        float otherShare = totalInverseMass > 0f
-            ? otherInverseMass / totalInverseMass
-            : 0.5f;
-
-        Vector3 pairCorrectionDelta =
-            awayFromOther * correctionSpeed * Time.deltaTime;
-
-        ApplyPrototypeBodyCorrection(
-            pairCorrectionDelta * ownShare,
-            isHardCorrection: distance < minimumDistance);
-
-        otherSoldier.Motor.ApplyPrototypeBodyCorrection(
-            -pairCorrectionDelta * otherShare,
-            isHardCorrection: distance < minimumDistance);
-    }
-
-    void ApplyPrototypeBodyCorrection(
-        Vector3 correctionDelta,
-        bool isHardCorrection)
-    {
-        if (!prototypeBodyPressureEnabled)
-            return;
-
-        if (!CanMove())
-            return;
-
-        if (soldierController == null || !soldierController.IsAlive)
-            return;
-
-        correctionDelta.y = 0f;
-
-        if (correctionDelta.sqrMagnitude <= 0.000001f)
-            return;
-
-        // Active melee soldiers retain only a small amount of cosmetic soft
-        // separation, but hard minimum-distance correction always remains active.
-        if (!isHardCorrection &&
-            soldierController.Role == SoldierRole.Frontline &&
-            soldierController.Squad != null &&
-            soldierController.Squad.State == SquadState.InCombat)
-        {
-            correctionDelta *= prototypeBodyFrontlineSoftPressureMultiplier;
-        }
-
-        agent.Move(correctionDelta);
-
-        if (!agent.hasPath && Time.deltaTime > 0f)
-        {
-            manualMovementVelocity = correctionDelta / Time.deltaTime;
-            manualMovementVelocityValidUntil = Time.time + 0.12f;
-        }
-    }
-
-    Vector3 ResolvePrototypeBodyBlockedMovementDelta(Vector3 requestedDelta)
-    {
-        if (!prototypeBodyPressureEnabled)
+        if (!bodyCollisionEnabled || !directionalBodyBlockingEnabled)
             return requestedDelta;
 
         if (soldierController == null || !soldierController.IsAlive)
@@ -386,13 +492,13 @@ public class SoldierMotor : MonoBehaviour
             return requestedDelta;
 
         float queryRadius =
-            prototypeBodyPreferredDistance + requestedDelta.magnitude;
+            softBodyPressurePreferredDistance + requestedDelta.magnitude;
 
         int hitCount = Physics.OverlapSphereNonAlloc(
             transform.position,
             queryRadius,
             prototypeBodyOverlapBuffer,
-            ~0,
+            GetBodyQueryLayerMask(),
             QueryTriggerInteraction.Collide);
 
         Vector3 resolvedDelta = requestedDelta;
@@ -407,15 +513,11 @@ public class SoldierMotor : MonoBehaviour
             SoldierController otherSoldier =
                 hit.GetComponentInParent<SoldierController>();
 
-            if (!IsValidPrototypeBodyNeighbor(otherSoldier))
+            if (!IsValidBodyNeighbor(otherSoldier))
                 continue;
 
-            if (WasPrototypeBodyNeighborAlreadyCounted(
-                    hitIndex,
-                    otherSoldier))
-            {
+            if (WasBodyNeighborAlreadyCounted(hitIndex, otherSoldier))
                 continue;
-            }
 
             Vector3 toOther =
                 otherSoldier.transform.position - transform.position;
@@ -428,17 +530,15 @@ public class SoldierMotor : MonoBehaviour
                 continue;
 
             Vector3 contactNormal = toOther / currentDistance;
-            float inwardDistance = Vector3.Dot(
-                resolvedDelta,
-                contactNormal);
+            float inwardDistance = Vector3.Dot(resolvedDelta, contactNormal);
 
             if (inwardDistance <= 0f)
                 continue;
 
-            bool isFriendly = IsPrototypeBodyFriendly(otherSoldier);
+            bool isFriendly = IsBodyFriendly(otherSoldier);
             float minimumDistance = isFriendly
-                ? prototypeBodyFriendlyMinimumDistance
-                : prototypeBodyEnemyMinimumDistance;
+                ? hardBodyConstraintFriendlyMinimumDistance
+                : hardBodyConstraintEnemyMinimumDistance;
 
             float allowedInwardDistance = Mathf.Max(
                 0f,
@@ -447,25 +547,64 @@ public class SoldierMotor : MonoBehaviour
             if (inwardDistance <= allowedInwardDistance)
                 continue;
 
-            // Remove only the excess inward component. The perpendicular/tangent
-            // component survives, allowing shoulder sliding and edge flow instead
-            // of turning every contact into a complete stop.
             float blockedInwardDistance =
                 inwardDistance - allowedInwardDistance;
 
-            float blockingMultiplier = isFriendly
-                ? prototypeBodyFriendlyInwardBlockingMultiplier
-                : prototypeBodyEnemyInwardBlockingMultiplier;
+            float blockingStrength = isFriendly
+                ? directionalBodyBlockingFriendlyStrength
+                : directionalBodyBlockingEnemyStrength;
 
             resolvedDelta -=
-                contactNormal * (blockedInwardDistance * blockingMultiplier);
+                contactNormal * (blockedInwardDistance * blockingStrength);
         }
 
         return resolvedDelta;
     }
 
-    bool IsValidPrototypeBodyNeighbor(
-        SoldierController otherSoldier)
+    void ResolveBodyMassShares(
+        SoldierMotor otherMotor,
+        out float ownShare,
+        out float otherShare)
+    {
+        float ownInverseMass = 1f / BodyMass;
+        float otherInverseMass = otherMotor != null
+            ? 1f / otherMotor.BodyMass
+            : ownInverseMass;
+
+        float totalInverseMass = ownInverseMass + otherInverseMass;
+
+        ownShare = totalInverseMass > 0f
+            ? ownInverseMass / totalInverseMass
+            : 0.5f;
+
+        ownShare = Mathf.Clamp(
+            ownShare,
+            hardBodyConstraintMinimumMassShare,
+            1f - hardBodyConstraintMinimumMassShare);
+
+        otherShare = 1f - ownShare;
+    }
+
+    void CacheManualMovementVelocity(Vector3 movementDelta)
+    {
+        if (agent.hasPath || Time.deltaTime <= 0f)
+            return;
+
+        manualMovementVelocity = movementDelta / Time.deltaTime;
+        manualMovementVelocityValidUntil = Time.time + 0.12f;
+    }
+
+    /// Returns every physics layer except the large selection-only collider layer.
+    /// Selection colliders exist for click/hover usability and must not influence
+    /// body constraints, directional blocking, pressure, or impulse transfer.
+    static int GetBodyQueryLayerMask()
+    {
+        return GameLayers.Instance != null
+            ? GameLayers.Instance.UnitLayer.value
+            : ~0;
+    }
+
+    bool IsValidBodyNeighbor(SoldierController otherSoldier)
     {
         if (otherSoldier == null || otherSoldier == soldierController)
             return false;
@@ -473,7 +612,7 @@ public class SoldierMotor : MonoBehaviour
         return otherSoldier.IsAlive;
     }
 
-    bool WasPrototypeBodyNeighborAlreadyCounted(
+    bool WasBodyNeighborAlreadyCounted(
         int currentHitIndex,
         SoldierController candidateSoldier)
     {
@@ -497,7 +636,7 @@ public class SoldierMotor : MonoBehaviour
         return false;
     }
 
-    bool OwnsPrototypeBodyPair(SoldierController otherSoldier)
+    bool OwnsBodyPair(SoldierController otherSoldier)
     {
         if (otherSoldier == null)
             return false;
@@ -506,7 +645,7 @@ public class SoldierMotor : MonoBehaviour
                otherSoldier.gameObject.GetInstanceID();
     }
 
-    bool IsPrototypeBodyFriendly(SoldierController otherSoldier)
+    bool IsBodyFriendly(SoldierController otherSoldier)
     {
         if (soldierController == null || otherSoldier == null)
             return false;
@@ -518,8 +657,7 @@ public class SoldierMotor : MonoBehaviour
                otherSoldier.Faction.teamId;
     }
 
-    Vector3 GetPrototypeBodyFallbackDirection(
-        SoldierController otherSoldier)
+    Vector3 GetBodyFallbackDirection(SoldierController otherSoldier)
     {
         int ownId = gameObject.GetInstanceID();
         int otherId = otherSoldier != null
@@ -667,7 +805,7 @@ public class SoldierMotor : MonoBehaviour
 
         requestedPushDelta.y = 0f;
 
-        Vector3 resolvedPushDelta = ResolvePrototypeBodyBlockedMovementDelta(
+        Vector3 resolvedPushDelta = ResolveBodyBlockedMovementDelta(
             requestedPushDelta);
 
         TickPrototypeImpulseTransferCooldown(deltaTime);
@@ -793,7 +931,7 @@ public class SoldierMotor : MonoBehaviour
             transform.position,
             prototypeImpulseTransferContactDistance,
             prototypeBodyOverlapBuffer,
-            ~0,
+            GetBodyQueryLayerMask(),
             QueryTriggerInteraction.Collide);
 
         float bestScore = float.NegativeInfinity;
@@ -808,13 +946,13 @@ public class SoldierMotor : MonoBehaviour
             SoldierController candidate =
                 hit.GetComponentInParent<SoldierController>();
 
-            if (!IsValidPrototypeBodyNeighbor(candidate) ||
+            if (!IsValidBodyNeighbor(candidate) ||
                 candidate.Motor == null)
             {
                 continue;
             }
 
-            if (WasPrototypeBodyNeighborAlreadyCounted(
+            if (WasBodyNeighborAlreadyCounted(
                     hitIndex,
                     candidate))
             {
@@ -941,7 +1079,7 @@ public class SoldierMotor : MonoBehaviour
             movementDelta = movementDelta.normalized * maxDistanceThisFrame;
         }
 
-        movementDelta = ResolvePrototypeBodyBlockedMovementDelta(
+        movementDelta = ResolveBodyBlockedMovementDelta(
             movementDelta);
 
         manualMovementVelocity = Time.deltaTime > 0f
