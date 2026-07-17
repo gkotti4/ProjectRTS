@@ -43,13 +43,13 @@ public class SquadCombatProfile : ScriptableObject
 
     [Header("Prototype Melee Targeting")]
     [Tooltip("How often each soldier refreshes its local enemy target while in PrototypeMelee.")]
-    [Min(0.01f)] public float prototypeTargetRefreshInterval = 0.65f;
+    [Min(0.01f)] public float prototypeTargetRefreshInterval = 0.85f;
 
     [Tooltip("Distance-like score penalty for choosing an enemy already targeted by friendly soldiers.")]
     [Min(0f)] public float prototypeTargetCrowdingPenalty = 2.75f;
 
     [Tooltip("Score bonus for keeping the current target so soldiers do not flip targets too often.")]
-    [Min(0f)] public float prototypeCurrentTargetStickinessBonus = 0.75f;
+    [Min(0f)] public float prototypeCurrentTargetStickinessBonus = 0.85f;
 
 
     [Header("Prototype Melee Movement / Attacks")]
@@ -63,7 +63,7 @@ public class SquadCombatProfile : ScriptableObject
     [Min(0.01f)] public float prototypeMeleeStoppingDistanceMultiplier = 0.95f;
 
     [Tooltip("Combat movement speed multiplier used by PrototypeMelee soldiers.")]
-    [Min(0.1f)] public float prototypeCombatMoveSpeedMultiplier = 0.85f;
+    [Min(0.1f)] public float prototypeCombatMoveSpeedMultiplier = 0.80f;
 
 
     [Header("Prototype Ranged")]

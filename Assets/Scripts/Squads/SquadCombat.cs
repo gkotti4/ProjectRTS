@@ -58,10 +58,10 @@ public class SquadCombat : MonoBehaviour
     // Super simple pass: reserve soldiers only move forward when there is a real
     // friendly-body gap. If they get blocked, they sit for a minimum time before
     // any side-step escape is allowed.
-    private const float prototypeReserveForwardGapDistance = 1.35f; // Tune // How far ahead a reserve checks for a friendly-body gap before moving forward.
-    private const float prototypeReserveForwardGapRadius = 0.75f; // Tune // Width/radius of the forward gap check; higher means reserves need a wider lane.
-    private const float prototypeReserveMinimumBlockedSitTimeMin = 0.35f; // Shortest randomized time a newly blocked reserve must wait before repositioning.
-    private const float prototypeReserveMinimumBlockedSitTimeMax = 1.35f; // Longest randomized time a newly blocked reserve must wait before repositioning.
+    private const float prototypeReserveForwardGapDistance = 1.30f; // Tune // How far ahead a reserve checks for a friendly-body gap before moving forward.
+    private const float prototypeReserveForwardGapRadius = 0.65f; // Tune // Width/radius of the forward gap check; higher means reserves need a wider lane.
+    private const float prototypeReserveMinimumBlockedSitTimeMin = 0.30f; // Shortest randomized time a newly blocked reserve must wait before repositioning.
+    private const float prototypeReserveMinimumBlockedSitTimeMax = 1.50f; // Longest randomized time a newly blocked reserve must wait before repositioning.
 
     private const bool prototypeReserveSideStepEnabled = false; // Enables the small local side-step fallback for blocked reserve soldiers.
     private const float prototypeReserveSideStepIntervalMin = 5.0f; // Shortest randomized cooldown before a reserve can attempt another side-step.
@@ -77,7 +77,7 @@ public class SquadCombat : MonoBehaviour
     // can also select nearby enemy soldiers from other hostile squads so flanks and
     // multi-squad pileups are answered locally.
     private const bool prototypeMultiSquadLocalTargetingEnabled = true; // Allows soldiers to locally target nearby enemies from non-primary hostile squads.
-    private const float prototypeLocalEnemyTargetSearchRadius = 8.5f; // Max distance for considering non-primary enemy soldiers as local reaction targets.
+    private const float prototypeLocalEnemyTargetSearchRadius = 7.5f; // Max distance for considering non-primary enemy soldiers as local reaction targets.
     private const float prototypeNonPrimaryTargetPenalty = 1.25f; // Score penalty for non-primary enemies so soldiers still prefer the ordered target squad.
 
     // -----------------------------------------------------------------------------
@@ -96,7 +96,7 @@ public class SquadCombat : MonoBehaviour
     // active melee before a meaningful chunk of the unit has arrived. This is not a
     // full formation-staging system; it is only a short initial contact buffer.
     private const bool prototypeApproachSettleGateEnabled = true; // Enables the short initial delay before full melee release when only a few soldiers arrive.
-    private const float prototypeApproachSettleDuration = 0.45f; // How long the squad may wait at first contact for more soldiers to arrive.
+    private const float prototypeApproachSettleDuration = 0.75f; // How long the squad may wait at first contact for more soldiers to arrive.
     private const float prototypeApproachSettleReadyRatio = 0.45f; // Fraction of living soldiers that must be near the enemy to skip/finish the settle gate.
     private const float prototypeApproachSettleReadyRangePadding = 0.95f; // Extra range added to combat start range when counting soldiers as approach-ready.
     private const float prototypeApproachSettleMinimumReadyRange = 2.75f; // Minimum ready-check radius so very small combat start ranges still count nearby soldiers.
@@ -165,19 +165,19 @@ public class SquadCombat : MonoBehaviour
     // This replaces the old enemy-ring access point idea. The soldier never tries
     // to orbit the enemy; it only queues behind a friendly body.
     private const bool prototypeReserveBehindFriendlyRepositionEnabled = true; // Enables blocked reserves to move into an open pocket behind a better-positioned friendly.
-    private const float prototypeReserveBehindFriendlySearchInterval = 2.35f; // Cooldown between behind-friendly reposition searches for each reserve soldier.
+    private const float prototypeReserveBehindFriendlySearchInterval = 3.5f; // Cooldown between behind-friendly reposition searches for each reserve soldier.
     private const float prototypeReserveBehindFriendlyAnchorSearchRadius = 5.5f; // Max distance for finding friendly anchors that the reserve can queue behind.
     private const float prototypeReserveBehindFriendlyBackOffset = 1.45f; // Distance behind the chosen friendly anchor where the reserve tries to move.
-    private const float prototypeReserveBehindFriendlySideOffset = 0.65f; // Optional left/right offset from the behind point if side probes are enabled.
-    private const float prototypeReserveBehindFriendlyNavMeshProjectionRadius = 1.05f; // Max distance allowed when projecting the candidate pocket onto the NavMesh.
-    private const float prototypeReserveBehindFriendlyOccupancyRadius = 1.05f; // Radius used to reject candidate pockets already occupied by a living soldier.
-    private const float prototypeReserveBehindFriendlyCrowdRadius = 1.35f; // Radius used to count nearby bodies around a candidate pocket.
+    private const float prototypeReserveBehindFriendlySideOffset = 0f;//0.65f; // Optional left/right offset from the behind point if side probes are enabled.
+    private const float prototypeReserveBehindFriendlyNavMeshProjectionRadius = 1.15f; // Max distance allowed when projecting the candidate pocket onto the NavMesh.
+    private const float prototypeReserveBehindFriendlyOccupancyRadius = 1.15f; // Radius used to reject candidate pockets already occupied by a living soldier.
+    private const float prototypeReserveBehindFriendlyCrowdRadius = 1.65f; // Radius used to count nearby bodies around a candidate pocket.
     private const int prototypeReserveBehindFriendlyMaxNearbyBodies = 1; // Maximum nearby living bodies allowed before a candidate pocket is considered crowded.
     private const float prototypeReserveBehindFriendlyReachDistance = 0.18f; // Distance from the pocket at which the reserve considers the reposition complete.
     private const float prototypeReserveBehindFriendlyMaxMoveDistance = 10.0f; // Maximum distance a reserve is allowed to travel for this behind-friendly reposition.
-    private const float prototypeReserveBehindFriendlyMinAnchorForwardGain = 0.45f; // Required amount the friendly anchor must be closer to the target than the reserve.
+    private const float prototypeReserveBehindFriendlyMinAnchorForwardGain = 0.85f; // Required amount the friendly anchor must be closer to the target than the reserve.
     private const float prototypeReserveBehindFriendlyMinTargetProgress = 0.05f; // Required amount the candidate point must move the reserve closer to its target.
-    private const float prototypeReserveBehindFriendlySpeedMultiplier = 0.65f; // Movement speed multiplier used while moving to a behind-friendly pocket.
+    private const float prototypeReserveBehindFriendlySpeedMultiplier = 0.60f; // Movement speed multiplier used while moving to a behind-friendly pocket.
     private const float prototypeReserveBehindFriendlyCrowdScoreWeight = 1.25f; // Score penalty per nearby body when ranking behind-friendly candidate pockets.
     private const float prototypeReserveBehindFriendlyProgressScoreWeight = 0.75f; // Score bonus for candidate pockets that make better progress toward the target.
 
@@ -592,7 +592,7 @@ public class SquadCombat : MonoBehaviour
             soldier.Stop();
             return;
         }
-
+        
         soldier.FaceToward(currentTarget.transform.position);
 
         // -------------------------------------------------------------------------
