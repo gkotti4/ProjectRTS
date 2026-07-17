@@ -58,10 +58,10 @@ public class SquadCombat : MonoBehaviour
     // Super simple pass: reserve soldiers only move forward when there is a real
     // friendly-body gap. If they get blocked, they sit for a minimum time before
     // any side-step escape is allowed.
-    private const float prototypeReserveForwardGapDistance = 1.15f; // How far ahead a reserve checks for a friendly-body gap before moving forward.
-    private const float prototypeReserveForwardGapRadius = 0.65f; // Width/radius of the forward gap check; higher means reserves need a wider lane.
+    private const float prototypeReserveForwardGapDistance = 1.20f; // How far ahead a reserve checks for a friendly-body gap before moving forward.
+    private const float prototypeReserveForwardGapRadius = 0.60f; // Width/radius of the forward gap check; higher means reserves need a wider lane.
     private const float prototypeReserveMinimumBlockedSitTimeMin = 0.35f; // Shortest randomized time a newly blocked reserve must wait before repositioning.
-    private const float prototypeReserveMinimumBlockedSitTimeMax = 1.25f; // Longest randomized time a newly blocked reserve must wait before repositioning.
+    private const float prototypeReserveMinimumBlockedSitTimeMax = 1.35f; // Longest randomized time a newly blocked reserve must wait before repositioning.
 
     private const bool prototypeReserveSideStepEnabled = false; // Enables the small local side-step fallback for blocked reserve soldiers.
     private const float prototypeReserveSideStepIntervalMin = 5.0f; // Shortest randomized cooldown before a reserve can attempt another side-step.
@@ -118,7 +118,7 @@ public class SquadCombat : MonoBehaviour
     private const bool prototypeChargeImpulseEnabled = true; // Enables the very light directional contact impulse during the infantry charge MVP.
     private const float prototypeChargeImpulseMagnitude = 1.55f; // Small authored impulse applied to enemies touched by a charging soldier's forward capsule.
     private const float prototypeChargeImpulseDuration = 0.09f; // Short decay keeps this as contact weight rather than visible knockback.
-    private const float prototypeChargeImpulseForwardDistance = 0.85f; // Length of the contact capsule projected in front of each charging soldier.
+    private const float prototypeChargeImpulseForwardDistance = 0.80f; // Length of the contact capsule projected in front of each charging soldier.
     private const float prototypeChargeImpulseRadius = 0.52f; // Width of each charging soldier's forward contact capsule.
     private const float prototypeChargeImpulseRadialBlend = 0.10f; // Mostly forward force with a small outward spread.
 
@@ -130,8 +130,8 @@ public class SquadCombat : MonoBehaviour
 
     // Successful ordinary melee hits receive a small authored impulse after damage.
     private const bool prototypeMeleeHitImpulseEnabled = true; // Enables physical movement feedback on successful melee damage.
-    private const float prototypeMeleeHitImpulseMagnitude = 4.0f; // Baseline successful-hit impulse before receiver body mass is applied.
-    private const float prototypeMeleeHitImpulseDuration = 0.18f; // Short decay gives a visible strike response without sustained sliding.
+    private const float prototypeMeleeHitImpulseMagnitude = 3.0f; // Baseline successful-hit impulse before receiver body mass is applied.
+    private const float prototypeMeleeHitImpulseDuration = 0.15f; // Short decay gives a visible strike response without sustained sliding.
 
     // -----------------------------------------------------------------------------
     // Prototype Universal Charge MVP Runtime State

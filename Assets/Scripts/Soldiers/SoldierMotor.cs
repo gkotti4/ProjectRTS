@@ -47,11 +47,11 @@ public class SoldierMotor : MonoBehaviour
     // another. It is intentionally not Rigidbody physics and does not decide combat.
     private const bool prototypeBodyPressureEnabled = true;                    // Master toggle for the custom infantry body model.
     private const float prototypeBodyPreferredDistance = 0.88f;                // Soft pressure begins inside this center-to-center distance.
-    private const float prototypeBodyFriendlyMinimumDistance = 0.64f;          // Friendlies may compress more tightly before direct inward movement is blocked.
-    private const float prototypeBodyEnemyMinimumDistance = 0.78f;             // Enemies create a firmer body wall and resist direct penetration sooner.
+    private const float prototypeBodyFriendlyMinimumDistance = 0.70f;          // Friendlies may compress more tightly before direct inward movement is blocked.
+    private const float prototypeBodyEnemyMinimumDistance = 0.80f;             // Enemies create a firmer body wall and resist direct penetration sooner.
     private const float prototypeBodySoftPressureStrength = 1.35f;              // Converts soft-zone overlap depth into separation velocity.
-    private const float prototypeBodyHardCorrectionStrength = 7.0f;             // Converts minimum-distance penetration into a fast corrective velocity.
-    private const float prototypeBodyMaximumCorrectionSpeed = 1.15f;            // Caps total body correction so contacts remain stable rather than snapping.
+    private const float prototypeBodyHardCorrectionStrength = 10.0f;             // Converts minimum-distance penetration into a fast corrective velocity.
+    private const float prototypeBodyMaximumCorrectionSpeed = 1.50f;            // Caps total body correction so contacts remain stable rather than snapping.
     private const float prototypeBodyFriendlyCorrectionMultiplier = 0.70f;      // Friendlies yield softly so formations can compress and flow.
     private const float prototypeBodyEnemyCorrectionMultiplier = 1.20f;         // Enemy contacts separate more firmly than friendly contacts.
     private const float prototypeBodyFrontlineSoftPressureMultiplier = 0.30f;   // Reduces cosmetic soft sliding for active melee frontlines.
@@ -71,14 +71,16 @@ public class SoldierMotor : MonoBehaviour
     private const float prototypeImpulseMinimumPushSpeed = 0.03f;               // Velocities below this are cleared to avoid tiny endless movement.
 
     // -----------------------------------------------------------------------------
-    // Prototype Single-Hop Impulse Transfer MVP Tuning
+    // Prototype Diminishing Impulse Transfer MVP Tuning
     // -----------------------------------------------------------------------------
-    // A directly pushed soldier may transfer part of that momentum into one body
-    // blocking its push direction. The transferred impulse is explicitly marked as
-    // non-transferable, preventing recursive chains through an entire formation.
-    private const bool prototypeImpulseTransferEnabled = true;                  // Enables one-hop push transfer into a blocking living soldier.
-    private const float prototypeImpulseTransferRatio = 0.25f;                  // Fraction of the current push momentum passed into the blocking body.
-    private const float prototypeImpulseTransferMinimumSpeed = 0.75f;            // Minimum current push speed required before a secondary body can be affected.
+    // A pushed soldier may pass momentum through a short body chain. Each hop only
+    // receives a fraction of the previous body's remaining push, and the chain has a
+    // strict depth cap. This creates visible formation compression without allowing
+    // one hit to recursively move an unlimited number of soldiers.
+    private const bool prototypeImpulseTransferEnabled = true;                  // Enables diminishing push transfer through directly contacted living soldiers.
+    private const int prototypeImpulseTransferMaximumHops = 3;                  // Maximum number of secondary bodies reached after the original pushed soldier.
+    private const float prototypeImpulseTransferRatio = 0.50f;                  // Each hop receives half of the current body's push momentum.
+    private const float prototypeImpulseTransferMinimumSpeed = 0.50f;            // Stops weak tail-end pushes before they create invisible micro chains.
     private const float prototypeImpulseTransferContactDistance = 0.92f;         // Maximum center distance for considering another soldier a direct push contact.
     private const float prototypeImpulseTransferMinimumForwardDot = 0.55f;       // Requires the contacted soldier to be meaningfully ahead of the push direction.
     private const float prototypeImpulseTransferDuration = 0.10f;                // Short secondary decay keeps transferred movement subtle.
@@ -93,7 +95,7 @@ public class SoldierMotor : MonoBehaviour
 
     private Vector3 prototypeExternalPushVelocity = Vector3.zero;
     private float prototypeExternalPushTimeRemaining = 0f;
-    private bool prototypeExternalImpulseCanTransfer = false;
+    private int prototypeExternalImpulseTransferHopsRemaining = 0;
     private bool prototypeExternalImpulseHasTransferred = false;
     private float prototypeImpulseTransferCooldownRemaining = 0f;
 
@@ -546,7 +548,7 @@ public class SoldierMotor : MonoBehaviour
             direction,
             impulseMagnitude,
             duration,
-            allowTransfer);
+            allowTransfer ? prototypeImpulseTransferMaximumHops : 0);
     }
 
     /// Calculates a body-driven impulse from the source motor's mass and closing
@@ -583,7 +585,7 @@ public class SoldierMotor : MonoBehaviour
             normalizedDirection,
             resolvedImpulseMagnitude,
             duration,
-            allowTransfer: true);
+            prototypeImpulseTransferMaximumHops);
     }
 
     /// Clears all currently stored custom push velocity. Normal path/formation
@@ -592,7 +594,7 @@ public class SoldierMotor : MonoBehaviour
     {
         prototypeExternalPushVelocity = Vector3.zero;
         prototypeExternalPushTimeRemaining = 0f;
-        prototypeExternalImpulseCanTransfer = false;
+        prototypeExternalImpulseTransferHopsRemaining = 0;
         prototypeExternalImpulseHasTransferred = false;
         prototypeImpulseTransferCooldownRemaining = 0f;
     }
@@ -601,7 +603,7 @@ public class SoldierMotor : MonoBehaviour
         Vector3 direction,
         float impulseMagnitude,
         float duration,
-        bool allowTransfer)
+        int transferHopsRemaining)
     {
         if (soldierController == null || !soldierController.IsAlive)
             return;
@@ -626,9 +628,12 @@ public class SoldierMotor : MonoBehaviour
             prototypeExternalPushTimeRemaining,
             duration);
 
-        if (allowTransfer)
+        if (transferHopsRemaining > 0)
         {
-            prototypeExternalImpulseCanTransfer = true;
+            prototypeExternalImpulseTransferHopsRemaining = Mathf.Max(
+                prototypeExternalImpulseTransferHopsRemaining,
+                transferHopsRemaining);
+
             prototypeExternalImpulseHasTransferred = false;
         }
     }
@@ -716,7 +721,7 @@ public class SoldierMotor : MonoBehaviour
         if (!prototypeImpulseTransferEnabled)
             return;
 
-        if (!prototypeExternalImpulseCanTransfer ||
+        if (prototypeExternalImpulseTransferHopsRemaining <= 0 ||
             prototypeExternalImpulseHasTransferred ||
             prototypeImpulseTransferCooldownRemaining > 0f)
         {
@@ -761,16 +766,17 @@ public class SoldierMotor : MonoBehaviour
             currentPushSpeed *
             resolvedTransferRatio;
 
-        transferTarget.Motor.ApplyExternalImpulse(
+        transferTarget.Motor.ApplyResolvedImpulse(
             pushDirection,
             transferredImpulseMagnitude,
             prototypeImpulseTransferDuration,
-            allowTransfer: false);
+            prototypeExternalImpulseTransferHopsRemaining - 1);
 
         prototypeExternalPushVelocity *=
             Mathf.Max(0f, 1f - resolvedTransferRatio);
 
         prototypeExternalImpulseHasTransferred = true;
+        prototypeExternalImpulseTransferHopsRemaining = 0;
         prototypeImpulseTransferCooldownRemaining =
             prototypeImpulseTransferCooldown;
     }
