@@ -4,10 +4,10 @@ using UnityEngine;
 /// SoldierContactSensor
 /// -----------------------------------------------------------------------------
 ///
-/// Temporary prototype body-space sensor.
+/// Temporary formation body-space sensor.
 /// It does not decide combat.
 /// It does not move the soldier.
-/// It only answers simple local body-space questions for PrototypeMelee.
+/// It only answers simple local body-space questions for FormationCombat.
 ///
 [DisallowMultipleComponent]
 public class SoldierContactSensor : MonoBehaviour

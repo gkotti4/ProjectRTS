@@ -87,31 +87,31 @@ public class SoldierMotor : MonoBehaviour
     private const float directionalBodyBlockingEnemyStrength = 1.00f; // Fraction of inward movement blocked against enemies; 1.0 prevents voluntary movement from advancing through an opposing body.
 
     // -----------------------------------------------------------------------------
-    // Prototype External Impulse MVP Tuning
+    // External Impulse MVP Tuning
     // -----------------------------------------------------------------------------
     // Impulse is authored as mass * velocity. The receiver converts it to initial
     // push velocity with receivedPushSpeed = impulseMagnitude / BodyMass, then the
     // stored velocity decays over the requested duration. All push movement still
     // passes through the same directional body blocking used by normal locomotion.
-    private const float prototypeImpulseDefaultDuration = 0.15f;               // Default time over which received push velocity decays to zero.
-    private const float prototypeImpulseMaximumPushSpeed = 20.0f;                // Safety cap for accumulated push velocity. // WAS: 8.0f
-    private const float prototypeImpulseMinimumPushSpeed = 0.03f;               // Velocities below this are cleared to avoid tiny endless movement.
+    private const float impulseDefaultDuration = 0.15f;               // Default time over which received push velocity decays to zero.
+    private const float impulseMaximumPushSpeed = 20.0f;                // Safety cap for accumulated push velocity. // WAS: 8.0f
+    private const float impulseMinimumPushSpeed = 0.03f;               // Velocities below this are cleared to avoid tiny endless movement.
 
     // -----------------------------------------------------------------------------
-    // Prototype Diminishing Impulse Transfer MVP Tuning
+    // Diminishing Impulse Transfer MVP Tuning
     // -----------------------------------------------------------------------------
     // A pushed soldier may pass momentum through a short body chain. Each hop only
     // receives a fraction of the previous body's remaining push, and the chain has a
     // strict depth cap. This creates visible formation compression without allowing
     // one hit to recursively move an unlimited number of soldiers.
-    private const bool prototypeImpulseTransferEnabled = true;                  // Enables diminishing push transfer through directly contacted living soldiers.
-    private const int prototypeImpulseTransferMaximumHops = 3;                  // Maximum number of secondary bodies reached after the original pushed soldier.
-    private const float prototypeImpulseTransferRatio = 0.50f;                  // Each hop receives half of the current body's push momentum.
-    private const float prototypeImpulseTransferMinimumSpeed = 0.50f;            // Stops weak tail-end pushes before they create invisible micro chains.
-    private const float prototypeImpulseTransferContactDistance = 0.92f;         // Maximum center distance for considering another soldier a direct push contact.
-    private const float prototypeImpulseTransferMinimumForwardDot = 0.55f;       // Requires the contacted soldier to be meaningfully ahead of the push direction.
-    private const float prototypeImpulseTransferDuration = 0.10f;                // Short secondary decay keeps transferred movement subtle.
-    private const float prototypeImpulseTransferCooldown = 0.08f;                // Prevents repeated transfer checks from behaving like a continuous force hose.
+    private const bool impulseTransferEnabled = true;                  // Enables diminishing push transfer through directly contacted living soldiers.
+    private const int impulseTransferMaximumHops = 3;                  // Maximum number of secondary bodies reached after the original pushed soldier.
+    private const float impulseTransferRatio = 0.50f;                  // Each hop receives half of the current body's push momentum.
+    private const float impulseTransferMinimumSpeed = 0.50f;            // Stops weak tail-end pushes before they create invisible micro chains.
+    private const float impulseTransferContactDistance = 0.92f;         // Maximum center distance for considering another soldier a direct push contact.
+    private const float impulseTransferMinimumForwardDot = 0.55f;       // Requires the contacted soldier to be meaningfully ahead of the push direction.
+    private const float impulseTransferDuration = 0.10f;                // Short secondary decay keeps transferred movement subtle.
+    private const float impulseTransferCooldown = 0.08f;                // Prevents repeated transfer checks from behaving like a continuous force hose.
 
     private NavMeshAgent agent;
     private SoldierController soldierController;
@@ -122,13 +122,13 @@ public class SoldierMotor : MonoBehaviour
     private float turnSpeed = 900f;
     private float velocityRotationSuppressedUntil = 0f;
 
-    private Vector3 prototypeExternalPushVelocity = Vector3.zero;
-    private float prototypeExternalPushTimeRemaining = 0f;
-    private int prototypeExternalImpulseTransferHopsRemaining = 0;
-    private bool prototypeExternalImpulseHasTransferred = false;
-    private float prototypeImpulseTransferCooldownRemaining = 0f;
+    private Vector3 externalPushVelocity = Vector3.zero;
+    private float externalPushTimeRemaining = 0f;
+    private int externalImpulseTransferHopsRemaining = 0;
+    private bool externalImpulseHasTransferred = false;
+    private float impulseTransferCooldownRemaining = 0f;
 
-    private readonly Collider[] prototypeBodyOverlapBuffer =
+    private readonly Collider[] bodyOverlapBuffer =
         new Collider[bodyCollisionMaximumNeighbors];
 
     // Formation movement uses NavMeshAgent.Move rather than SetDestination.
@@ -144,9 +144,9 @@ public class SoldierMotor : MonoBehaviour
     public NavMeshAgent Agent => agent;
     public bool HasPath => agent != null && (agent.hasPath || HasManualMovementVelocity);
     public float BodyMass => Mathf.Max(0.01f, bodyMass);
-    public Vector3 ExternalPushVelocity => prototypeExternalPushVelocity;
-    public bool IsBeingPushed => prototypeExternalPushTimeRemaining > 0f &&
-                                 prototypeExternalPushVelocity.sqrMagnitude > 0.0001f;
+    public Vector3 ExternalPushVelocity => externalPushVelocity;
+    public bool IsBeingPushed => externalPushTimeRemaining > 0f &&
+                                 externalPushVelocity.sqrMagnitude > 0.0001f;
 
     public Vector3 Velocity
     {
@@ -194,7 +194,7 @@ public class SoldierMotor : MonoBehaviour
 
     void Update()
     {
-        TickPrototypeExternalImpulse();
+        TickExternalImpulse();
         TickDirectionalBodyBlocking();
         TickBodyCollision();
         RotateTowardVelocity();
@@ -238,13 +238,13 @@ public class SoldierMotor : MonoBehaviour
         int hitCount = Physics.OverlapSphereNonAlloc(
             transform.position,
             queryRadius,
-            prototypeBodyOverlapBuffer,
+            bodyOverlapBuffer,
             bodyQueryLayerMask,
             QueryTriggerInteraction.Collide);
 
         for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
-            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
+            Collider hit = bodyOverlapBuffer[hitIndex];
 
             if (hit == null)
                 continue;
@@ -339,13 +339,13 @@ public class SoldierMotor : MonoBehaviour
         int hitCount = Physics.OverlapSphereNonAlloc(
             transform.position,
             softBodyPressurePreferredDistance,
-            prototypeBodyOverlapBuffer,
+            bodyOverlapBuffer,
             bodyQueryLayerMask,
             QueryTriggerInteraction.Collide); // needed performance
 
         for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
-            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
+            Collider hit = bodyOverlapBuffer[hitIndex];
 
             if (hit == null)
                 continue;
@@ -504,7 +504,7 @@ public class SoldierMotor : MonoBehaviour
         int hitCount = Physics.OverlapSphereNonAlloc(
             transform.position,
             queryRadius,
-            prototypeBodyOverlapBuffer, // slight perf
+            bodyOverlapBuffer, // slight perf
             bodyQueryLayerMask, 
             QueryTriggerInteraction.Collide);
 
@@ -512,7 +512,7 @@ public class SoldierMotor : MonoBehaviour
 
         for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
-            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
+            Collider hit = bodyOverlapBuffer[hitIndex];
 
             if (hit == null)
                 continue;
@@ -619,7 +619,7 @@ public class SoldierMotor : MonoBehaviour
              previousHitIndex++)
         {
             Collider previousHit =
-                prototypeBodyOverlapBuffer[previousHitIndex];
+                bodyOverlapBuffer[previousHitIndex];
 
             if (previousHit == null)
                 continue;
@@ -669,7 +669,7 @@ public class SoldierMotor : MonoBehaviour
 
     #endregion
 
-    #region Prototype External Impulse
+    #region  External Impulse
 
     /// Applies an authored impulse that does not depend on another unit's movement.
     /// One impulse unit applied to one body-mass unit produces one meter-per-second
@@ -677,14 +677,14 @@ public class SoldierMotor : MonoBehaviour
     public void ApplyExternalImpulse(
         Vector3 direction,
         float impulseMagnitude,
-        float duration = prototypeImpulseDefaultDuration,
+        float duration = impulseDefaultDuration,
         bool allowTransfer = true)
     {
         ApplyResolvedImpulse(
             direction,
             impulseMagnitude,
             duration,
-            allowTransfer ? prototypeImpulseTransferMaximumHops : 0);
+            allowTransfer ? impulseTransferMaximumHops : 0);
     }
 
     /// Calculates a body-driven impulse from the source motor's mass and closing
@@ -694,7 +694,7 @@ public class SoldierMotor : MonoBehaviour
         SoldierMotor sourceMotor,
         Vector3 direction,
         float impulseMultiplier = 1f,
-        float duration = prototypeImpulseDefaultDuration)
+        float duration = impulseDefaultDuration)
     {
         if (sourceMotor == null)
             return;
@@ -721,18 +721,18 @@ public class SoldierMotor : MonoBehaviour
             normalizedDirection,
             resolvedImpulseMagnitude,
             duration,
-            prototypeImpulseTransferMaximumHops);
+            impulseTransferMaximumHops);
     }
 
     /// Clears all currently stored custom push velocity. Normal path/formation
     /// movement is not affected.
     public void ClearExternalImpulse()
     {
-        prototypeExternalPushVelocity = Vector3.zero;
-        prototypeExternalPushTimeRemaining = 0f;
-        prototypeExternalImpulseTransferHopsRemaining = 0;
-        prototypeExternalImpulseHasTransferred = false;
-        prototypeImpulseTransferCooldownRemaining = 0f;
+        externalPushVelocity = Vector3.zero;
+        externalPushTimeRemaining = 0f;
+        externalImpulseTransferHopsRemaining = 0;
+        externalImpulseHasTransferred = false;
+        impulseTransferCooldownRemaining = 0f;
     }
 
     void ApplyResolvedImpulse(
@@ -753,28 +753,28 @@ public class SoldierMotor : MonoBehaviour
 
         float receivedPushSpeed = impulseMagnitude / BodyMass;
 
-        prototypeExternalPushVelocity +=
+        externalPushVelocity +=
             direction.normalized * receivedPushSpeed;
 
-        prototypeExternalPushVelocity = Vector3.ClampMagnitude(
-            prototypeExternalPushVelocity,
-            prototypeImpulseMaximumPushSpeed);
+        externalPushVelocity = Vector3.ClampMagnitude(
+            externalPushVelocity,
+            impulseMaximumPushSpeed);
 
-        prototypeExternalPushTimeRemaining = Mathf.Max(
-            prototypeExternalPushTimeRemaining,
+        externalPushTimeRemaining = Mathf.Max(
+            externalPushTimeRemaining,
             duration);
 
         if (transferHopsRemaining > 0)
         {
-            prototypeExternalImpulseTransferHopsRemaining = Mathf.Max(
-                prototypeExternalImpulseTransferHopsRemaining,
+            externalImpulseTransferHopsRemaining = Mathf.Max(
+                externalImpulseTransferHopsRemaining,
                 transferHopsRemaining);
 
-            prototypeExternalImpulseHasTransferred = false;
+            externalImpulseHasTransferred = false;
         }
     }
 
-    void TickPrototypeExternalImpulse()
+    void TickExternalImpulse()
     {
         if (!CanMove()) // check if this applies when attacking in combat and if we want this.
             return;
@@ -785,9 +785,9 @@ public class SoldierMotor : MonoBehaviour
             return;
         }
 
-        if (prototypeExternalPushTimeRemaining <= 0f ||
-            prototypeExternalPushVelocity.sqrMagnitude <=
-            prototypeImpulseMinimumPushSpeed * prototypeImpulseMinimumPushSpeed)
+        if (externalPushTimeRemaining <= 0f ||
+            externalPushVelocity.sqrMagnitude <=
+            impulseMinimumPushSpeed * impulseMinimumPushSpeed)
         {
             ClearExternalImpulse();
             return;
@@ -799,15 +799,15 @@ public class SoldierMotor : MonoBehaviour
             return;
 
         Vector3 requestedPushDelta =
-            prototypeExternalPushVelocity * deltaTime;
+            externalPushVelocity * deltaTime;
 
         requestedPushDelta.y = 0f;
 
         Vector3 resolvedPushDelta = ResolveBodyBlockedMovementDelta(
             requestedPushDelta);
 
-        TickPrototypeImpulseTransferCooldown(deltaTime);
-        TryTransferPrototypeImpulse(
+        TickImpulseTransferCooldown(deltaTime);
+        TryTransferImpulse(
             requestedPushDelta,
             resolvedPushDelta);
 
@@ -817,56 +817,56 @@ public class SoldierMotor : MonoBehaviour
         manualMovementVelocity = resolvedPushDelta / deltaTime;
         manualMovementVelocityValidUntil = Time.time + 0.12f;
 
-        float previousTimeRemaining = prototypeExternalPushTimeRemaining;
-        prototypeExternalPushTimeRemaining = Mathf.Max(
+        float previousTimeRemaining = externalPushTimeRemaining;
+        externalPushTimeRemaining = Mathf.Max(
             0f,
-            prototypeExternalPushTimeRemaining - deltaTime);
+            externalPushTimeRemaining - deltaTime);
 
         float decaySpeed = previousTimeRemaining > 0f
-            ? prototypeExternalPushVelocity.magnitude / previousTimeRemaining
-            : prototypeExternalPushVelocity.magnitude;
+            ? externalPushVelocity.magnitude / previousTimeRemaining
+            : externalPushVelocity.magnitude;
 
-        prototypeExternalPushVelocity = Vector3.MoveTowards(
-            prototypeExternalPushVelocity,
+        externalPushVelocity = Vector3.MoveTowards(
+            externalPushVelocity,
             Vector3.zero,
             decaySpeed * deltaTime);
 
-        if (prototypeExternalPushTimeRemaining <= 0f ||
-            prototypeExternalPushVelocity.sqrMagnitude <=
-            prototypeImpulseMinimumPushSpeed * prototypeImpulseMinimumPushSpeed)
+        if (externalPushTimeRemaining <= 0f ||
+            externalPushVelocity.sqrMagnitude <=
+            impulseMinimumPushSpeed * impulseMinimumPushSpeed)
         {
             ClearExternalImpulse();
         }
     }
 
 
-    void TickPrototypeImpulseTransferCooldown(float deltaTime)
+    void TickImpulseTransferCooldown(float deltaTime)
     {
-        if (prototypeImpulseTransferCooldownRemaining <= 0f)
+        if (impulseTransferCooldownRemaining <= 0f)
             return;
 
-        prototypeImpulseTransferCooldownRemaining = Mathf.Max(
+        impulseTransferCooldownRemaining = Mathf.Max(
             0f,
-            prototypeImpulseTransferCooldownRemaining - deltaTime);
+            impulseTransferCooldownRemaining - deltaTime);
     }
 
-    void TryTransferPrototypeImpulse(
+    void TryTransferImpulse(
         Vector3 requestedPushDelta,
         Vector3 resolvedPushDelta)
     {
-        if (!prototypeImpulseTransferEnabled)
+        if (!impulseTransferEnabled)
             return;
 
-        if (prototypeExternalImpulseTransferHopsRemaining <= 0 ||
-            prototypeExternalImpulseHasTransferred ||
-            prototypeImpulseTransferCooldownRemaining > 0f)
+        if (externalImpulseTransferHopsRemaining <= 0 ||
+            externalImpulseHasTransferred ||
+            impulseTransferCooldownRemaining > 0f)
         {
             return;
         }
 
-        float currentPushSpeed = prototypeExternalPushVelocity.magnitude;
+        float currentPushSpeed = externalPushVelocity.magnitude;
 
-        if (currentPushSpeed < prototypeImpulseTransferMinimumSpeed)
+        if (currentPushSpeed < impulseTransferMinimumSpeed)
             return;
 
         Vector3 blockedDelta = requestedPushDelta - resolvedPushDelta;
@@ -875,7 +875,7 @@ public class SoldierMotor : MonoBehaviour
         if (blockedDelta.sqrMagnitude <= 0.000001f)
             return;
 
-        Vector3 pushDirection = prototypeExternalPushVelocity;
+        Vector3 pushDirection = externalPushVelocity;
         pushDirection.y = 0f;
 
         if (pushDirection.sqrMagnitude <= 0.0001f)
@@ -883,7 +883,7 @@ public class SoldierMotor : MonoBehaviour
 
         pushDirection.Normalize();
 
-        if (!TryFindPrototypeImpulseTransferTarget(
+        if (!TryFindImpulseTransferTarget(
                 pushDirection,
                 out SoldierController transferTarget,
                 out float forwardContactFactor))
@@ -892,7 +892,7 @@ public class SoldierMotor : MonoBehaviour
         }
 
         float resolvedTransferRatio = Mathf.Clamp01(
-            prototypeImpulseTransferRatio * forwardContactFactor);
+            impulseTransferRatio * forwardContactFactor);
 
         if (resolvedTransferRatio <= 0f)
             return;
@@ -905,19 +905,19 @@ public class SoldierMotor : MonoBehaviour
         transferTarget.Motor.ApplyResolvedImpulse(
             pushDirection,
             transferredImpulseMagnitude,
-            prototypeImpulseTransferDuration,
-            prototypeExternalImpulseTransferHopsRemaining - 1);
+            impulseTransferDuration,
+            externalImpulseTransferHopsRemaining - 1);
 
-        prototypeExternalPushVelocity *=
+        externalPushVelocity *=
             Mathf.Max(0f, 1f - resolvedTransferRatio);
 
-        prototypeExternalImpulseHasTransferred = true;
-        prototypeExternalImpulseTransferHopsRemaining = 0;
-        prototypeImpulseTransferCooldownRemaining =
-            prototypeImpulseTransferCooldown;
+        externalImpulseHasTransferred = true;
+        externalImpulseTransferHopsRemaining = 0;
+        impulseTransferCooldownRemaining =
+            impulseTransferCooldown;
     }
 
-    bool TryFindPrototypeImpulseTransferTarget(
+    bool TryFindImpulseTransferTarget(
         Vector3 pushDirection,
         out SoldierController transferTarget,
         out float forwardContactFactor)
@@ -927,8 +927,8 @@ public class SoldierMotor : MonoBehaviour
 
         int hitCount = Physics.OverlapSphereNonAlloc(
             transform.position,
-            prototypeImpulseTransferContactDistance,
-            prototypeBodyOverlapBuffer,
+            impulseTransferContactDistance,
+            bodyOverlapBuffer,
             bodyQueryLayerMask,
             QueryTriggerInteraction.Collide);
 
@@ -936,7 +936,7 @@ public class SoldierMotor : MonoBehaviour
 
         for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
-            Collider hit = prototypeBodyOverlapBuffer[hitIndex];
+            Collider hit = bodyOverlapBuffer[hitIndex];
 
             if (hit == null)
                 continue;
@@ -965,7 +965,7 @@ public class SoldierMotor : MonoBehaviour
             float distance = toCandidate.magnitude;
 
             if (distance <= 0.0001f ||
-                distance > prototypeImpulseTransferContactDistance)
+                distance > impulseTransferContactDistance)
             {
                 continue;
             }
@@ -974,11 +974,11 @@ public class SoldierMotor : MonoBehaviour
                 pushDirection,
                 toCandidate / distance);
 
-            if (forwardDot < prototypeImpulseTransferMinimumForwardDot)
+            if (forwardDot < impulseTransferMinimumForwardDot)
                 continue;
 
             float distanceScore = 1f - Mathf.Clamp01(
-                distance / prototypeImpulseTransferContactDistance);
+                distance / impulseTransferContactDistance);
 
             float score = forwardDot + distanceScore * 0.35f;
 
@@ -988,7 +988,7 @@ public class SoldierMotor : MonoBehaviour
             bestScore = score;
             transferTarget = candidate;
             forwardContactFactor = Mathf.InverseLerp(
-                prototypeImpulseTransferMinimumForwardDot,
+                impulseTransferMinimumForwardDot,
                 1f,
                 forwardDot);
         }

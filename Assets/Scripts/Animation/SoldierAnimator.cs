@@ -508,7 +508,7 @@ public class SoldierAnimator : MonoBehaviour
     public void OnAttackImpact()
     {
         soldierController?.OnAttackImpact();
-        Debug.Log("OnAttackImpact Trigger Called");
+        // Debug.Log("OnAttackImpact Trigger Called");
     }
 
     // Animation Event: ranged projectile release frame.
@@ -539,7 +539,7 @@ public class SoldierAnimator : MonoBehaviour
     public void OnHitReactEnd()
     {
         soldierController?.OnHitEnd();
-        Debug.Log("HitReactEnd Trigger Called");
+        // Debug.Log("HitReactEnd Trigger Called");
     }
 
     #endregion

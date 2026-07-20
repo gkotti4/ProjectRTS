@@ -112,7 +112,7 @@ public class SquadRoster : MonoBehaviour
 
         // Do not compact slots during active melee.
         // Mid-combat compaction is what causes flipping/crossing.
-        // SESSION: PROTOTYPE COMBAT
+        // SESSION: FORMATION COMBAT
         // TODO: CHECK IF WORKS - We want units to look more natural and not immediately reassign slots
         // if (squad != null &&
         //     squad.State != SquadState.InCombat &&

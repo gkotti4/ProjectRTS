@@ -11,7 +11,7 @@ using UnityEngine.Serialization;
 /// stance/formation, movement profile, squad combat profile, morale data, and
 /// available command set.
 ///
-/// PrototypeMelee cleanup:
+/// FormationCombat cleanup:
 /// SoldierCombatProfile is no longer required because the old formation-combat /
 /// old loose-combat soldier rhythm system has been removed.
 ///
@@ -28,7 +28,7 @@ public class SquadData : ScriptableObject
     [FormerlySerializedAs("defaultCombatBehavior")]
     [FormerlySerializedAs("combatStyle")]
     [Header("Combat Behavior")]
-    public SquadCombatStyle defaultCombatStyle = SquadCombatStyle.PrototypeMelee;
+    public SquadCombatStyle defaultCombatStyle = SquadCombatStyle.FormationCombat;
 
     [Header("Profiles")]
     public SquadMovementProfile movementProfile;

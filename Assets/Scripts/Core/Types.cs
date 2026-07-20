@@ -38,7 +38,7 @@ public enum SquadCategory
 
 public enum SquadCombatStyle
 {
-    PrototypeMelee = 0,
+    FormationCombat = 0,
     RangedLine = 2,
 }
 

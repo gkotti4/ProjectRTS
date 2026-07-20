@@ -4,15 +4,15 @@ using UnityEngine;
 /// SoldierCombat
 /// -----------------------------------------------------------------------------
 ///
-/// Minimal soldier combat event bridge for PrototypeMelee.
+/// Minimal soldier combat event bridge for FormationCombat.
 ///
 /// The old old melee local brain has been removed. SquadCombat now
-/// owns the current prototype combat loop. This component remains because
+/// owns the current formation combat loop. This component remains because
 /// SoldierController and SoldierAnimator route animation events through it.
 ///
 /// Design role:
 /// Keep animation-event plumbing local to the soldier while delegating actual
-/// prototype attack resolution back to the owning SquadCombat.
+/// formation attack resolution back to the owning SquadCombat.
 ///
 [DisallowMultipleComponent]
 public class SoldierCombat : MonoBehaviour
@@ -39,7 +39,7 @@ public class SoldierCombat : MonoBehaviour
     // /// does not need profile wiring.
     // public void ApplyProfileFromSquad()
     // {
-    //     // PrototypeMelee no longer uses SoldierCombatProfile.
+    //     // FormationCombat no longer uses SoldierCombatProfile.
     // }
 
     /// Clears local event-bridge state.
@@ -103,6 +103,6 @@ public class SoldierCombat : MonoBehaviour
     // /// Compatibility no-op. Old local combat randomized an internal attack timer.
     // public void RandomizeInitialAttackTimer(float maxDelay)
     // {
-    //     // PrototypeMelee attack timers live in SquadCombat.
+    //     // FormationCombat attack timers live in SquadCombat.
     // }
 }

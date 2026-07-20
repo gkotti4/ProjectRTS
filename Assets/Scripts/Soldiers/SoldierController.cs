@@ -26,7 +26,7 @@ using UnityEngine.AI;
 [RequireComponent(typeof(SoldierHealth))]
 [RequireComponent(typeof(SoldierMotor))]
 [RequireComponent(typeof(SoldierCombat))]
-[RequireComponent(typeof(SoldierContactSensor))] // SESSION: PROTOTYPE COMBAT
+[RequireComponent(typeof(SoldierContactSensor))] // SESSION: FORMATION COMBAT
 
 public class SoldierController : MonoBehaviour
 {
@@ -215,7 +215,7 @@ public class SoldierController : MonoBehaviour
         Roster = roster;
 
         EnsureSelectableTarget();
-        // Combat?.ApplyProfileFromSquad(); // not currently needed for Prototype Combat, we don't use profile for soldier
+        // Combat?.ApplyProfileFromSquad(); // not currently needed for  Combat, we don't use profile for soldier
 
         // -------------------------------------------------------------------------
         // Validation
@@ -388,7 +388,7 @@ public class SoldierController : MonoBehaviour
 
     public void CompleteAction(SoldierActionState completedAction)
     {
-        if (ActionState != completedAction) // should we clear actions before returning?
+        if (ActionState != completedAction)
             return;
 
         ActionState = SoldierActionState.None;
