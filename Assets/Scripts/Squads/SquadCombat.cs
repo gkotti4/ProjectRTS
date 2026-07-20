@@ -51,6 +51,13 @@ public class SquadCombat : MonoBehaviour
     private float scanTimer = 0f;
     private float approachRefreshTimer = 0f;
     private float approachEngagementSettleTimer = 0f;
+    
+    // -----------------------------------------------------------------------------
+    // Prototype Attack Randomizer Values
+    // -----------------------------------------------------------------------------
+    private const float prototypeAttackIntervalRandomMin = 0f; // Minimum Random Range value to add to attack interval
+    private const float prototypeAttackIntervalRandomMax = 1.0f; // Maximum Random Range value to add to attack interval
+    
 
     // -----------------------------------------------------------------------------
     // Prototype Reserve Settle / Side-Step MVP Tuning
@@ -58,10 +65,10 @@ public class SquadCombat : MonoBehaviour
     // Super simple pass: reserve soldiers only move forward when there is a real
     // friendly-body gap. If they get blocked, they sit for a minimum time before
     // any side-step escape is allowed.
-    private const float prototypeReserveForwardGapDistance = 1.30f; // Tune // How far ahead a reserve checks for a friendly-body gap before moving forward.
-    private const float prototypeReserveForwardGapRadius = 0.65f; // Tune // Width/radius of the forward gap check; higher means reserves need a wider lane.
-    private const float prototypeReserveMinimumBlockedSitTimeMin = 0.30f; // Shortest randomized time a newly blocked reserve must wait before repositioning.
-    private const float prototypeReserveMinimumBlockedSitTimeMax = 1.50f; // Longest randomized time a newly blocked reserve must wait before repositioning.
+    private const float prototypeReserveForwardGapDistance = 1.35f; // Tune // How far ahead a reserve checks for a friendly-body gap before moving forward.
+    private const float prototypeReserveForwardGapRadius = 0.60f; // Tune // Width/radius of the forward gap check; higher means reserves need a wider lane.
+    private const float prototypeReserveMinimumBlockedSitTimeMin = 0.35f; // Shortest randomized time a newly blocked reserve must wait before repositioning.
+    private const float prototypeReserveMinimumBlockedSitTimeMax = 1.40f; // Longest randomized time a newly blocked reserve must wait before repositioning.
 
     private const bool prototypeReserveSideStepEnabled = false; // Enables the small local side-step fallback for blocked reserve soldiers.
     private const float prototypeReserveSideStepIntervalMin = 5.0f; // Shortest randomized cooldown before a reserve can attempt another side-step.
@@ -116,17 +123,17 @@ public class SquadCombat : MonoBehaviour
     // Light contact pressure emitted by each charging soldier. A target can only be
     // affected once during the current squad charge, preventing per-frame stacking.
     private const bool prototypeChargeImpulseEnabled = true; // Enables the very light directional contact impulse during the infantry charge MVP.
-    private const float prototypeChargeImpulseMagnitude = 1.55f; // Small authored impulse applied to enemies touched by a charging soldier's forward capsule.
+    private const float prototypeChargeImpulseMagnitude = 4.0f; // Small authored impulse applied to enemies touched by a charging soldier's forward capsule.
     private const float prototypeChargeImpulseDuration = 0.09f; // Short decay keeps this as contact weight rather than visible knockback.
     private const float prototypeChargeImpulseForwardDistance = 0.95f; // Length of the contact capsule projected in front of each charging soldier.
-    private const float prototypeChargeImpulseRadius = 0.55f; // Width of each charging soldier's forward contact capsule.
-    private const float prototypeChargeImpulseRadialBlend = 0.10f; // Mostly forward force with a small outward spread.
+    private const float prototypeChargeImpulseRadius = 0.65f; // Width of each charging soldier's forward contact capsule.
+    private const float prototypeChargeImpulseRadialBlend = 0.12f; // Mostly forward force with a small outward spread.
 
     // The closest 15% of living melee soldiers become the leading edge and receive
     // a slight additional forward movement allowance while the squad is charging.
     private const bool prototypeChargeLeadSpeedEnabled = true; // Enables a small speed edge for the soldiers currently closest to the enemy.
     private const float prototypeChargeLeadSoldierRatio = 0.15f; // 0.15 means 15% of living melee soldiers, rounded up to at least one soldier.
-    private const float prototypeChargeLeadSpeedMultiplier = 1.5f; // Additional per-soldier charge movement multiplier for the current leading edge.
+    private const float prototypeChargeLeadSpeedMultiplier = 1.25f; // Additional per-soldier charge movement multiplier for the current leading edge.
 
     // Successful ordinary melee hits receive a small authored impulse after damage.
     private const bool prototypeMeleeHitImpulseEnabled = true; // Enables physical movement feedback on successful melee damage.
@@ -227,6 +234,12 @@ public class SquadCombat : MonoBehaviour
 
     private readonly Dictionary<SoldierController, WeaponProfile> prototypePendingProjectileWeapons =
         new Dictionary<SoldierController, WeaponProfile>();
+    
+    // Target committed when a melee attack begins.
+    // The AttackImpact animation event consumes this target so target refreshes
+    // during the animation cannot redirect the completed swing.
+    private readonly Dictionary<SoldierController, SoldierController> prototypePendingMeleeTargets =
+        new Dictionary<SoldierController, SoldierController>();
 
     private bool hasLoggedMissingCombatProfile = false;
 
@@ -593,7 +606,7 @@ public class SquadCombat : MonoBehaviour
             return;
         }
         
-        soldier.FaceToward(currentTarget.transform.position);
+        soldier.FaceToward(currentTarget.transform.position, soldier.Data.movement.turnSpeed, false);
 
         // -------------------------------------------------------------------------
         // Active Soldier Logic
@@ -898,7 +911,7 @@ public class SquadCombat : MonoBehaviour
         soldier.SetCombatRole(SoldierRole.Frontline);
         soldier.SetCombatTarget(lockTarget);
         soldier.Stop();
-        soldier.FaceToward(lockTarget.transform.position);
+        soldier.FaceToward(lockTarget.transform.position, soldier.Data.movement.turnSpeed);
     }
 
     public bool IsSoldierCombatLocked(SoldierController soldier)
@@ -906,7 +919,7 @@ public class SquadCombat : MonoBehaviour
         if (!prototypeAttackerCombatLockEnabled)
             return false;
 
-        if (soldier == null || !soldier.IsAlive)
+        if (soldier == null || !soldier.IsAlive) // PERFORMANCE
             return false;
 
         if (!prototypeAttackerCombatLockTimers.TryGetValue(
@@ -921,7 +934,7 @@ public class SquadCombat : MonoBehaviour
                    soldier,
                    out SoldierController lockTarget) &&
                lockTarget != null &&
-               lockTarget.IsAlive;
+               lockTarget.IsAlive; // PERFORMANCE
     }
 
     void ClearPrototypeAttackerCombatLock(SoldierController soldier)
@@ -1918,6 +1931,41 @@ public class SquadCombat : MonoBehaviour
         return target.transform.position - directionToTarget * preferredDistance;
     }
 
+    // void TryPrototypeAttack(
+    //     SoldierController attacker,
+    //     SoldierController target,
+    //     WeaponProfile weaponProfile,
+    //     MeleeCombatStats meleeStats,
+    //     RangedCombatStats rangedStats,
+    //     bool isRangedWeapon,
+    //     float attackInterval)
+    // {
+    //     if (attacker == null || target == null)
+    //         return;
+    //
+    //     bool beganAttack = attacker.TryBeginAction(SoldierActionState.Attack);
+    //
+    //     if (!beganAttack)
+    //         return;
+    //
+    //     prototypeAttackTimers[attacker] = Mathf.Max(0.05f, attackInterval);
+    //
+    //     if (isRangedWeapon)
+    //     {
+    //         BeginPrototypeRangedAttack(
+    //             attacker,
+    //             target,
+    //             weaponProfile,
+    //             rangedStats);
+    //         return;
+    //     }
+    //
+    //     ResolvePrototypeMeleeHit(
+    //         attacker,
+    //         target,
+    //         meleeStats);
+    // }
+    
     void TryPrototypeAttack(
         SoldierController attacker,
         SoldierController target,
@@ -1930,12 +1978,16 @@ public class SquadCombat : MonoBehaviour
         if (attacker == null || target == null)
             return;
 
-        bool beganAttack = attacker.TryBeginAction(SoldierActionState.Attack);
+        bool beganAttack =
+            attacker.TryBeginAction(SoldierActionState.Attack);
 
         if (!beganAttack)
             return;
 
-        prototypeAttackTimers[attacker] = Mathf.Max(0.05f, attackInterval);
+        float randInterval = Random.Range(prototypeAttackIntervalRandomMin, prototypeAttackIntervalRandomMax);
+        
+        prototypeAttackTimers[attacker] =
+            Mathf.Max(0.05f, attackInterval + randInterval); // NEW: added randomized attack interval
 
         if (isRangedWeapon)
         {
@@ -1944,13 +1996,13 @@ public class SquadCombat : MonoBehaviour
                 target,
                 weaponProfile,
                 rangedStats);
+
             return;
         }
 
-        ResolvePrototypeMeleeHit(
-            attacker,
-            target,
-            meleeStats);
+        // Melee damage is not resolved here.
+        // Snapshot the committed target and wait for AttackImpact.
+        prototypePendingMeleeTargets[attacker] = target;
     }
 
     void ResolvePrototypeMeleeHit(
@@ -2116,30 +2168,96 @@ public class SquadCombat : MonoBehaviour
             weaponProfile);
     }
 
-    /// Melee is currently resolved immediately when the attack begins.
-    /// This hook exists so SoldierCombat can safely forward animation events.
+    /// Called by SoldierCombat from the AttackImpact animation event.
+    /// Resolves melee damage, impulse, and HitReact on the authored impact frame.
     public void ResolveSoldierAttackImpact(SoldierController attacker)
     {
-        // Intentionally empty for this PrototypeMelee base.
+        if (attacker == null)
+            return;
+
+        if (attacker.ActionState != SoldierActionState.Attack)
+        {
+            ClearPendingMeleeAttack(attacker);
+            return;
+        }
+
+        if (!prototypePendingMeleeTargets.TryGetValue(
+                attacker,
+                out SoldierController target))
+        {
+            return;
+        }
+
+        // Consume first so duplicate AttackImpact animation events cannot hit twice.
+        ClearPendingMeleeAttack(attacker);
+
+        if (target == null || !target.IsAlive)
+            return;
+
+        WeaponProfile weaponProfile = GetWeaponProfile(attacker);
+
+        MeleeCombatStats meleeStats = weaponProfile != null
+            ? weaponProfile.melee
+            : MeleeCombatStats.Default;
+
+        ResolvePrototypeMeleeHit(
+            attacker,
+            target,
+            meleeStats);
+    }
+    
+    void ClearPendingMeleeAttack(SoldierController soldier)
+    {
+        if (soldier == null)
+            return;
+
+        prototypePendingMeleeTargets.Remove(soldier);
     }
 
     /// Called by SoldierCombat when the soldier action ends.
+    // public void HandleSoldierActionCompleted(
+    //     SoldierController soldier,
+    //     SoldierActionState completedAction)
+    // {
+    //     if (completedAction == SoldierActionState.Attack)
+    //         ClearPendingProjectile(soldier);
+    // }
+    
     public void HandleSoldierActionCompleted(
         SoldierController soldier,
         SoldierActionState completedAction)
     {
-        if (completedAction == SoldierActionState.Attack)
-            ClearPendingProjectile(soldier);
+        if (completedAction != SoldierActionState.Attack)
+            return;
+
+        ClearPendingMeleeAttack(soldier);
+
+        // Leave your existing projectile cleanup here unchanged.
+        ClearPendingProjectile(soldier);
     }
 
     /// Called by SoldierCombat when an action is interrupted.
+    // public void HandleSoldierActionInterrupted(
+    //     SoldierController soldier,
+    //     SoldierActionState interruptedAction,
+    //     SoldierActionState newAction)
+    // {
+    //     if (interruptedAction == SoldierActionState.Attack)
+    //         ClearPendingProjectile(soldier);
+    // }
+    
     public void HandleSoldierActionInterrupted(
         SoldierController soldier,
         SoldierActionState interruptedAction,
         SoldierActionState newAction)
     {
-        if (interruptedAction == SoldierActionState.Attack)
-            ClearPendingProjectile(soldier);
+        if (interruptedAction != SoldierActionState.Attack)
+            return;
+
+        ClearPendingMeleeAttack(soldier);
+
+        // Leave your existing projectile cleanup here unchanged.
+        ClearPendingProjectile(soldier);
     }
 
     void ClearPendingProjectile(SoldierController soldier)
@@ -2172,6 +2290,8 @@ public class SquadCombat : MonoBehaviour
             prototypeAttackerCombatLockTargets.Clear();
         }
 
+        prototypePendingMeleeTargets.Clear();
+        
         prototypePendingProjectileTargets.Clear();
         prototypePendingProjectileWeapons.Clear();
 
@@ -2634,7 +2754,7 @@ public class SquadCombat : MonoBehaviour
                 soldier.SetCombatRole(SoldierRole.Frontline);
                 soldier.SetCombatTarget(lockTarget);
                 soldier.Stop();
-                soldier.FaceToward(lockTarget.transform.position);
+                soldier.FaceToward(lockTarget.transform.position, soldier.Data.movement.turnSpeed);
                 continue;
             }
 

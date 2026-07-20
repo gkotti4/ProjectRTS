@@ -115,6 +115,8 @@ public class SoldierMotor : MonoBehaviour
 
     private NavMeshAgent agent;
     private SoldierController soldierController;
+    
+    private int bodyQueryLayerMask = ~0; // Unit Layer Mask
 
     private float baseMoveSpeed = 4f;
     private float turnSpeed = 900f;
@@ -172,6 +174,11 @@ public class SoldierMotor : MonoBehaviour
         agent = GetComponent<NavMeshAgent>();
         soldierController = GetComponent<SoldierController>();
 
+        bodyQueryLayerMask =
+            GameLayers.Instance != null
+                ? GameLayers.Instance.UnitLayer.value
+                : ~0;
+
         agent.radius = agentRadius;
         agent.height = agentHeight;
         agent.obstacleAvoidanceType = obstacleAvoidanceType;
@@ -216,7 +223,7 @@ public class SoldierMotor : MonoBehaviour
         }
 
         if (softBodyPressureEnabled)
-            TickSoftBodyPressure();
+            TickSoftBodyPressure(); 
     }
 
     /// Enforces the minimum body radius through positional projection. This does
@@ -232,7 +239,7 @@ public class SoldierMotor : MonoBehaviour
             transform.position,
             queryRadius,
             prototypeBodyOverlapBuffer,
-            GetBodyQueryLayerMask(),
+            bodyQueryLayerMask,
             QueryTriggerInteraction.Collide);
 
         for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
@@ -243,7 +250,7 @@ public class SoldierMotor : MonoBehaviour
                 continue;
 
             SoldierController otherSoldier =
-                hit.GetComponentInParent<SoldierController>();
+                hit.GetComponentInParent<SoldierController>(); // PERFORMANCE
 
             if (!IsValidBodyNeighbor(otherSoldier))
                 continue;
@@ -333,8 +340,8 @@ public class SoldierMotor : MonoBehaviour
             transform.position,
             softBodyPressurePreferredDistance,
             prototypeBodyOverlapBuffer,
-            GetBodyQueryLayerMask(),
-            QueryTriggerInteraction.Collide);
+            bodyQueryLayerMask,
+            QueryTriggerInteraction.Collide); // needed performance
 
         for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
@@ -344,9 +351,9 @@ public class SoldierMotor : MonoBehaviour
                 continue;
 
             SoldierController otherSoldier =
-                hit.GetComponentInParent<SoldierController>();
+                hit.GetComponentInParent<SoldierController>(); // PERFORMANCE
 
-            if (!IsValidBodyNeighbor(otherSoldier))
+            if (!IsValidBodyNeighbor(otherSoldier)) // slight performance
                 continue;
 
             if (WasBodyNeighborAlreadyCounted(hitIndex, otherSoldier))
@@ -497,8 +504,8 @@ public class SoldierMotor : MonoBehaviour
         int hitCount = Physics.OverlapSphereNonAlloc(
             transform.position,
             queryRadius,
-            prototypeBodyOverlapBuffer,
-            GetBodyQueryLayerMask(),
+            prototypeBodyOverlapBuffer, // slight perf
+            bodyQueryLayerMask, 
             QueryTriggerInteraction.Collide);
 
         Vector3 resolvedDelta = requestedDelta;
@@ -511,9 +518,9 @@ public class SoldierMotor : MonoBehaviour
                 continue;
 
             SoldierController otherSoldier =
-                hit.GetComponentInParent<SoldierController>();
+                hit.GetComponentInParent<SoldierController>(); // PERFORMANCE
 
-            if (!IsValidBodyNeighbor(otherSoldier))
+            if (!IsValidBodyNeighbor(otherSoldier)) // slight perf
                 continue;
 
             if (WasBodyNeighborAlreadyCounted(hitIndex, otherSoldier))
@@ -593,18 +600,9 @@ public class SoldierMotor : MonoBehaviour
         manualMovementVelocity = movementDelta / Time.deltaTime;
         manualMovementVelocityValidUntil = Time.time + 0.12f;
     }
+    
 
-    /// Returns every physics layer except the large selection-only collider layer.
-    /// Selection colliders exist for click/hover usability and must not influence
-    /// body constraints, directional blocking, pressure, or impulse transfer.
-    static int GetBodyQueryLayerMask()
-    {
-        return GameLayers.Instance != null
-            ? GameLayers.Instance.UnitLayer.value
-            : ~0;
-    }
-
-    bool IsValidBodyNeighbor(SoldierController otherSoldier)
+    bool IsValidBodyNeighbor(SoldierController otherSoldier) // slight perf due to calls
     {
         if (otherSoldier == null || otherSoldier == soldierController)
             return false;
@@ -931,7 +929,7 @@ public class SoldierMotor : MonoBehaviour
             transform.position,
             prototypeImpulseTransferContactDistance,
             prototypeBodyOverlapBuffer,
-            GetBodyQueryLayerMask(),
+            bodyQueryLayerMask,
             QueryTriggerInteraction.Collide);
 
         float bestScore = float.NegativeInfinity;
@@ -1045,16 +1043,16 @@ public class SoldierMotor : MonoBehaviour
     /// During movement, the soldier should usually face its own movement delta.
     /// When not moving, callers can explicitly rotate the soldier toward final
     /// formation facing through FaceDirection().
-    public void MoveByFormationDelta(
+    public void MoveByFormationDelta( // PERFORMANCE
         Vector3 movementDelta,
         Vector3 fallbackFacingDirection,
         float speedLimit = -1f,
         bool faceMovementDirection = true)
     {
-        if (!CanMove())
+        if (!CanMove()) // slight perf
             return;
 
-        if (IsMovementRequestLocked())
+        if (IsMovementRequestLocked()) // perf
             return;
 
         if (agent.hasPath)
@@ -1079,8 +1077,8 @@ public class SoldierMotor : MonoBehaviour
             movementDelta = movementDelta.normalized * maxDistanceThisFrame;
         }
 
-        movementDelta = ResolveBodyBlockedMovementDelta(
-            movementDelta);
+        movementDelta = ResolveBodyBlockedMovementDelta( // PERFORMANCE
+            movementDelta); 
 
         manualMovementVelocity = Time.deltaTime > 0f
             ? movementDelta / Time.deltaTime
@@ -1099,7 +1097,7 @@ public class SoldierMotor : MonoBehaviour
             visualFacingDirection = movementDelta;
         }
 
-        RotateTowardDirection(visualFacingDirection);
+        RotateTowardDirection(visualFacingDirection); // PERFORMANCE 
     }
     
     /// Rotates the soldier toward a requested direction without issuing movement.
@@ -1154,19 +1152,19 @@ public class SoldierMotor : MonoBehaviour
             Time.time + Mathf.Max(0f, duration));
     }
 
-    bool CanMove()
+    bool CanMove() // ~ PERFORMANCE
     {
         return agent != null &&
-               agent.enabled &&
-               agent.isActiveAndEnabled &&
-               agent.isOnNavMesh;
+               agent.enabled && // perf  1/3
+               agent.isActiveAndEnabled && // perf 1/3
+               agent.isOnNavMesh; // perf 1/3
     }
 
     bool IsMovementRequestLocked()
     {
         return soldierController != null &&
                (soldierController.IsMovementLocked ||
-                soldierController.IsCombatMoveLocked);
+                soldierController.IsCombatMoveLocked); // PERFORMANCE
     }
 
     void RotateTowardVelocity()
@@ -1174,13 +1172,13 @@ public class SoldierMotor : MonoBehaviour
         if (Time.time < velocityRotationSuppressedUntil)
             return;
 
-        if (IsMovementRequestLocked())
+        if (IsMovementRequestLocked()) // see performance
             return;
 
         if (agent == null)
             return;
 
-        Vector3 velocity = Velocity;
+        Vector3 velocity = Velocity; // slight performance
         velocity.y = 0f;
 
         if (velocity.sqrMagnitude < 0.01f)
@@ -1189,7 +1187,7 @@ public class SoldierMotor : MonoBehaviour
         RotateTowardDirection(velocity.normalized);
     }
 
-    void RotateTowardDirection(Vector3 direction)
+    void RotateTowardDirection(Vector3 direction) // Performance
     {
         direction.y = 0f;
 
@@ -1200,7 +1198,7 @@ public class SoldierMotor : MonoBehaviour
             direction.normalized,
             Vector3.up);
 
-        transform.rotation = Quaternion.RotateTowards(
+        transform.rotation = Quaternion.RotateTowards( // slight performance
             transform.rotation,
             targetRotation,
             turnSpeed * Time.deltaTime);

@@ -3,35 +3,6 @@ using UnityEngine;
 /// -----------------------------------------------------------------------------
 /// SoldierAnimator
 /// -----------------------------------------------------------------------------
-///
-/// Basic animation bridge for a soldier.
-///
-/// ProjectRTS 2.0 rule:
-/// Keep this simple.
-///
-/// Drives:
-/// - IsMoving
-/// - IsMovingBackwards
-/// - InCombat
-/// - Attack
-/// - HitReact
-/// - Death
-///
-/// Does NOT drive:
-/// - MoveX
-/// - MoveZ
-/// - MoveSpeed
-/// - 2D blendspaces
-///
-/// SoldierController owns committed action state.
-/// SoldierMotor owns movement execution.
-/// SoldierAnimator only visualizes current state and forwards animation events.
-///
-/// Important:
-/// Combat movement can be tiny/frequent NavMeshAgent.SetDestination movement.
-/// NavMeshAgent velocity/path state can flicker during those micro-moves, so this
-/// script also measures actual world-position delta to prevent visual sliding.
-///
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Animator))]
 public class SoldierAnimator : MonoBehaviour
@@ -125,9 +96,9 @@ public class SoldierAnimator : MonoBehaviour
 
     void Update()
     {
-        UpdateMeasuredWorldVelocity();
-        UpdateMovementParameters();
-        UpdateCombatParameter();
+        UpdateMeasuredWorldVelocity(); // PERFORMANCE
+        UpdateMovementParameters(); // PERFORMANCE!
+        UpdateCombatParameter(); // PERFORMANCE
     }
 
     #endregion
@@ -213,7 +184,7 @@ public class SoldierAnimator : MonoBehaviour
         if (animator == null)
             return;
 
-        bool shouldMoveNow = ShouldUseMovingState();
+        bool shouldMoveNow = ShouldUseMovingState(); // PERFORMANCE
 
         if (shouldMoveNow)
         {
@@ -232,7 +203,7 @@ public class SoldierAnimator : MonoBehaviour
 
         bool isMovingBackwards =
             isMovingVisual &&
-            IsClearlyMovingBackwards();
+            IsClearlyMovingBackwards(); // PERFORMANCE
 
         animator.SetBool(IsMoving, isMovingVisual);
 
@@ -246,13 +217,13 @@ public class SoldierAnimator : MonoBehaviour
         if (soldierController == null)
             return false;
 
-        if (!soldierController.IsAlive)
+        if (!soldierController.IsAlive) // ~PERFORMANCE
             return false;
 
         if (soldierController.IsMovementLocked)
             return false;
 
-        return HasMotorMovement();
+        return HasMotorMovement(); // PERFORMANCE
     }
     
     bool HasMotorMovement()
@@ -537,6 +508,7 @@ public class SoldierAnimator : MonoBehaviour
     public void OnAttackImpact()
     {
         soldierController?.OnAttackImpact();
+        Debug.Log("OnAttackImpact Trigger Called");
     }
 
     // Animation Event: ranged projectile release frame.
@@ -545,11 +517,11 @@ public class SoldierAnimator : MonoBehaviour
         soldierController?.OnProjectileRelease();
     }
 
-    // Animation Event alias: generic attack execution frame.
-    public void OnAttackExecute()
-    {
-        soldierController?.OnAttackImpact();
-    }
+    // // Animation Event alias: generic attack execution frame.
+    // public void OnAttackExecute()
+    // {
+    //     soldierController?.OnAttackImpact();
+    // }
 
     // Animation Event: attack clip finished / unlock Attack action.
     public void OnAttackEnd()
@@ -567,6 +539,7 @@ public class SoldierAnimator : MonoBehaviour
     public void OnHitReactEnd()
     {
         soldierController?.OnHitEnd();
+        Debug.Log("HitReactEnd Trigger Called");
     }
 
     #endregion

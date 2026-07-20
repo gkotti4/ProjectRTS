@@ -272,7 +272,7 @@ public class SquadController : MonoBehaviour,
 
             case SquadState.Moving:
                 Combat.TickCombatLocks();
-                Movement.TickMoving();
+                Movement.TickMoving(); // PERFORMANCE
                 break;
 
             case SquadState.ApproachingCombat:

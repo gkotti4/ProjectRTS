@@ -24,7 +24,18 @@ public class SoldierContactSensor : MonoBehaviour
     [SerializeField] private int debugForwardGapCircleSegments = 16;
 
     private readonly Collider[] overlapBuffer = new Collider[32];
+    private int bodyQueryLayerMask = ~0;
 
+    
+    void Awake()
+    {
+        bodyQueryLayerMask =
+            GameLayers.Instance != null
+                ? GameLayers.Instance.UnitLayer.value
+                : ~0;
+    }
+    
+    
     /// Returns true when no living friendly body occupies the requested forward
     /// gap. SquadCombat uses this as permission for reserve soldiers to move up.
     public bool IsForwardFriendlyGapOpen(
@@ -57,7 +68,7 @@ public class SoldierContactSensor : MonoBehaviour
             endPoint,
             gapRadius,
             overlapBuffer,
-            GetBodyQueryLayerMask(),
+            bodyQueryLayerMask,
             QueryTriggerInteraction.Collide);
 
         SoldierController blockingFriendly = null;
@@ -192,7 +203,7 @@ public class SoldierContactSensor : MonoBehaviour
             checkCenter,
             bodyCheckRadius,
             overlapBuffer,
-            GetBodyQueryLayerMask(),
+            bodyQueryLayerMask,
             QueryTriggerInteraction.Collide);
 
         for (int i = 0; i < hitCount; i++)
@@ -225,7 +236,7 @@ public class SoldierContactSensor : MonoBehaviour
             point,
             radius,
             overlapBuffer,
-            GetBodyQueryLayerMask(),
+            bodyQueryLayerMask,
             QueryTriggerInteraction.Collide);
 
         for (int i = 0; i < hitCount; i++)
@@ -262,17 +273,7 @@ public class SoldierContactSensor : MonoBehaviour
 
         return other.Squad == owner.Squad;
     }
-
-
-    /// Returns every physics layer except the large selection-only collider layer.
-    /// Selection colliders are intentionally oversized for input and must never
-    /// participate in body-space occupancy or forward-gap decisions.
-    static int GetBodyQueryLayerMask()
-    {
-        return GameLayers.Instance != null
-            ? GameLayers.Instance.UnitLayer.value
-            : ~0;
-    }
+    
 
     Vector3 NormalizeFlat(Vector3 value)
     {

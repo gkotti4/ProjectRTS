@@ -514,7 +514,7 @@ public class SquadMovement : MonoBehaviour
             desiredFacing,
             movementSpeedMultiplier,
             leadSoldiers,
-            leadSoldierSpeedMultiplier);
+            leadSoldierSpeedMultiplier); // PERFORMANCE
 
         if (HasAnchorReachedDestination())
             CompleteMovementOrReform(allowArrivalStateChange);

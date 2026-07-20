@@ -57,6 +57,7 @@ public class SoldierController : MonoBehaviour
     // These are intentionally not serialized.
     // They are watchdog values for catching missing animation events.
     private const bool actionDebugWarningsEnabled = true;
+    private const bool actionWatchdogHitReactRecoveryEnabled = true; // Automatically releases a HitReact action when its animation-end event is missed.
     private const float attackActionWarningSeconds = 3f;
     private const float hitReactActionWarningSeconds = 2f;
 
@@ -71,7 +72,7 @@ public class SoldierController : MonoBehaviour
     public int SlotIndex { get; private set; } = -1;
     public Vector3 LastSlotPosition { get; private set; }
 
-    public bool IsAlive => Health != null && Health.IsAlive;
+    public bool IsAlive => Health != null && Health.IsAlive; // performance issues when used in tick calls
 
     public SoldierActionState ActionState { get; private set; } = SoldierActionState.None;
 
@@ -387,7 +388,7 @@ public class SoldierController : MonoBehaviour
 
     public void CompleteAction(SoldierActionState completedAction)
     {
-        if (ActionState != completedAction)
+        if (ActionState != completedAction) // should we clear actions before returning?
             return;
 
         ActionState = SoldierActionState.None;
@@ -487,6 +488,14 @@ public class SoldierController : MonoBehaviour
             $"{name}: ActionState '{ActionState}' has lasted longer than {warningSeconds:0.00}s. " +
             "Check the animation transition and required animation end event.",
             this);
+
+        // Animation events remain the normal completion path, but gameplay state
+        // must never stay permanently locked when a transition skips OnHitEnd.
+        if (actionWatchdogHitReactRecoveryEnabled &&
+            ActionState == SoldierActionState.HitReact)
+        {
+            CompleteAction(SoldierActionState.HitReact);
+        }
     }
     
     #endregion
@@ -543,7 +552,7 @@ public class SoldierController : MonoBehaviour
         Motor.MoveTo(position, stoppingDistance, speedMultiplier);
     }
 
-    public void FaceToward(Vector3 position, float turnSpeed = 350f)
+    public void FaceToward(Vector3 position, float turnSpeed = 350f, bool suppressMotorVelocityRotation = true)
     {
         Vector3 dir = position - transform.position;
         dir.y = 0f;
@@ -560,10 +569,17 @@ public class SoldierController : MonoBehaviour
             targetRotation,
             turnSpeed * Time.deltaTime);
 
-        Motor?.SuppressVelocityRotation();
+        if (suppressMotorVelocityRotation) // NEW
+            Motor?.SuppressVelocityRotation();
     }
+    
     #endregion
 
 }
+
+
+
+
+
 
 
