@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -56,11 +57,15 @@ public class FormationCalculator : MonoBehaviour
             ? spacingOverride
             : defaultSpacing;
         
-        width = Mathf.Max(width, spacing);
+        width = Mathf.Max(0f, width);
 
-        int unitsPerRow = Mathf.Max(
+        // Requested width represents the desired distance between the outermost
+        // slot centers. One column occupies zero spacing intervals, so resolving
+        // columns requires one more column than the number of fitting intervals.
+        int unitsPerRow = Mathf.Clamp(
+            Mathf.FloorToInt(width / spacing) + 1,
             1,
-            Mathf.FloorToInt(width / spacing));
+            unitCount);
 
         List<Vector2> offsets = formation switch
         {
@@ -73,6 +78,42 @@ public class FormationCalculator : MonoBehaviour
         };
 
         return CenterOffsets(offsets);
+    }
+
+
+    /// <summary>
+    /// Calculates the centered local-space axis-aligned footprint occupied by a
+    /// generated formation. The returned width/depth box is valid for every
+    /// formation shape, including circles and wedges, and is used by group movement
+    /// to reserve space around each squad.
+    /// </summary>
+    public FormationBounds CalculateBounds(IReadOnlyList<Vector2> offsets)
+    {
+        if (offsets == null || offsets.Count == 0)
+            return FormationBounds.Empty;
+
+        float minX = offsets[0].x;
+        float maxX = offsets[0].x;
+        float minY = offsets[0].y;
+        float maxY = offsets[0].y;
+
+        for (int i = 1; i < offsets.Count; i++)
+        {
+            Vector2 offset = offsets[i];
+
+            minX = Mathf.Min(minX, offset.x);
+            maxX = Mathf.Max(maxX, offset.x);
+            minY = Mathf.Min(minY, offset.y);
+            maxY = Mathf.Max(maxY, offset.y);
+        }
+
+        return new FormationBounds
+        {
+            columnCount = CountDistinctCoordinates(offsets, useX: true),
+            rowCount = CountDistinctCoordinates(offsets, useX: false),
+            width = Mathf.Max(0f, maxX - minX),
+            depth = Mathf.Max(0f, maxY - minY)
+        };
     }
 
     /// <summary>
@@ -150,6 +191,37 @@ public class FormationCalculator : MonoBehaviour
         }
 
         return result;
+    }
+
+
+    int CountDistinctCoordinates(
+        IReadOnlyList<Vector2> offsets,
+        bool useX)
+    {
+        const float coordinateTolerance = 0.001f;
+        int distinctCount = 0;
+
+        for (int i = 0; i < offsets.Count; i++)
+        {
+            float coordinate = useX ? offsets[i].x : offsets[i].y;
+            bool alreadyCounted = false;
+
+            for (int j = 0; j < i; j++)
+            {
+                float previousCoordinate = useX ? offsets[j].x : offsets[j].y;
+
+                if (Mathf.Abs(coordinate - previousCoordinate) <= coordinateTolerance)
+                {
+                    alreadyCounted = true;
+                    break;
+                }
+            }
+
+            if (!alreadyCounted)
+                distinctCount++;
+        }
+
+        return distinctCount;
     }
 
     #endregion
@@ -349,5 +421,7 @@ public class FormationCalculator : MonoBehaviour
 
     #endregion
 }
+
+
 
 

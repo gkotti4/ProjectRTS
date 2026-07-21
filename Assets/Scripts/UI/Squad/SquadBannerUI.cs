@@ -1,3 +1,4 @@
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -20,7 +21,6 @@ public class SquadBannerUI : MonoBehaviour
     [SerializeField] private Image healthFill;
     [SerializeField] private Image manpowerFill;
     [SerializeField] private Image squadIcon;
-    // [SerializeField] private Image bannerBackground;
     [SerializeField] private GameObject selectedHighlightRoot;
     [SerializeField] private GameObject hoverHighlightRoot;
 
@@ -30,8 +30,10 @@ public class SquadBannerUI : MonoBehaviour
 
     [Header("Visibility")]
     [SerializeField] private GameObject contentRoot;
+
+    [SerializeField] private bool alwaysShow = true;
     [SerializeField] private bool showWhenSelected = true;
-    [SerializeField] private bool showWhenHovered = false;
+    [SerializeField] private bool showWhenHovered = true;
     [SerializeField] private bool showWhenDamaged = false;
     [SerializeField] private float damagedHealthPercentThreshold = 0.99f;
 
@@ -253,6 +255,12 @@ public class SquadBannerUI : MonoBehaviour
         if (contentRoot == null)
             return;
 
+        if (alwaysShow)
+        {
+            contentRoot.SetActive(true); // TODO: Temporary fix to always show, move out of Update call
+            return;
+        }
+        
         bool shouldShow = false;
 
         if (showWhenSelected && isSelected)

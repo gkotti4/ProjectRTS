@@ -58,6 +58,28 @@ public class SquadFormationController : MonoBehaviour
         UpdateSlots(transform.position, facing);
     }
 
+    public FormationBounds GetCurrentFormationBounds()
+    {
+        return GetFormationBounds();
+    }
+
+    /// Returns the axis-aligned local footprint of either the current formation or
+    /// a proposed formation width. Bounds are always calculated from the same local
+    /// offsets used by live slots and drag previews, so every formation shape owns
+    /// a consistent rectangular group-movement footprint.
+    public FormationBounds GetFormationBounds(
+        float requestedFormationWidth = -1f)
+    {
+        List<Vector2> offsets = BuildFormationOffsets(
+            requestedFormationWidth);
+
+        if (FormationCalculator.Instance != null)
+            return FormationCalculator.Instance.CalculateBounds(offsets);
+
+        return CalculateFallbackBounds(offsets);
+    }
+    
+
     public void SetFormation(SquadFormation formation)
     {
         currentFormation = formation;
@@ -82,25 +104,7 @@ public class SquadFormationController : MonoBehaviour
 
     public void Rebuild()
     {
-        int count = roster != null ? roster.Count : 0;
-
-        float width = formationWidth > 0f
-            ? formationWidth
-            : GetDefaultWidth(count);
-
-        if (FormationCalculator.Instance != null)
-        {
-            localOffsets = FormationCalculator.Instance.CalculateOffsets(
-                count,
-                width,
-                currentFormation,
-                spacing); // NEW: spacing - spacingOverride - spacing vs units per row bug (different calculations in this vs FormationCalc)
-        }
-        else
-        {
-            localOffsets = BuildFallbackLineOffsets(count);
-        }
-
+        localOffsets = BuildFormationOffsets();
         AssignSlotIndices();
     }
 
@@ -147,31 +151,8 @@ public class SquadFormationController : MonoBehaviour
         Vector3 slotFacing,
         float requestedFormationWidth = -1f)
     {
-        int count = roster != null ? roster.Count : 0;
-
-        if (count <= 0)
-            return new List<Vector3>();
-
-        float previewWidth = requestedFormationWidth > 0f
-            ? requestedFormationWidth
-            : formationWidth > 0f
-                ? formationWidth
-                : GetDefaultWidth(count);
-
-        List<Vector2> previewOffsets;
-
-        if (FormationCalculator.Instance != null)
-        {
-            previewOffsets = FormationCalculator.Instance.CalculateOffsets(
-                count,
-                previewWidth,
-                currentFormation,
-                spacing);
-        }
-        else
-        {
-            previewOffsets = BuildFallbackLineOffsets(count);
-        }
+        List<Vector2> previewOffsets = BuildFormationOffsets(
+            requestedFormationWidth);
 
         if (FormationCalculator.Instance != null)
         {
@@ -209,6 +190,32 @@ public class SquadFormationController : MonoBehaviour
     }
     
 
+    List<Vector2> BuildFormationOffsets(
+        float requestedFormationWidth = -1f)
+    {
+        int count = roster != null ? roster.Count : 0;
+
+        if (count <= 0)
+            return new List<Vector2>();
+
+        float resolvedWidth = requestedFormationWidth > 0f
+            ? requestedFormationWidth
+            : formationWidth > 0f
+                ? formationWidth
+                : GetDefaultWidth(count);
+
+        if (FormationCalculator.Instance != null)
+        {
+            return FormationCalculator.Instance.CalculateOffsets(
+                count,
+                resolvedWidth,
+                currentFormation,
+                spacing);
+        }
+
+        return BuildFallbackLineOffsets(count);
+    }
+
     float GetDefaultWidth(int count)
     {
         int unitsPerRow = Mathf.Clamp(
@@ -216,7 +223,7 @@ public class SquadFormationController : MonoBehaviour
             1,
             Mathf.Max(1, count));
 
-        return Mathf.Max(spacing, unitsPerRow * spacing);
+        return Mathf.Max(0f, (unitsPerRow - 1) * spacing);
     }
 
     void AssignSlotIndices()
@@ -377,4 +384,37 @@ public class SquadFormationController : MonoBehaviour
             facing,
             autoHide);
     }
+    
+    
+    
+    
+    FormationBounds CalculateFallbackBounds(
+        IReadOnlyList<Vector2> offsets)
+    {
+        if (offsets == null || offsets.Count == 0)
+            return FormationBounds.Empty;
+
+        float minX = offsets[0].x;
+        float maxX = offsets[0].x;
+        float minY = offsets[0].y;
+        float maxY = offsets[0].y;
+
+        for (int i = 1; i < offsets.Count; i++)
+        {
+            minX = Mathf.Min(minX, offsets[i].x);
+            maxX = Mathf.Max(maxX, offsets[i].x);
+            minY = Mathf.Min(minY, offsets[i].y);
+            maxY = Mathf.Max(maxY, offsets[i].y);
+        }
+
+        return new FormationBounds
+        {
+            columnCount = offsets.Count,
+            rowCount = 1,
+            width = Mathf.Max(0f, maxX - minX),
+            depth = Mathf.Max(0f, maxY - minY)
+        };
+    }
+    
+    
 }

@@ -417,6 +417,14 @@ public class SquadController : MonoBehaviour,
             requestedFormationWidth);
     }
 
+    public FormationBounds GetFormationBounds(
+        float requestedFormationWidth = -1f)
+    {
+        return Formation != null
+            ? Formation.GetFormationBounds(requestedFormationWidth)
+            : FormationBounds.Empty;
+    }
+
     #endregion
 
     #region Selection

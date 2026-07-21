@@ -496,3 +496,24 @@ public struct ProductionStats
 
 
 
+[System.Serializable]
+public struct FormationBounds
+{
+    public int columnCount;
+    public int rowCount;
+
+    public float width;
+    public float depth;
+
+    public float HalfWidth => width * 0.5f;
+    public float HalfDepth => depth * 0.5f;
+
+    public static FormationBounds Empty => 
+        new FormationBounds
+        {
+            columnCount = 0,
+            rowCount = 0,
+            width = 0f,
+            depth = 0f
+        };
+}

@@ -13,6 +13,8 @@ public class PlayerInputHandler : MonoBehaviour
     [SerializeField] private float dragThreshold = 30f;
 
     [Header("Squad Multi-Move")]
+    [Tooltip("Empty lateral gap kept between the calculated formation boxes of neighboring squads.")]
+    [Min(0f)]
     [SerializeField] private float multiSquadSpacing = 6f;
 
     private Camera mainCamera;
@@ -263,10 +265,20 @@ public class PlayerInputHandler : MonoBehaviour
         if (facing == Vector3.zero)
             facing = ResolveFacingForSquads(squads, destination);
 
-        for (int i = 0; i < squads.Count; i++)
+        List<SquadController> orderedSquads =
+            GetSquadsOrderedForGroupMove(squads, facing);
+
+        List<Vector3> squadOffsets = GetSquadMoveOffsets(
+            orderedSquads,
+            facing,
+            width);
+
+        for (int i = 0; i < orderedSquads.Count; i++)
         {
-            Vector3 offset = GetSquadMoveOffset(i, squads.Count, facing);
-            squads[i].OrderMove(destination + offset, facing, width);
+            orderedSquads[i].OrderMove(
+                destination + squadOffsets[i],
+                facing,
+                width);
         }
     }
 
@@ -297,15 +309,20 @@ public class PlayerInputHandler : MonoBehaviour
         if (facing == Vector3.zero)
             facing = ResolveFacingForSquads(squads, destination);
 
+        List<SquadController> orderedSquads =
+            GetSquadsOrderedForGroupMove(squads, facing);
+
         List<Vector3> previewSlots = new List<Vector3>();
+        List<Vector3> squadOffsets = GetSquadMoveOffsets(
+            orderedSquads,
+            facing,
+            width);
 
-        for (int i = 0; i < squads.Count; i++)
+        for (int i = 0; i < orderedSquads.Count; i++)
         {
-            Vector3 offset = GetSquadMoveOffset(i, squads.Count, facing);
-
             previewSlots.AddRange(
-                squads[i].GetPreviewSlots(
-                    destination + offset,
+                orderedSquads[i].GetPreviewSlots(
+                    destination + squadOffsets[i],
                     facing,
                     width));
         }
@@ -317,10 +334,18 @@ public class PlayerInputHandler : MonoBehaviour
     {
         Vector3 groupFacing = ResolveFacingForSquads(squads, point);
 
-        for (int i = 0; i < squads.Count; i++)
+        List<SquadController> orderedSquads =
+            GetSquadsOrderedForGroupMove(squads, groupFacing);
+
+        List<Vector3> squadOffsets = GetSquadMoveOffsets(
+            orderedSquads,
+            groupFacing);
+
+        for (int i = 0; i < orderedSquads.Count; i++)
         {
-            Vector3 offset = GetSquadMoveOffset(i, squads.Count, groupFacing);
-            squads[i].OrderMove(point + offset, groupFacing);
+            orderedSquads[i].OrderMove(
+                point + squadOffsets[i],
+                groupFacing);
         }
     }
 
@@ -624,10 +649,20 @@ public class PlayerInputHandler : MonoBehaviour
         return dir.normalized;
     }
 
-    Vector3 GetSquadMoveOffset(int index, int count, Vector3 facing)
+    /// Returns a copy of the selected squads ordered from left to right relative
+    /// to the final group-facing direction. This preserves the squads' current
+    /// lateral battlefield order when assigning final group-move zones, reducing
+    /// unnecessary squad crossover.
+    List<SquadController> GetSquadsOrderedForGroupMove(
+        List<SquadController> squads,
+        Vector3 facing)
     {
-        if (count <= 1)
-            return Vector3.zero;
+        List<SquadController> orderedSquads = squads != null
+            ? new List<SquadController>(squads)
+            : new List<SquadController>();
+
+        if (orderedSquads.Count <= 1)
+            return orderedSquads;
 
         facing.y = 0f;
 
@@ -637,9 +672,116 @@ public class PlayerInputHandler : MonoBehaviour
         facing.Normalize();
 
         Vector3 right = Calc.Perpendicular(facing);
+        Vector3 groupCenter = Vector3.zero;
+        int validSquadCount = 0;
 
-        float centeredIndex = index - (count - 1) * 0.5f;
-        return right * (centeredIndex * multiSquadSpacing);
+        foreach (SquadController squad in orderedSquads)
+        {
+            if (squad == null)
+                continue;
+
+            groupCenter += squad.transform.position;
+            validSquadCount++;
+        }
+
+        if (validSquadCount > 0)
+            groupCenter /= validSquadCount;
+
+        orderedSquads.Sort((leftSquad, rightSquad) =>
+        {
+            if (leftSquad == rightSquad)
+                return 0;
+
+            if (leftSquad == null)
+                return 1;
+
+            if (rightSquad == null)
+                return -1;
+
+            Vector3 leftOffset =
+                leftSquad.transform.position - groupCenter;
+
+            Vector3 rightOffset =
+                rightSquad.transform.position - groupCenter;
+
+            float leftLateralPosition = Vector3.Dot(leftOffset, right);
+            float rightLateralPosition = Vector3.Dot(rightOffset, right);
+
+            int lateralComparison =
+                leftLateralPosition.CompareTo(rightLateralPosition);
+
+            if (lateralComparison != 0)
+                return lateralComparison;
+
+            float leftForwardPosition = Vector3.Dot(leftOffset, facing);
+            float rightForwardPosition = Vector3.Dot(rightOffset, facing);
+
+            int forwardComparison =
+                leftForwardPosition.CompareTo(rightForwardPosition);
+
+            if (forwardComparison != 0)
+                return forwardComparison;
+
+            return leftSquad.GetInstanceID().CompareTo(
+                rightSquad.GetInstanceID());
+        });
+
+        return orderedSquads;
     }
+
+    List<Vector3> GetSquadMoveOffsets(
+        List<SquadController> squads,
+        Vector3 facing,
+        float requestedFormationWidth = -1f)
+    {
+        List<Vector3> offsets = new List<Vector3>();
+
+        if (squads == null || squads.Count == 0)
+            return offsets;
+
+        facing.y = 0f;
+
+        if (facing == Vector3.zero)
+            facing = Vector3.forward;
+
+        facing.Normalize();
+
+        Vector3 right = Calc.Perpendicular(facing);
+        List<FormationBounds> formationBounds =
+            new List<FormationBounds>(squads.Count);
+
+        float totalGroupWidth = 0f;
+
+        for (int i = 0; i < squads.Count; i++)
+        {
+            FormationBounds bounds = squads[i] != null
+                ? squads[i].GetFormationBounds(requestedFormationWidth)
+                : FormationBounds.Empty;
+
+            formationBounds.Add(bounds);
+            totalGroupWidth += bounds.width;
+        }
+
+        totalGroupWidth +=
+            Mathf.Max(0, squads.Count - 1) *
+            Mathf.Max(0f, multiSquadSpacing);
+
+        float layoutCursor = -totalGroupWidth * 0.5f;
+
+        for (int i = 0; i < squads.Count; i++)
+        {
+            FormationBounds bounds = formationBounds[i];
+            float squadCenter = layoutCursor + bounds.HalfWidth;
+
+            offsets.Add(right * squadCenter);
+
+            layoutCursor +=
+                bounds.width +
+                Mathf.Max(0f, multiSquadSpacing);
+        }
+
+        return offsets;
+    }
+
 }
 

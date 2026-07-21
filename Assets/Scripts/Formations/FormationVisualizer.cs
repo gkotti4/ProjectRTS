@@ -6,7 +6,7 @@ public class FormationVisualizer : MonoBehaviour
     public static FormationVisualizer Instance { get ; private set; }
 
     [SerializeField] private GameObject slotIndicatorPrefab;
-    [SerializeField] private int poolSize = 50;
+    [SerializeField] private int poolSize = 100;
     [SerializeField] private float hideDelay = 1.0f;
 
     [Header("Placement")]
@@ -66,10 +66,11 @@ public class FormationVisualizer : MonoBehaviour
             pool[i].transform.position =
                 positions[i] + Vector3.up * indicatorHeightOffset;
 
+            
             pool[i].transform.rotation = Quaternion.Euler(
-                0f,
+                pool[i].transform.rotation.eulerAngles.x, // needed for circle decal projector
                 yaw,
-                0f);
+                pool[i].transform.rotation.eulerAngles.z); // was 0f
 
             pool[i].SetActive(true);
         }

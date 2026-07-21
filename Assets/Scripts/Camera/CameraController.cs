@@ -4,9 +4,9 @@ public class CameraController : MonoBehaviour
 {
     [SerializeField] private float panSpeed = 20f;
     [SerializeField] private float dragSpeed = 15f;
-    [SerializeField] private float zoomSpeed = 40f;
+    [SerializeField] private float zoomSpeed = 30f;
     [SerializeField] private float minZoom = 5f;
-    [SerializeField] private float maxZoom = 150f;
+    [SerializeField] private float maxZoom = 50f;
     
     // TODO - scale Speed's with current zoom
     
@@ -62,14 +62,32 @@ public class CameraController : MonoBehaviour
     void HandleZoom()
     {
         float scroll = Input.GetAxis("Mouse ScrollWheel");
-        Vector3 zoom = transform.forward * (scroll * zoomSpeed);
-        transform.position += zoom;
 
-        transform.position = new Vector3(
-            transform.position.x,
-            Mathf.Clamp(transform.position.y, minZoom, maxZoom),
-            transform.position.z
-        );
+        if (Mathf.Approximately(scroll, 0f))
+            return;
+
+        Vector3 currentPosition = transform.position;
+        Vector3 zoomDelta = transform.forward * (scroll * zoomSpeed);
+
+        float proposedY = currentPosition.y + zoomDelta.y;
+        bool wouldExceedZoomLimits =
+            proposedY < minZoom ||
+            proposedY > maxZoom;
+
+        if (wouldExceedZoomLimits)
+        {
+            // Reach the height boundary, but do not continue crawling
+            // forward/backward along the camera's angled forward direction.
+            currentPosition.y = Mathf.Clamp(
+                proposedY,
+                minZoom,
+                maxZoom);
+
+            transform.position = currentPosition;
+            return;
+        }
+
+        transform.position = currentPosition + zoomDelta;
     }
     
     void HandleMiddleMousePan()
