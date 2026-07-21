@@ -38,6 +38,9 @@ public static class CombatResolver
         MeleeCombatStats attacker,
         CombatDefenseStats defender)
     {
+        if (Random.value < Mathf.Clamp01(defender.meleeBlockChance))
+            return DamageResult.Miss;
+
         float hitChance = CalculateOpposedChance(
             attacker.meleeAttack,
             defender.meleeDefense);
@@ -54,7 +57,7 @@ public static class CombatResolver
         RangedCombatStats attacker,
         CombatDefenseStats defender)
     {
-        if (Random.value < Mathf.Clamp01(defender.shieldBlockChance))
+        if (Random.value < Mathf.Clamp01(defender.missileBlockChance))
             return DamageResult.Miss;
 
         float hitChance = CalculateOpposedChance(

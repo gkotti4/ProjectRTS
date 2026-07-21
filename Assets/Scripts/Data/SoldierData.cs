@@ -30,10 +30,14 @@ public class SoldierData : ScriptableObject
     [Header("Stats")]
     public HealthStats health = HealthStats.Default;
     public MovementStats movement = MovementStats.Default;
+    public BodyStats body = BodyStats.Default;
     public CombatDefenseStats defense = CombatDefenseStats.Default;
 
     [Header("Weapon")]
     [Tooltip("Required for combat. WeaponProfile is the source of truth for attack stats, timing, range, and projectile data.")]
     public WeaponProfile weaponProfile;
+
+    [Header("Armor")]
+    public ArmorProfile armorProfile;
     
 }

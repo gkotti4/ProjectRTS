@@ -446,6 +446,7 @@ public class SquadCombat : MonoBehaviour
         bool isRangedWeapon = IsRangedWeapon(weaponProfile);
 
         GetFormationAttackValues(
+            soldier,
             weaponProfile,
             isRangedWeapon,
             out MeleeCombatStats meleeStats,
@@ -484,7 +485,7 @@ public class SquadCombat : MonoBehaviour
             return;
         }
         
-        soldier.FaceToward(currentTarget.transform.position, soldier.Data.movement.turnSpeed, false);
+        soldier.FaceToward(currentTarget.transform.position, soldier.Stats != null ? soldier.Stats.movement.turnSpeed : soldier.Data.movement.turnSpeed, false);
 
         // -------------------------------------------------------------------------
         // Active Soldier Logic
@@ -789,7 +790,7 @@ public class SquadCombat : MonoBehaviour
         soldier.SetCombatRole(SoldierRole.Frontline);
         soldier.SetCombatTarget(lockTarget);
         soldier.Stop();
-        soldier.FaceToward(lockTarget.transform.position, soldier.Data.movement.turnSpeed);
+        soldier.FaceToward(lockTarget.transform.position, soldier.Stats != null ? soldier.Stats.movement.turnSpeed : soldier.Data.movement.turnSpeed);
     }
 
     public bool IsSoldierCombatLocked(SoldierController soldier)
@@ -1746,6 +1747,7 @@ public class SquadCombat : MonoBehaviour
     }
 
     void GetFormationAttackValues(
+        SoldierController soldier,
         WeaponProfile weaponProfile,
         bool isRangedWeapon,
         out MeleeCombatStats meleeStats,
@@ -1754,13 +1756,17 @@ public class SquadCombat : MonoBehaviour
         out float attackInterval,
         out float stoppingDistance)
     {
-        meleeStats = weaponProfile != null
-            ? weaponProfile.melee
-            : MeleeCombatStats.Default;
+        meleeStats = soldier != null && soldier.Stats != null
+            ? soldier.Stats.melee
+            : weaponProfile != null
+                ? weaponProfile.melee
+                : MeleeCombatStats.Default;
 
-        rangedStats = weaponProfile != null
-            ? weaponProfile.ranged
-            : RangedCombatStats.Default;
+        rangedStats = soldier != null && soldier.Stats != null
+            ? soldier.Stats.ranged
+            : weaponProfile != null
+                ? weaponProfile.ranged
+                : RangedCombatStats.Default;
 
         if (isRangedWeapon)
         {
@@ -1891,8 +1897,8 @@ public class SquadCombat : MonoBehaviour
         if (attacker == null || target == null || target.Health == null)
             return;
 
-        CombatDefenseStats defenderStats = target.Data != null
-            ? target.Data.defense
+        CombatDefenseStats defenderStats = target.Stats != null
+            ? target.Stats.defense
             : CombatDefenseStats.Default;
 
         DamageResult damageResult = CombatResolver.ResolveMeleeHit(
@@ -1966,8 +1972,8 @@ public class SquadCombat : MonoBehaviour
         if (attacker == null || target == null || target.Health == null)
             return;
 
-        CombatDefenseStats defenderStats = target.Data != null
-            ? target.Data.defense
+        CombatDefenseStats defenderStats = target.Stats != null
+            ? target.Stats.defense
             : CombatDefenseStats.Default;
 
         DamageResult damageResult = CombatResolver.ResolveRangedHit(
@@ -2074,9 +2080,11 @@ public class SquadCombat : MonoBehaviour
 
         WeaponProfile weaponProfile = GetWeaponProfile(attacker);
 
-        MeleeCombatStats meleeStats = weaponProfile != null
-            ? weaponProfile.melee
-            : MeleeCombatStats.Default;
+        MeleeCombatStats meleeStats = attacker.Stats != null
+            ? attacker.Stats.melee
+            : weaponProfile != null
+                ? weaponProfile.melee
+                : MeleeCombatStats.Default;
 
         ResolveFormationCombatHit(
             attacker,
@@ -2505,6 +2513,7 @@ public class SquadCombat : MonoBehaviour
             livingMeleeSoldiers++;
 
             GetFormationAttackValues(
+                soldier,
                 weaponProfile,
                 false,
                 out _,
@@ -2632,7 +2641,7 @@ public class SquadCombat : MonoBehaviour
                 soldier.SetCombatRole(SoldierRole.Frontline);
                 soldier.SetCombatTarget(lockTarget);
                 soldier.Stop();
-                soldier.FaceToward(lockTarget.transform.position, soldier.Data.movement.turnSpeed);
+                soldier.FaceToward(lockTarget.transform.position, soldier.Stats != null ? soldier.Stats.movement.turnSpeed : soldier.Data.movement.turnSpeed);
                 continue;
             }
 
@@ -2951,9 +2960,11 @@ public class SquadCombat : MonoBehaviour
 
     WeaponProfile GetWeaponProfile(SoldierController soldier)
     {
-        return soldier != null && soldier.Data != null
-            ? soldier.Data.weaponProfile
-            : null;
+        return soldier != null && soldier.Stats != null
+            ? soldier.Stats.weaponProfile
+            : soldier != null && soldier.Data != null
+                ? soldier.Data.weaponProfile
+                : null;
     }
 
     bool IsRangedWeapon(WeaponProfile weaponProfile)

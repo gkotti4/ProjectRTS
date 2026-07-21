@@ -143,6 +143,8 @@ public class SoldierMotor : MonoBehaviour
 
     public NavMeshAgent Agent => agent;
     public bool HasPath => agent != null && (agent.hasPath || HasManualMovementVelocity);
+    private float impulseResistance = 0f;
+
     public float BodyMass => Mathf.Max(0.01f, bodyMass);
     public Vector3 ExternalPushVelocity => externalPushVelocity;
     public bool IsBeingPushed => externalPushTimeRemaining > 0f &&
@@ -1000,16 +1002,23 @@ public class SoldierMotor : MonoBehaviour
 
     public void Initialize(MovementStats movement)
     {
+        ApplyStats(movement, BodyStats.Default);
+    }
+
+    public void ApplyStats(MovementStats movement, BodyStats body)
+    {
         baseMoveSpeed = movement.moveSpeed > 0f ? movement.moveSpeed : baseMoveSpeed;
         turnSpeed = movement.turnSpeed > 0f ? movement.turnSpeed : turnSpeed;
+        bodyMass = Mathf.Max(0.01f, body.mass);
+        impulseResistance = Mathf.Max(0f, body.impulseResistance);
 
         if (agent == null)
             return;
 
+        agent.radius = Mathf.Max(0.01f, body.radius);
+        agent.height = Mathf.Max(0.1f, body.height);
         agent.speed = baseMoveSpeed;
-        agent.acceleration = movement.acceleration > 0f
-            ? movement.acceleration
-            : 99999f;
+        agent.acceleration = movement.acceleration > 0f ? movement.acceleration : 99999f;
     }
 
     public void MoveTo(

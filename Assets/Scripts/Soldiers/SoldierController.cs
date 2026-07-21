@@ -34,6 +34,7 @@ public class SoldierController : MonoBehaviour
     public SquadController Squad { get; private set; }
     public SquadRoster Roster { get; private set; }
     public FactionInstance Faction { get; private set; }
+    public SoldierRuntimeStats Stats { get; private set; }
     
     public SoldierRole Role { get; private set; } = SoldierRole.None;
     public SoldierController CombatTarget { get; private set; }
@@ -148,10 +149,12 @@ public class SoldierController : MonoBehaviour
         Roster = roster;
         Faction = faction;
 
-        if (Data != null)
+        RefreshRuntimeStats(preserveHealthPercent: false);
+
+        if (Stats != null)
         {
-            Health.Initialize(Data.health);
-            Motor.Initialize(Data.movement);
+            Health.Initialize(Stats.health, Stats.defense.armor);
+            Motor.ApplyStats(Stats.movement, Stats.body);
         }
         
         Combat.Initialize(this);
@@ -205,6 +208,24 @@ public class SoldierController : MonoBehaviour
                 $"{name}: Ranged soldier has no attackOrigin assigned. Projectile will spawn from soldier transform fallback.",
                 this);
         }
+    }
+
+
+    public void RefreshRuntimeStats(bool preserveHealthPercent = true)
+    {
+        Stats = RuntimeStatResolver.ResolveSoldier(
+            Data,
+            Squad != null ? Squad.Data : null,
+            Faction,
+            Squad != null ? Squad.AppliedUpgrades : null);
+
+        if (Stats == null)
+            return;
+
+        if (Health != null && Health.MaxHealth > 0)
+            Health.ApplyStats(Stats.health, Stats.defense.armor, preserveHealthPercent);
+
+        Motor?.ApplyStats(Stats.movement, Stats.body);
     }
 
     public void SetSquad(

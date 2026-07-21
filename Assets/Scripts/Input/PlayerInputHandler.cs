@@ -755,7 +755,7 @@ public class PlayerInputHandler : MonoBehaviour
         for (int i = 0; i < squads.Count; i++)
         {
             FormationBounds bounds = squads[i] != null
-                ? squads[i].GetFormationBounds(requestedFormationWidth)
+                ? squads[i].Formation.GetFormationBounds(requestedFormationWidth)
                 : FormationBounds.Empty;
 
             formationBounds.Add(bounds);

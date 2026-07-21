@@ -154,7 +154,9 @@ public class SquadRoster : MonoBehaviour
             return;
         }
 
-        int count = Mathf.Max(1, squadData.ResolvedStartingSoldierCount);
+        int count = squad != null && squad.Stats != null
+            ? Mathf.Max(1, squad.Stats.capacity.startingSoldierCount)
+            : Mathf.Max(1, squadData.ResolvedStartingSoldierCount);
 
         for (int i = 0; i < count; i++)
         {
@@ -181,8 +183,12 @@ public class SquadRoster : MonoBehaviour
 
     Vector3 GetInitialSpawnPosition(int index, int count)
     {
-        int unitsPerRow = Mathf.Max(1, squadData.defaultUnitsPerRow);
-        float spacing = Mathf.Max(0.1f, squadData.defaultSpacing);
+        int unitsPerRow = squad != null && squad.Stats != null
+            ? Mathf.Max(1, squad.Stats.formation.defaultUnitsPerRow)
+            : Mathf.Max(1, squadData.defaultUnitsPerRow);
+        float spacing = squad != null && squad.Stats != null
+            ? Mathf.Max(0.1f, squad.Stats.formation.spacing)
+            : Mathf.Max(0.1f, squadData.defaultSpacing);
 
         int row = index / unitsPerRow;
         int col = index % unitsPerRow;

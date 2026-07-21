@@ -31,13 +31,30 @@ public class SoldierHealth : MonoBehaviour
     public float HealthPercent =>
         maxHealth > 0 ? (float)CurrentHealth / maxHealth : 0f;
 
-    public void Initialize(HealthStats stats)
+    public void Initialize(HealthStats stats, int resolvedArmor = 0)
     {
         maxHealth = Mathf.Max(1, stats.maxHealth);
-        armor = Mathf.Max(0, stats.armor);
-
+        armor = Mathf.Max(0, resolvedArmor);
         currentHealth = maxHealth;
         isDead = false;
+        OnHealthChanged?.Invoke(this);
+    }
+
+    public void ApplyStats(
+        HealthStats stats,
+        int resolvedArmor,
+        bool preserveHealthPercent = true)
+    {
+        float previousPercent = HealthPercent;
+        maxHealth = Mathf.Max(1, stats.maxHealth);
+        armor = Mathf.Max(0, resolvedArmor);
+
+        if (isDead)
+            currentHealth = 0;
+        else if (preserveHealthPercent)
+            currentHealth = Mathf.Clamp(Mathf.RoundToInt(maxHealth * previousPercent), 1, maxHealth);
+        else
+            currentHealth = Mathf.Clamp(currentHealth, 1, maxHealth);
 
         OnHealthChanged?.Invoke(this);
     }

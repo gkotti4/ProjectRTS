@@ -153,6 +153,11 @@ public class SquadMovement : MonoBehaviour
         return false;
     }
 
+    public void RefreshRuntimeStats()
+    {
+        RefreshProfileAndMovementSpeeds();
+    }
+
     void RefreshProfileAndMovementSpeeds()
     {
         if (!HasMovementProfile())
@@ -1311,12 +1316,17 @@ public class SquadMovement : MonoBehaviour
 
     float ResolveMemberBaseMoveSpeed()
     {
-        if (data != null &&
-            data.soldierData != null &&
-            data.soldierData.movement.moveSpeed > 0f)
+        if (roster != null)
         {
-            return data.soldierData.movement.moveSpeed;
+            foreach (SoldierController soldier in roster.Soldiers)
+            {
+                if (soldier != null && soldier.Stats != null && soldier.Stats.movement.moveSpeed > 0f)
+                    return soldier.Stats.movement.moveSpeed;
+            }
         }
+
+        if (data != null && data.soldierData != null && data.soldierData.movement.moveSpeed > 0f)
+            return data.soldierData.movement.moveSpeed;
 
         return baseAnchorMoveSpeed > 0f ? baseAnchorMoveSpeed : 4f;
     }

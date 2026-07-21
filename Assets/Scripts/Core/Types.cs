@@ -350,12 +350,15 @@ public struct TeamVisualSettings
 public struct HealthStats
 {
     [Min(1)] public int maxHealth;
-    [Min(0)] public int armor;
+    
+    [Min(0f)] public float healthRegenerationPerSecond;
+    [Min(0f)] public float healingReceivedMultiplier;
 
     public static HealthStats Default => new HealthStats
     {
         maxHealth = 100,
-        armor = 0
+        healthRegenerationPerSecond = 0f,
+        healingReceivedMultiplier = 1f
     };
 }
 
@@ -373,15 +376,40 @@ public struct MovementStats
     [Tooltip("Visual/body turn speed in degrees per second. Lower values make heavy units, especially cavalry, take wider-feeling turns.")]
     [Min(0f)] public float turnSpeed;
 
+    [Min(0f)] public float backwardsSpeedMultiplier;
+    [Min(0f)] public float combatMoveSpeedMultiplier;
+
     public static MovementStats Default => new MovementStats
     {
         moveSpeed = 4f,
-        acceleration = 11f, // patch default 12f
-        deceleration = 16f, // patch default 18f
-        turnSpeed = 540f
+        acceleration = 12f,
+        deceleration = 18f,
+        turnSpeed = 540f,
+        backwardsSpeedMultiplier = 0.65f,
+        combatMoveSpeedMultiplier = 1f
     };
 }
 
+[System.Serializable]
+public struct BodyStats
+{
+    [Min(0.01f)] public float mass;
+    [Min(0.01f)] public float radius;
+    [Min(0.1f)] public float height;
+    [Min(0f)] public float impulseResistance;
+    [Min(0f)] public float staggerResistance;
+    [Min(0f)] public float knockdownResistance;
+
+    public static BodyStats Default => new BodyStats
+    {
+        mass = 1f,
+        radius = 0.4f,
+        height = 2f,
+        impulseResistance = 0f,
+        staggerResistance = 0f,
+        knockdownResistance = 0f
+    };
+}
 
 [System.Serializable]
 public struct MeleeCombatStats
@@ -389,17 +417,30 @@ public struct MeleeCombatStats
     [Min(0)] public int meleeAttack;
     [Min(0)] public int weaponDamage;
     [Min(0)] public int armorPiercingDamage;
-
     [Min(0.05f)] public float attackInterval;
     [Min(0.1f)] public float attackRange;
+    [Range(0f, 1f)] public float criticalHitChance;
+    [Min(1f)] public float criticalHitDamageMultiplier;
+    [Min(0f)] public float impactForce;
+    [Min(0f)] public float staggerStrength;
+    [Range(0f, 1f)] public float knockdownChance;
+    [Min(0f)] public float chargeDamageBonus;
+    [Min(0f)] public float chargeImpactBonus;
 
     public static MeleeCombatStats Default => new MeleeCombatStats
     {
         meleeAttack = 20,
         weaponDamage = 20,
         armorPiercingDamage = 0,
-        attackInterval = 2.0f,
-        attackRange = 2.5f
+        attackInterval = 2f,
+        attackRange = 2.5f,
+        criticalHitChance = 0f,
+        criticalHitDamageMultiplier = 1.5f,
+        impactForce = 0f,
+        staggerStrength = 0f,
+        knockdownChance = 0f,
+        chargeDamageBonus = 0f,
+        chargeImpactBonus = 0f
     };
 }
 
@@ -409,49 +450,100 @@ public struct RangedCombatStats
     [Min(0)] public int rangedAccuracy;
     [Min(0)] public int missileDamage;
     [Min(0)] public int armorPiercingDamage;
-
     [Min(0.05f)] public float attackInterval;
     [Min(0.1f)] public float attackRange;
-
+    [Min(0f)] public float minimumRange;
+    [Range(0f, 1f)] public float criticalHitChance;
+    [Min(1f)] public float criticalHitDamageMultiplier;
     public GameObject projectilePrefab;
     [Min(0.1f)] public float projectileSpeed;
+    [Min(0f)] public float projectileGravityMultiplier;
+    [Min(0f)] public float spreadRadius;
+    [Min(0f)] public float suppressionStrength;
+    [Tooltip("-1 means unlimited ammunition.")] public int ammunition;
 
     public static RangedCombatStats Default => new RangedCombatStats
     {
         rangedAccuracy = 50,
         missileDamage = 12,
         armorPiercingDamage = 0,
-        attackInterval = 2.0f,
+        attackInterval = 2f,
         attackRange = 100f,
+        minimumRange = 0f,
+        criticalHitChance = 0f,
+        criticalHitDamageMultiplier = 1.5f,
         projectilePrefab = null,
-        projectileSpeed = 18f
+        projectileSpeed = 18f,
+        projectileGravityMultiplier = 1f,
+        spreadRadius = 0f,
+        suppressionStrength = 0f,
+        ammunition = -1
     };
 }
 
 [System.Serializable]
 public struct CombatDefenseStats
 {
+    [Min(0)] public int armor;
     [Min(0)] public int meleeDefense;
     [Min(0)] public int missileDefense;
-    [Range(0f, 1f)] public float shieldBlockChance;
+    [Range(0f, 1f)] public float meleeBlockChance;
+    [Range(0f, 1f)] public float missileBlockChance;
+    [Range(0f, 1f)] public float criticalHitResistance;
+    [Range(0f, 1f)] public float armorPiercingResistance;
+    [Range(0f, 1f)] public float hitReactResistance;
 
     public static CombatDefenseStats Default => new CombatDefenseStats
     {
+        armor = 0,
         meleeDefense = 20,
         missileDefense = 0,
-        shieldBlockChance = 0f
+        meleeBlockChance = 0f,
+        missileBlockChance = 0f,
+        criticalHitResistance = 0f,
+        armorPiercingResistance = 0f,
+        hitReactResistance = 0f
     };
 }
+
+[System.Serializable]
+public struct ArmorStats
+{
+    public int armor;
+    public int meleeDefenseBonus;
+    public int missileDefenseBonus;
+    public float meleeBlockChanceBonus;
+    public float missileBlockChanceBonus;
+    public float movementSpeedMultiplierDelta;
+    public float accelerationMultiplierDelta;
+    public float massMultiplierDelta;
+    public float hitReactResistanceBonus;
+
+    public static ArmorStats Default => new ArmorStats();
+}
+
 [System.Serializable]
 public struct MoraleStats
 {
     [Min(0f)] public float maxMorale;
     [Min(0f)] public float leadership;
+    [Min(0f)] public float moraleRecoveryRate;
+    [Range(0f, 1f)] public float casualtyMoraleResistance;
+    [Range(0f, 1f)] public float flankMoraleResistance;
+    [Range(0f, 1f)] public float terrorResistance;
+    [Min(0f)] public float routingThreshold;
+    [Min(0f)] public float shatteredThreshold;
 
     public static MoraleStats Default => new MoraleStats
     {
         maxMorale = 100f,
-        leadership = 50f
+        leadership = 50f,
+        moraleRecoveryRate = 0f,
+        casualtyMoraleResistance = 0f,
+        flankMoraleResistance = 0f,
+        terrorResistance = 0f,
+        routingThreshold = 25f,
+        shatteredThreshold = 10f
     };
 }
 
@@ -459,16 +551,122 @@ public struct MoraleStats
 public struct FormationStats
 {
     public SquadFormation defaultFormation;
-
     [Min(1)] public int defaultUnitsPerRow;
     [Min(0.1f)] public float spacing;
+    [Min(0.1f)] public float minimumSpacing;
+    [Min(0.1f)] public float maximumSpacing;
+    [Min(0f)] public float reformSpeedMultiplier;
+    [Min(0f)] public float cohesionDistanceMultiplier;
 
     public static FormationStats Default => new FormationStats
     {
         defaultFormation = SquadFormation.Line,
         defaultUnitsPerRow = 10,
-        spacing = 2f
+        spacing = 2f,
+        minimumSpacing = 0.5f,
+        maximumSpacing = 5f,
+        reformSpeedMultiplier = 1f,
+        cohesionDistanceMultiplier = 1f
     };
+}
+
+[System.Serializable]
+public struct SquadCapacityStats
+{
+    [Min(1)] public int startingSoldierCount;
+    [Min(1)] public int maximumSoldierCount;
+    [Min(0)] public int reinforcementAmount;
+    [Min(0f)] public float reinforcementCostMultiplier;
+    [Min(0)] public int officerSlots;
+    [Min(0)] public int specialistSlots;
+
+    public static SquadCapacityStats Default => new SquadCapacityStats
+    {
+        startingSoldierCount = 5,
+        maximumSoldierCount = 50,
+        reinforcementAmount = 1,
+        reinforcementCostMultiplier = 1f,
+        officerSlots = 0,
+        specialistSlots = 0
+    };
+}
+
+[System.Serializable]
+public struct SoldierStatModifiers
+{
+    public int maxHealth;
+    public float healthRegenerationPerSecond;
+    public float healingReceivedMultiplierDelta;
+    public float moveSpeed;
+    public float acceleration;
+    public float deceleration;
+    public float turnSpeed;
+    public float backwardsSpeedMultiplierDelta;
+    public float combatMoveSpeedMultiplierDelta;
+    public float bodyMass;
+    public float bodyRadius;
+    public float bodyHeight;
+    public float impulseResistance;
+    public float staggerResistance;
+    public float knockdownResistance;
+    public int armor;
+    public int meleeDefense;
+    public int missileDefense;
+    public float meleeBlockChance;
+    public float missileBlockChance;
+    public float criticalHitResistance;
+    public float armorPiercingResistance;
+    public float hitReactResistance;
+    public int meleeAttack;
+    public int meleeWeaponDamage;
+    public int meleeArmorPiercingDamage;
+    public float meleeAttackInterval;
+    public float meleeAttackRange;
+    public float meleeCriticalHitChance;
+    public float meleeCriticalHitDamageMultiplierDelta;
+    public float meleeImpactForce;
+    public float meleeStaggerStrength;
+    public float meleeKnockdownChance;
+    public float chargeDamageBonus;
+    public float chargeImpactBonus;
+    public int rangedAccuracy;
+    public int missileDamage;
+    public int rangedArmorPiercingDamage;
+    public float rangedAttackInterval;
+    public float rangedAttackRange;
+    public float rangedMinimumRange;
+    public float rangedCriticalHitChance;
+    public float rangedCriticalHitDamageMultiplierDelta;
+    public float projectileSpeed;
+    public float projectileGravityMultiplierDelta;
+    public float spreadRadius;
+    public float suppressionStrength;
+    public int ammunition;
+}
+
+[System.Serializable]
+public struct SquadStatModifiers
+{
+    public int startingSoldierCount;
+    public int maximumSoldierCount;
+    public int reinforcementAmount;
+    public float reinforcementCostMultiplierDelta;
+    public int officerSlots;
+    public int specialistSlots;
+    public int defaultUnitsPerRow;
+    public float spacing;
+    public float minimumSpacing;
+    public float maximumSpacing;
+    public float reformSpeedMultiplierDelta;
+    public float cohesionDistanceMultiplierDelta;
+    public float maxMorale;
+    public float leadership;
+    public float moraleRecoveryRate;
+    public float casualtyMoraleResistance;
+    public float flankMoraleResistance;
+    public float terrorResistance;
+    public float routingThreshold;
+    public float shatteredThreshold;
 }
 
 [System.Serializable]

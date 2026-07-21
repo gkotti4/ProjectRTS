@@ -57,6 +57,18 @@ public class SquadData : ScriptableObject
     [Header("Morale")]
     public MoraleStats morale = MoraleStats.Default;
 
+    [Header("Progression Defaults")]
+    [Min(0)] public int reinforcementAmount = 1;
+    [Min(0f)] public float reinforcementCostMultiplier = 1f;
+    [Min(0)] public int officerSlots = 0;
+    [Min(0)] public int specialistSlots = 0;
+
+    [Header("Formation Limits")]
+    [Min(0.1f)] public float minimumSpacing = 0.5f;
+    [Min(0.1f)] public float maximumSpacing = 5f;
+    [Min(0f)] public float reformSpeedMultiplier = 1f;
+    [Min(0f)] public float cohesionDistanceMultiplier = 1f;
+
     [Header("Commands")]
     public SquadCommandSet commandSet;
 

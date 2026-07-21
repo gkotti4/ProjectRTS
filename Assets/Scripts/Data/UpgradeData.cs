@@ -19,8 +19,9 @@ public class UpgradeData : ScriptableObject
     public SquadCategory[] affectedSquadCategories;
     public BuildingCategory[] affectedBuildingCategories;
 
-    // [Header("Modifiers")]
-    // public StatModifier[] statModifiers;
+    [Header("Stat Modifiers")]
+    public SoldierStatModifiers soldierModifiers;
+    public SquadStatModifiers squadModifiers;
 
     [Header("Future Evolution / Replacement")]
     public SoldierData fromSoldier;

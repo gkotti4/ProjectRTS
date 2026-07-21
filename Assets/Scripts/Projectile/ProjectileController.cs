@@ -106,9 +106,11 @@ public class ProjectileController : MonoBehaviour
         attacker = source;
         target = targetSoldier;
 
-        rangedStats = weaponProfile != null
-            ? weaponProfile.ranged
-            : RangedCombatStats.Default;
+        rangedStats = source != null && source.Stats != null
+            ? source.Stats.ranged
+            : weaponProfile != null
+                ? weaponProfile.ranged
+                : RangedCombatStats.Default;
 
         projectileSpeed = Mathf.Max(0.1f, rangedStats.projectileSpeed);
 

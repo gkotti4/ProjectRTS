@@ -49,9 +49,12 @@ public class SquadFormationController : MonoBehaviour
         roster = squadRoster;
         data = squadData;
 
-        currentFormation = data.defaultFormation;
-        spacing = Mathf.Max(0.1f, data.defaultSpacing);
-        defaultUnitsPerRow = Mathf.Max(1, data.defaultUnitsPerRow);
+        FormationStats resolvedFormation = owner != null && owner.Stats != null
+            ? owner.Stats.formation
+            : new FormationStats { defaultFormation = data.defaultFormation, defaultUnitsPerRow = data.defaultUnitsPerRow, spacing = data.defaultSpacing, minimumSpacing = 0.1f, maximumSpacing = 100f };
+        currentFormation = resolvedFormation.defaultFormation;
+        spacing = Mathf.Max(0.1f, resolvedFormation.spacing);
+        defaultUnitsPerRow = Mathf.Max(1, resolvedFormation.defaultUnitsPerRow);
         facing = NormalizeFacing(transform.forward);
 
         Rebuild();
@@ -79,6 +82,18 @@ public class SquadFormationController : MonoBehaviour
         return CalculateFallbackBounds(offsets);
     }
     
+
+
+    public void ApplyStats(FormationStats stats)
+    {
+        spacing = Mathf.Clamp(
+            Mathf.Max(0.1f, stats.spacing),
+            Mathf.Max(0.1f, stats.minimumSpacing),
+            Mathf.Max(stats.minimumSpacing, stats.maximumSpacing));
+        defaultUnitsPerRow = Mathf.Max(1, stats.defaultUnitsPerRow);
+        Rebuild();
+        UpdateSlots(transform.position, facing);
+    }
 
     public void SetFormation(SquadFormation formation)
     {

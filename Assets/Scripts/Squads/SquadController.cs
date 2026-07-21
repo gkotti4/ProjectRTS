@@ -43,6 +43,7 @@ public class SquadController : MonoBehaviour,
 
     private bool isInitialized = false;
     private bool isSelected = false;
+    private readonly List<UpgradeData> appliedUpgrades = new List<UpgradeData>();
 
     #endregion
 
@@ -60,6 +61,8 @@ public class SquadController : MonoBehaviour,
     #region Public Properties
 
     public SquadData Data => squadData;
+    public SquadRuntimeStats Stats { get; private set; }
+    public IReadOnlyList<UpgradeData> AppliedUpgrades => appliedUpgrades;
 
     public SquadCategory Category =>
         squadData != null ? squadData.category : SquadCategory.Infantry;
@@ -80,6 +83,29 @@ public class SquadController : MonoBehaviour,
     public float DoubleClickSelectRange => 45f;
 
     #endregion
+
+    public void ApplyUpgrade(UpgradeData upgrade)
+    {
+        if (upgrade == null || appliedUpgrades.Contains(upgrade))
+            return;
+
+        appliedUpgrades.Add(upgrade);
+        RefreshRuntimeStats();
+    }
+
+    public void RefreshRuntimeStats()
+    {
+        Stats = RuntimeStatResolver.ResolveSquad(squadData, Faction, appliedUpgrades);
+
+        Formation?.ApplyStats(Stats.formation);
+        Movement?.RefreshRuntimeStats();
+
+        if (Roster == null)
+            return;
+
+        foreach (SoldierController soldier in Roster.Soldiers)
+            soldier?.RefreshRuntimeStats();
+    }
 
     #region Unity Lifecycle
 
@@ -190,6 +216,7 @@ public class SquadController : MonoBehaviour,
 
         Stance = squadData.defaultStance;
         State = SquadState.Idle;
+        Stats = RuntimeStatResolver.ResolveSquad(squadData, Faction, appliedUpgrades);
 
         // 1. Build physical/gameplay body.
         Roster.Initialize(this, squadData, Faction);
@@ -415,14 +442,6 @@ public class SquadController : MonoBehaviour,
             center,
             facing,
             requestedFormationWidth);
-    }
-
-    public FormationBounds GetFormationBounds(
-        float requestedFormationWidth = -1f)
-    {
-        return Formation != null
-            ? Formation.GetFormationBounds(requestedFormationWidth)
-            : FormationBounds.Empty;
     }
 
     #endregion
