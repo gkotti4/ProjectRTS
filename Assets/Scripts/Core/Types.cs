@@ -36,6 +36,52 @@ public enum SquadCategory
     Siege
 }
 
+/// <summary>
+/// Optional specialization beneath the broad combat category.
+/// Leave this as None until a squad needs more specific classification.
+/// </summary>
+public enum SquadCombatSubcategory
+{
+    None,
+
+    // Infantry
+    LineInfantry,
+    ShockInfantry,
+    SpearInfantry,
+
+    // Ranged
+    MissileInfantry,
+    Skirmisher,
+
+    // Cavalry
+    MeleeCavalry,
+    ShockCavalry,
+    MissileCavalry,
+
+    // Siege / large units
+    Artillery,
+    WarMachine,
+    Monster,
+    Hero
+}
+
+[System.Flags]
+public enum UnitTrait
+{
+    None = 0,
+    Shielded = 1 << 0,
+    Shock = 1 << 1,
+    Heavy = 1 << 2,
+    Light = 1 << 3,
+    Skirmisher = 1 << 4,
+    AntiLarge = 1 << 5,
+    Armored = 1 << 6,
+    Stalk = 1 << 7,
+    Flying = 1 << 8,
+    Magical = 1 << 9
+}
+
+
 public enum SquadCombatStyle
 {
     FormationCombat = 0,
@@ -692,6 +738,220 @@ public struct ProductionStats
 #endregion
 
 
+
+#region UpgradeData Specifiers
+
+
+// ============================================================
+// UPGRADES / UNIT CLASSIFICATION
+// ============================================================
+
+/// <summary>
+/// Content-driven nation/culture classification used by upgrade targeting.
+/// This remains separate from runtime FactionInstance ownership.
+/// </summary>
+[CreateAssetMenu(
+    fileName = "NationData_",
+    menuName = "Scriptable Objects/Military/NationData")]
+public class NationData : ScriptableObject
+{
+    [Header("Identity")]
+    public string nationId;
+    public string displayName = "Nation";
+    public Sprite icon;
+}
+
+/// <summary>
+/// Lore/content family shared by units that may occupy different combat roles.
+/// Example: Marauder Infantry and Marauder Skirmishers can both use Marauder.
+/// </summary>
+[CreateAssetMenu(
+    fileName = "UnitFamily_",
+    menuName = "Scriptable Objects/Military/Unit Family")]
+public class UnitFamilyData : ScriptableObject
+{
+    [Header("Identity")]
+    public string familyId;
+    public string displayName = "Unit Family";
+}
+
+/// <summary>
+/// Base data asset for effects added to a resolved runtime weapon.
+/// Actual effect behavior will be implemented by the weapon-effect system later.
+/// </summary>
+[CreateAssetMenu(
+    fileName = "WeaponEffect_",
+    menuName = "Scriptable Objects/Military/Weapon Effect")]
+public class WeaponEffectData : ScriptableObject
+{
+    [Header("Identity")]
+    public string effectId;
+    public string displayName = "Weapon Effect";
+    [TextArea] public string description;
+    public Sprite icon;
+}
+
+/// <summary>
+/// Presentation package used when an upgrade changes a squad's soldier model,
+/// materials, attachments, colors, or other visual identity.
+/// </summary>
+[CreateAssetMenu(
+    fileName = "SquadVisualProfile_",
+    menuName = "Scriptable Objects/Military/Squad Visual Profile")]
+public class SquadVisualProfile : ScriptableObject
+{
+    [Header("Model")]
+    public GameObject modelPrefab;
+
+    [Header("Presentation")]
+    public Material[] materialOverrides;
+    public GameObject[] attachmentPrefabs;
+    public Color colorTint = Color.white;
+}
+
+public enum UpgradeScope
+{
+    Faction,
+    Squad
+}
+
+public enum UpgradeGrantSource
+{
+    MatchStartingUpgrade,
+    MatchResearch,
+    ScenarioReward,
+    CampaignProgression,
+    Debug
+}
+
+public enum UpgradeEntityApplicationMode
+{
+    ExistingAndFuture,
+    FutureOnly
+}
+
+public enum WeaponEffectOperation
+{
+    Add,
+    Remove
+}
+
+/// <summary>
+/// Determines which squads/soldiers are eligible for one upgrade or effect.
+/// Empty normal-filter lists mean no restriction. Entries inside a populated list
+/// use OR; separate populated filter groups use AND. Explicit exclusion always wins,
+/// while explicit additional inclusion bypasses the normal classification filters.
+/// </summary>
+[System.Serializable]
+public struct UpgradeTargetFilter
+{
+    [Header("Classification Filters")]
+    public List<NationData> nations;
+    public List<SquadCategory> combatCategories;
+    public List<SquadCombatSubcategory> combatSubcategories;
+    public List<UnitFamilyData> unitFamilies;
+
+    [Header("Trait Filters")]
+    [Tooltip("A target must contain every selected required trait.")]
+    public UnitTrait requiredTraits;
+
+    [Tooltip("A target is rejected if it contains any selected excluded trait.")]
+    public UnitTrait excludedTraits;
+
+    [Header("Exact Additional Targets")]
+    [Tooltip("These SquadData assets are included even when normal classification filters do not match.")]
+    public List<SquadData> additionallyIncludedSquads;
+
+    [Tooltip("These SoldierData assets are included even when normal classification filters do not match.")]
+    public List<SoldierData> additionallyIncludedSoldiers;
+
+    [Header("Exact Exclusions")]
+    [Tooltip("These SquadData assets never receive this effect.")]
+    public List<SquadData> excludedSquads;
+
+    [Tooltip("These SoldierData assets never receive this effect.")]
+    public List<SoldierData> excludedSoldiers;
+}
+
+[System.Serializable]
+public struct TargetedSoldierStatModifier
+{
+    [Tooltip("When false, this effect uses UpgradeData.defaultTarget.")]
+    public bool overrideDefaultTarget;
+    public UpgradeTargetFilter targetOverride;
+    public UpgradeEntityApplicationMode applicationMode;
+    public SoldierStatModifiers modifiers;
+}
+
+[System.Serializable]
+public struct TargetedSquadStatModifier
+{
+    [Tooltip("When false, this effect uses UpgradeData.defaultTarget.")]
+    public bool overrideDefaultTarget;
+    public UpgradeTargetFilter targetOverride;
+    public UpgradeEntityApplicationMode applicationMode;
+    public SquadStatModifiers modifiers;
+}
+
+[System.Serializable]
+public struct WeaponReplacementEffect
+{
+    [Tooltip("When false, this effect uses UpgradeData.defaultTarget.")]
+    public bool overrideDefaultTarget;
+    public UpgradeTargetFilter targetOverride;
+    public UpgradeEntityApplicationMode applicationMode;
+
+    [Tooltip("Optional. When assigned, only soldiers currently resolving this weapon are changed.")]
+    public WeaponProfile requiredWeapon;
+
+    public WeaponProfile replacementWeapon;
+}
+
+[System.Serializable]
+public struct WeaponEffectUpgradeEffect
+{
+    [Tooltip("When false, this effect uses UpgradeData.defaultTarget.")]
+    public bool overrideDefaultTarget;
+    public UpgradeTargetFilter targetOverride;
+    public UpgradeEntityApplicationMode applicationMode;
+
+    [Tooltip("Optional. Restricts this effect to soldiers currently resolving this weapon.")]
+    public WeaponProfile requiredWeapon;
+
+    public WeaponEffectOperation operation;
+    public WeaponEffectData weaponEffect;
+}
+
+[System.Serializable]
+public struct ArmorReplacementEffect
+{
+    [Tooltip("When false, this effect uses UpgradeData.defaultTarget.")]
+    public bool overrideDefaultTarget;
+    public UpgradeTargetFilter targetOverride;
+    public UpgradeEntityApplicationMode applicationMode;
+
+    [Tooltip("Optional. When assigned, only soldiers currently resolving this armor are changed.")]
+    public ArmorProfile requiredArmor;
+
+    public ArmorProfile replacementArmor;
+}
+
+[System.Serializable]
+public struct SquadVisualReplacementEffect
+{
+    [Tooltip("When false, this effect uses UpgradeData.defaultTarget.")]
+    public bool overrideDefaultTarget;
+    public UpgradeTargetFilter targetOverride;
+    public UpgradeEntityApplicationMode applicationMode;
+
+    [Tooltip("Optional. Restricts replacement to squads currently using this visual profile once that runtime system is wired.")]
+    public SquadVisualProfile requiredVisualProfile;
+
+    public SquadVisualProfile replacementVisualProfile;
+}
+
+
+#endregion
 
 
 [System.Serializable]
