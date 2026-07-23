@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -837,7 +838,10 @@ public enum WeaponEffectOperation
 }
 
 /// <summary>
-/// Determines which squads/soldiers are eligible for one upgrade or effect.
+/// Determines which SquadData unit definitions are eligible for one upgrade or effect.
+/// Standard squads are homogeneous: SquadData is the gameplay unit, while its
+/// SoldierData defines the repeated individual body used by that unit.
+///
 /// Empty normal-filter lists mean no restriction. Entries inside a populated list
 /// use OR; separate populated filter groups use AND. Explicit exclusion always wins,
 /// while explicit additional inclusion bypasses the normal classification filters.
@@ -858,19 +862,12 @@ public struct UpgradeTargetFilter
     [Tooltip("A target is rejected if it contains any selected excluded trait.")]
     public UnitTrait excludedTraits;
 
-    [Header("Exact Additional Targets")]
-    [Tooltip("These SquadData assets are included even when normal classification filters do not match.")]
+    [Header("Exact Squad Overrides")]
+    [Tooltip("These SquadData unit types are included even when normal classification filters do not match.")]
     public List<SquadData> additionallyIncludedSquads;
 
-    [Tooltip("These SoldierData assets are included even when normal classification filters do not match.")]
-    public List<SoldierData> additionallyIncludedSoldiers;
-
-    [Header("Exact Exclusions")]
-    [Tooltip("These SquadData assets never receive this effect.")]
+    [Tooltip("These SquadData unit types never receive this effect. Exclusions always win.")]
     public List<SquadData> excludedSquads;
-
-    [Tooltip("These SoldierData assets never receive this effect.")]
-    public List<SoldierData> excludedSoldiers;
 }
 
 [System.Serializable]
@@ -954,6 +951,7 @@ public struct SquadVisualReplacementEffect
 #endregion
 
 
+
 [System.Serializable]
 public struct FormationBounds
 {
@@ -975,3 +973,5 @@ public struct FormationBounds
             depth = 0f
         };
 }
+
+

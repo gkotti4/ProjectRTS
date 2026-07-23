@@ -1,6 +1,171 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+
+using System.Collections.Generic;
+
+public static class UpgradeTargetMatcher
+{
+    /// <summary>
+    /// Returns true when the supplied SquadData is eligible for this target filter.
+    ///
+    /// Rules:
+    /// - Exact exclusions always win.
+    /// - Exact additional inclusions bypass normal classification filters.
+    /// - Empty filter groups impose no restriction.
+    /// - Entries inside one list use OR.
+    /// - Separate populated filter groups use AND.
+    /// - Every required trait must be present.
+    /// - Any excluded trait causes rejection.
+    /// </summary>
+    public static bool MatchesSquad(
+        UpgradeTargetFilter filter,
+        SquadData squadData)
+    {
+        if (squadData == null)
+            return false;
+
+        // ---------------------------------------------------------------------
+        // Exact Exclusion
+        // ---------------------------------------------------------------------
+        // Exclusion has the highest priority, including over explicit inclusion.
+        if (Contains(filter.excludedSquads, squadData))
+            return false;
+
+        // ---------------------------------------------------------------------
+        // Exact Additional Inclusion
+        // ---------------------------------------------------------------------
+        // Explicit inclusion bypasses all normal classification filters.
+        if (Contains(filter.additionallyIncludedSquads, squadData))
+            return true;
+
+        // ---------------------------------------------------------------------
+        // Nation
+        // ---------------------------------------------------------------------
+        if (HasEntries(filter.nations) &&
+            !Contains(filter.nations, squadData.nation))
+        {
+            return false;
+        }
+
+        // ---------------------------------------------------------------------
+        // Combat Category
+        // ---------------------------------------------------------------------
+        if (HasEntries(filter.combatCategories) &&
+            !Contains(filter.combatCategories, squadData.category))
+        {
+            return false;
+        }
+
+        // ---------------------------------------------------------------------
+        // Combat Subcategory
+        // ---------------------------------------------------------------------
+        if (HasEntries(filter.combatSubcategories) &&
+            !Contains(
+                filter.combatSubcategories,
+                squadData.combatSubcategory))
+        {
+            return false;
+        }
+
+        // ---------------------------------------------------------------------
+        // Unit Families
+        // ---------------------------------------------------------------------
+        // A squad matches this group when it has at least one of the listed
+        // families. Multiple selected families therefore use OR.
+        if (HasEntries(filter.unitFamilies) &&
+            !HasAnyMatchingFamily(
+                filter.unitFamilies,
+                squadData.unitFamilies))
+        {
+            return false;
+        }
+
+        // ---------------------------------------------------------------------
+        // Required Traits
+        // ---------------------------------------------------------------------
+        // Every required flag must exist on the squad.
+        if (filter.requiredTraits != UnitTrait.None &&
+            (squadData.unitTraits & filter.requiredTraits) !=
+            filter.requiredTraits)
+        {
+            return false;
+        }
+
+        // ---------------------------------------------------------------------
+        // Excluded Traits
+        // ---------------------------------------------------------------------
+        // Any overlap with excluded traits rejects the squad.
+        if (filter.excludedTraits != UnitTrait.None &&
+            (squadData.unitTraits & filter.excludedTraits) !=
+            UnitTrait.None)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    static bool HasAnyMatchingFamily(
+        IReadOnlyList<UnitFamilyData> filterFamilies,
+        IReadOnlyList<UnitFamilyData> squadFamilies)
+    {
+        if (!HasEntries(filterFamilies) ||
+            !HasEntries(squadFamilies))
+        {
+            return false;
+        }
+
+        for (int filterIndex = 0;
+             filterIndex < filterFamilies.Count;
+             filterIndex++)
+        {
+            UnitFamilyData filterFamily =
+                filterFamilies[filterIndex];
+
+            if (filterFamily == null)
+                continue;
+
+            for (int squadIndex = 0;
+                 squadIndex < squadFamilies.Count;
+                 squadIndex++)
+            {
+                if (squadFamilies[squadIndex] == filterFamily)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool Contains<T>(
+        IReadOnlyList<T> list,
+        T value)
+    {
+        if (!HasEntries(list))
+            return false;
+
+        EqualityComparer<T> comparer =
+            EqualityComparer<T>.Default;
+
+        for (int index = 0; index < list.Count; index++)
+        {
+            if (comparer.Equals(list[index], value))
+                return true;
+        }
+
+        return false;
+    }
+
+    static bool HasEntries<T>(IReadOnlyList<T> list)
+    {
+        return list != null && list.Count > 0;
+    }
+}
+
+
+
+
 public static class Calc
 {
     /// Returns the raw direction vector from one point to another (not normalized).

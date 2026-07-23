@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,6 +7,8 @@ using UnityEngine;
 /// -----------------------------------------------------------------------------
 ///
 /// Designer-authored package describing one faction-wide or squad-local upgrade.
+/// Upgrade eligibility always targets SquadData unit definitions. Soldier-stat
+/// effects then modify every repeated soldier body belonging to a matching squad.
 /// Most upgrades use the targeted stat-effect lists. Asset-effect lists support
 /// weapon, weapon-effect, armor, and squad-visual changes without replacing the
 /// live soldier or squad gameplay prefab.
@@ -57,7 +60,10 @@ public class UpgradeData : ScriptableObject
     public UpgradeTargetFilter defaultTarget;
     
     [Header("Stat Effects - Primary Upgrade System")]
+    [Tooltip("Modifies the individual stats of every soldier member belonging to a matching SquadData unit type.")]
     public List<TargetedSoldierStatModifier> soldierStatEffects = new List<TargetedSoldierStatModifier>();
+
+    [Tooltip("Modifies collective squad stats such as capacity, formation, and morale for matching SquadData unit types.")]
     public List<TargetedSquadStatModifier> squadStatEffects = new List<TargetedSquadStatModifier>();
 
     // -------------------------------------------------------------------------
@@ -93,3 +99,5 @@ public class UpgradeData : ScriptableObject
             maximumStacks = 1;
     }
 }
+
+
