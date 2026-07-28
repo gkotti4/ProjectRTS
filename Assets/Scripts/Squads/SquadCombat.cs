@@ -442,7 +442,26 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
+        float initialDistanceToTarget = Vector3.Distance(
+            Flatten(soldier.transform.position),
+            Flatten(currentTarget.transform.position));
+
+        if (!soldier.IsMovementLocked)
+        {
+            ResolveFormationActiveWeapon(
+                soldier,
+                initialDistanceToTarget);
+        }
+
         WeaponProfile weaponProfile = GetWeaponProfile(soldier);
+
+        if (weaponProfile == null)
+        {
+            soldier.Stop();
+            soldier.SetCombatRole(SoldierRole.None);
+            return;
+        }
+
         bool isRangedWeapon = IsRangedWeapon(weaponProfile);
 
         GetFormationAttackValues(
@@ -1958,6 +1977,9 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
+        if (!attacker.TryConsumeRangedAmmunition())
+            return;
+
         ResolveFormationRangedHit(
             attacker,
             target,
@@ -2019,6 +2041,9 @@ public class SquadCombat : MonoBehaviour
 
         if (weaponProfile == null ||
             weaponProfile.ranged.projectilePrefab == null)
+            return;
+
+        if (!attacker.TryConsumeRangedAmmunition())
             return;
 
         Transform attackOrigin = attacker.AttackOrigin;
@@ -2648,6 +2673,7 @@ public class SquadCombat : MonoBehaviour
             soldier.SetCombatRole(SoldierRole.None);
             soldier.ClearCombatTarget();
             soldier.Combat?.ClearCombat();
+            soldier.UseDefaultWeapon();
         }
     }
 
@@ -2955,16 +2981,90 @@ public class SquadCombat : MonoBehaviour
         if (data == null || data.soldierData == null)
             return null;
 
-        return data.soldierData.weaponProfile;
+        return data.soldierData.rangedWeaponProfile != null
+            ? data.soldierData.rangedWeaponProfile
+            : data.soldierData.meleeWeaponProfile;
+    }
+
+    void ResolveFormationActiveWeapon(
+        SoldierController soldier,
+        float distanceToTarget)
+    {
+        if (soldier == null)
+            return;
+
+        WeaponProfile meleeWeapon = soldier.MeleeWeaponProfile;
+        WeaponProfile rangedWeapon = soldier.RangedWeaponProfile;
+
+        if (meleeWeapon == null && rangedWeapon == null)
+        {
+            soldier.SetActiveWeaponProfile(null);
+            return;
+        }
+
+        if (rangedWeapon == null)
+        {
+            soldier.UseMeleeWeapon();
+            return;
+        }
+
+        if (!soldier.HasRangedAmmunition)
+        {
+            if (meleeWeapon != null)
+                soldier.UseMeleeWeapon();
+            else
+                soldier.SetActiveWeaponProfile(null);
+
+            return;
+        }
+
+        if (meleeWeapon == null ||
+            !squadCombatProfile.formationRangedMeleeFallbackEnabled)
+        {
+            soldier.UseRangedWeapon();
+            return;
+        }
+
+        float rangedMinimumRange = soldier.Stats != null
+            ? soldier.Stats.ranged.minimumRange
+            : rangedWeapon.ranged.minimumRange;
+
+        float forcedMeleeEnterDistance = Mathf.Max(
+            rangedMinimumRange,
+            squadCombatProfile.formationRangedMeleeFallbackEnterDistance);
+
+        float rangedResumeDistance = Mathf.Max(
+            forcedMeleeEnterDistance,
+            squadCombatProfile.formationRangedMeleeFallbackExitDistance);
+
+        if (soldier.IsUsingMeleeWeapon)
+        {
+            if (distanceToTarget >= rangedResumeDistance)
+                soldier.UseRangedWeapon();
+
+            return;
+        }
+
+        if (distanceToTarget <= forcedMeleeEnterDistance)
+        {
+            soldier.UseMeleeWeapon();
+            return;
+        }
+
+        soldier.UseRangedWeapon();
     }
 
     WeaponProfile GetWeaponProfile(SoldierController soldier)
     {
-        return soldier != null && soldier.Stats != null
-            ? soldier.Stats.weaponProfile
-            : soldier != null && soldier.Data != null
-                ? soldier.Data.weaponProfile
-                : null;
+        if (soldier == null)
+            return null;
+
+        if (soldier.ActiveWeaponProfile != null)
+            return soldier.ActiveWeaponProfile;
+
+        return soldier.RangedWeaponProfile != null
+            ? soldier.RangedWeaponProfile
+            : soldier.MeleeWeaponProfile;
     }
 
     bool IsRangedWeapon(WeaponProfile weaponProfile)

@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -7,8 +6,6 @@ using UnityEngine;
 /// -----------------------------------------------------------------------------
 ///
 /// Designer-authored package describing one faction-wide or squad-local upgrade.
-/// Upgrade eligibility always targets SquadData unit definitions. Soldier-stat
-/// effects then modify every repeated soldier body belonging to a matching squad.
 /// Most upgrades use the targeted stat-effect lists. Asset-effect lists support
 /// weapon, weapon-effect, armor, and squad-visual changes without replacing the
 /// live soldier or squad gameplay prefab.
@@ -60,25 +57,11 @@ public class UpgradeData : ScriptableObject
     public UpgradeTargetFilter defaultTarget;
     
     [Header("Stat Effects - Primary Upgrade System")]
-    [Tooltip("Modifies the individual stats of every soldier member belonging to a matching SquadData unit type.")]
     public List<TargetedSoldierStatModifier> soldierStatEffects = new List<TargetedSoldierStatModifier>();
-
-    [Tooltip("Modifies collective squad stats such as capacity, formation, and morale for matching SquadData unit types.")]
     public List<TargetedSquadStatModifier> squadStatEffects = new List<TargetedSquadStatModifier>();
 
-    // -------------------------------------------------------------------------
-    // Temporary RuntimeStatResolver compatibility
-    // -------------------------------------------------------------------------
-    // The current resolver still reads these legacy single-effect fields. They are
-    // hidden so new assets are authored through the modular lists above. Remove
-    // these after RuntimeStatResolver is migrated to the new effect collections.
-    [HideInInspector] public SquadCategory[] affectedSquadCategories;
-    [HideInInspector] public BuildingCategory[] affectedBuildingCategories;
-    [HideInInspector] public SoldierStatModifiers soldierModifiers;
-    [HideInInspector] public SquadStatModifiers squadModifiers;
-
     [Header("Asset Effects")]
-    [Tooltip("Replaces the resolved runtime weapon profile. The live soldier prefab is not replaced.")]
+    [Tooltip("Replaces the resolved melee or ranged weapon slot selected by each effect. The live soldier prefab is not replaced.")]
     public List<WeaponReplacementEffect> weaponReplacementEffects = new List<WeaponReplacementEffect>();
 
     [Tooltip("Adds or removes modular effects from the resolved runtime weapon.")]
@@ -99,5 +82,3 @@ public class UpgradeData : ScriptableObject
             maximumStacks = 1;
     }
 }
-
-

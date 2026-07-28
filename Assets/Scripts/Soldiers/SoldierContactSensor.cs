@@ -268,9 +268,12 @@ public class SoldierContactSensor : MonoBehaviour
         if (other == owner)
             return false;
 
-        if (!other.IsAlive)
+        if (!other.IsAlive) // perf?
             return false;
 
+        if (owner.Faction != null && other.Faction != null)
+            return owner.Faction.teamId == other.Faction.teamId; // new
+        
         return other.Squad == owner.Squad;
     }
     

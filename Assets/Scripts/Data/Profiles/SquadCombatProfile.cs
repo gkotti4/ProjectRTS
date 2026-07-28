@@ -1,3 +1,4 @@
+
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -97,6 +98,16 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Preferred soldier firing distance as a multiplier of ranged weapon range.")]
     [Range(0.1f, 1f)] [FormerlySerializedAs("prototypeRangedPreferredDistanceMultiplier")]
     public float formationRangedPreferredDistanceMultiplier = 0.82f;
+
+    [Header("Formation Ranged Melee Fallback")]
+    [Tooltip("Allows a ranged soldier with SoldierData.secondaryWeaponProfile to automatically switch to it at close range.")]
+    public bool formationRangedMeleeFallbackEnabled = true;
+
+    [Tooltip("Enemy distance at or below which a ranged soldier switches to its secondary melee weapon.")]
+    [Min(0.1f)] public float formationRangedMeleeFallbackEnterDistance = 2.1f;
+
+    [Tooltip("Enemy distance at or above which a soldier using its melee fallback returns to its primary ranged weapon. Keep this above enter distance to prevent flicker.")]
+    [Min(0.1f)] public float formationRangedMeleeFallbackExitDistance = 3.25f;
 
     
     
@@ -302,6 +313,10 @@ public class SquadCombatProfile : ScriptableObject
         rangedCombatBreakRangePadding = Mathf.Max(0f, rangedCombatBreakRangePadding);
         formationRangedStoppingDistanceMultiplier = Mathf.Clamp(formationRangedStoppingDistanceMultiplier, 0.1f, 1f);
         formationRangedPreferredDistanceMultiplier = Mathf.Clamp(formationRangedPreferredDistanceMultiplier, 0.1f, 1f);
+        formationRangedMeleeFallbackEnterDistance = Mathf.Max(0.1f, formationRangedMeleeFallbackEnterDistance);
+        formationRangedMeleeFallbackExitDistance = Mathf.Max(
+            formationRangedMeleeFallbackEnterDistance + 0.1f,
+            formationRangedMeleeFallbackExitDistance);
 
         formationAttackIntervalRandomMin = Mathf.Max(0f, formationAttackIntervalRandomMin);
         formationAttackIntervalRandomMax = Mathf.Max(0f, formationAttackIntervalRandomMax);

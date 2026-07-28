@@ -1,4 +1,5 @@
 
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -43,7 +44,28 @@ public class SquadController : MonoBehaviour,
 
     private bool isInitialized = false;
     private bool isSelected = false;
-    private readonly List<UpgradeData> appliedUpgrades = new List<UpgradeData>();
+    private readonly Dictionary<UpgradeData, int> appliedUpgradeStacks =
+        new Dictionary<UpgradeData, int>();
+
+    private enum QueuedSquadCommandType
+    {
+        Move,
+        Attack
+    }
+
+    private struct QueuedSquadCommand
+    {
+        public QueuedSquadCommandType commandType;
+        public Vector3 destination;
+        public Vector3 facing;
+        public float requestedFormationWidth;
+        public SquadController targetSquad;
+    }
+
+    private readonly Queue<QueuedSquadCommand> queuedCommands =
+        new Queue<QueuedSquadCommand>();
+
+    private bool isExecutingQueuedCommand = false;
 
     #endregion
 
@@ -62,7 +84,8 @@ public class SquadController : MonoBehaviour,
 
     public SquadData Data => squadData;
     public SquadRuntimeStats Stats { get; private set; }
-    public IReadOnlyList<UpgradeData> AppliedUpgrades => appliedUpgrades;
+    public IReadOnlyDictionary<UpgradeData, int> AppliedUpgradeStacks =>
+        appliedUpgradeStacks;
 
     public SquadCategory Category =>
         squadData != null ? squadData.category : SquadCategory.Infantry;
@@ -84,18 +107,96 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 
+    public int GetUpgradeStackCount(UpgradeData upgrade)
+    {
+        if (upgrade == null)
+            return 0;
+
+        return appliedUpgradeStacks.TryGetValue(upgrade, out int stackCount)
+            ? Mathf.Max(0, stackCount)
+            : 0;
+    }
+
+    public bool IsUpgradeApplied(UpgradeData upgrade)
+    {
+        return GetUpgradeStackCount(upgrade) > 0;
+    }
+
+    public bool CanApplyUpgrade(UpgradeData upgrade)
+    {
+        if (upgrade == null || upgrade.scope != UpgradeScope.Squad)
+            return false;
+
+        int maximumStacks = upgrade.repeatable
+            ? Mathf.Max(1, upgrade.maximumStacks)
+            : 1;
+
+        if (GetUpgradeStackCount(upgrade) >= maximumStacks)
+            return false;
+
+        if (upgrade.requiredUpgrades != null)
+        {
+            for (int index = 0; index < upgrade.requiredUpgrades.Count; index++)
+            {
+                UpgradeData requiredUpgrade = upgrade.requiredUpgrades[index];
+
+                if (requiredUpgrade == null)
+                    continue;
+
+                bool requirementMet = requiredUpgrade.scope == UpgradeScope.Faction
+                    ? Faction != null && Faction.IsUpgradeApplied(requiredUpgrade)
+                    : IsUpgradeApplied(requiredUpgrade);
+
+                if (!requirementMet)
+                    return false;
+            }
+        }
+
+        if (upgrade.blockedByUpgrades != null)
+        {
+            for (int index = 0; index < upgrade.blockedByUpgrades.Count; index++)
+            {
+                UpgradeData blockedUpgrade = upgrade.blockedByUpgrades[index];
+
+                if (blockedUpgrade == null)
+                    continue;
+
+                bool isBlocked = blockedUpgrade.scope == UpgradeScope.Faction
+                    ? Faction != null && Faction.IsUpgradeApplied(blockedUpgrade)
+                    : IsUpgradeApplied(blockedUpgrade);
+
+                if (isBlocked)
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    public bool TryApplyUpgrade(
+        UpgradeData upgrade,
+        UpgradeGrantSource grantSource = UpgradeGrantSource.Debug)
+    {
+        if (!CanApplyUpgrade(upgrade))
+            return false;
+
+        appliedUpgradeStacks[upgrade] = GetUpgradeStackCount(upgrade) + 1;
+        RefreshRuntimeStats();
+        return true;
+    }
+
+    // Compatibility wrapper for older callers.
     public void ApplyUpgrade(UpgradeData upgrade)
     {
-        if (upgrade == null || appliedUpgrades.Contains(upgrade))
-            return;
-
-        appliedUpgrades.Add(upgrade);
-        RefreshRuntimeStats();
+        TryApplyUpgrade(upgrade);
     }
 
     public void RefreshRuntimeStats()
     {
-        Stats = RuntimeStatResolver.ResolveSquad(squadData, Faction, appliedUpgrades);
+        Stats = RuntimeStatResolver.ResolveSquad(
+            squadData,
+            Faction,
+            appliedUpgradeStacks);
 
         Formation?.ApplyStats(Stats.formation);
         Movement?.RefreshRuntimeStats();
@@ -105,6 +206,20 @@ public class SquadController : MonoBehaviour,
 
         foreach (SoldierController soldier in Roster.Soldiers)
             soldier?.RefreshRuntimeStats();
+
+        Health?.RefreshMaximumHealthFromRoster();
+    }
+
+    void HandleFactionUpgradeApplied(
+        FactionInstance faction,
+        UpgradeData upgrade,
+        UpgradeGrantSource source,
+        int stackCount)
+    {
+        if (!isInitialized || faction != Faction)
+            return;
+
+        RefreshRuntimeStats();
     }
 
     #region Unity Lifecycle
@@ -183,6 +298,9 @@ public class SquadController : MonoBehaviour,
 
     void OnDestroy()
     {
+        if (Faction != null)
+            Faction.OnUpgradeApplied -= HandleFactionUpgradeApplied;
+
         SelectionManager.Instance?.UnregisterSelectable(this);
         SquadManager.Instance?.UnregisterSquad(this);
     }
@@ -213,10 +331,14 @@ public class SquadController : MonoBehaviour,
 
         squadData = data;
         Faction = faction;
+        Faction.OnUpgradeApplied += HandleFactionUpgradeApplied;
 
         Stance = squadData.defaultStance;
         State = SquadState.Idle;
-        Stats = RuntimeStatResolver.ResolveSquad(squadData, Faction, appliedUpgrades);
+        Stats = RuntimeStatResolver.ResolveSquad(
+            squadData,
+            Faction,
+            appliedUpgradeStacks);
 
         // 1. Build physical/gameplay body.
         Roster.Initialize(this, squadData, Faction);
@@ -337,7 +459,11 @@ public class SquadController : MonoBehaviour,
 
     public void SetState(SquadState newState)
     {
+        SquadState previousState = State;
         State = newState;
+
+        if (newState == SquadState.Idle && previousState != SquadState.Idle)
+            TryExecuteNextQueuedCommand();
     }
 
     #endregion
@@ -347,13 +473,43 @@ public class SquadController : MonoBehaviour,
     public void OrderMove(Vector3 destination)
     {
         Vector3 facing = Movement.ResolveFacing(destination);
-        OrderMove(destination, facing);
+        OrderMove(destination, facing, -1f, queueCommand: false);
     }
 
     public void OrderMove(
         Vector3 destination,
         Vector3 facing,
-        float requestedFormationWidth = -1f)
+        float requestedFormationWidth = -1f,
+        bool queueCommand = false)
+    {
+        if (queueCommand && !isExecutingQueuedCommand)
+        {
+            queuedCommands.Enqueue(new QueuedSquadCommand
+            {
+                commandType = QueuedSquadCommandType.Move,
+                destination = destination,
+                facing = facing,
+                requestedFormationWidth = requestedFormationWidth,
+                targetSquad = null
+            });
+
+            TryExecuteNextQueuedCommand();
+            return;
+        }
+
+        if (!isExecutingQueuedCommand)
+            queuedCommands.Clear();
+
+        ExecuteMoveCommand(
+            destination,
+            facing,
+            requestedFormationWidth);
+    }
+
+    void ExecuteMoveCommand(
+        Vector3 destination,
+        Vector3 facing,
+        float requestedFormationWidth)
     {
         if (State == SquadState.InCombat)
             Combat.BeginCombatLockedMoveOrder();
@@ -370,6 +526,8 @@ public class SquadController : MonoBehaviour,
 
     public void OrderStop()
     {
+        queuedCommands.Clear();
+
         Combat.ClearTargets();
         Movement.OrderStop();
 
@@ -378,13 +536,86 @@ public class SquadController : MonoBehaviour,
 
     /// Orders this squad to attack another squad.
     /// SquadCombat decides whether to approach first or enter melee immediately.
-    public void OrderAttack(SquadController target)
+    public void OrderAttack(
+        SquadController target,
+        bool queueCommand = false)
     {
         if (target == null)
             return;
 
+        if (queueCommand && !isExecutingQueuedCommand)
+        {
+            queuedCommands.Enqueue(new QueuedSquadCommand
+            {
+                commandType = QueuedSquadCommandType.Attack,
+                targetSquad = target,
+                destination = Vector3.zero,
+                facing = Vector3.forward,
+                requestedFormationWidth = -1f
+            });
+
+            TryExecuteNextQueuedCommand();
+            return;
+        }
+
+        if (!isExecutingQueuedCommand)
+            queuedCommands.Clear();
+
         Combat.OrderAttack(target);
     }
+
+    void TryExecuteNextQueuedCommand()
+    {
+        if (isExecutingQueuedCommand || State != SquadState.Idle)
+            return;
+
+        while (queuedCommands.Count > 0)
+        {
+            QueuedSquadCommand queuedCommand = queuedCommands.Dequeue();
+
+            if (queuedCommand.commandType == QueuedSquadCommandType.Attack &&
+                !IsValidQueuedAttackTarget(queuedCommand.targetSquad))
+            {
+                continue;
+            }
+
+            isExecutingQueuedCommand = true;
+
+            if (queuedCommand.commandType == QueuedSquadCommandType.Move)
+            {
+                ExecuteMoveCommand(
+                    queuedCommand.destination,
+                    queuedCommand.facing,
+                    queuedCommand.requestedFormationWidth);
+            }
+            else
+            {
+                Combat.OrderAttack(queuedCommand.targetSquad);
+            }
+
+            isExecutingQueuedCommand = false;
+
+            if (State == SquadState.Idle)
+                continue;
+
+            return;
+        }
+    }
+
+    bool IsValidQueuedAttackTarget(SquadController target)
+    {
+        return target != null &&
+               target.IsInitialized &&
+               target.Roster != null &&
+               target.Roster.HasLivingSoldiers;
+    }
+
+    public void ClearQueuedCommands()
+    {
+        queuedCommands.Clear();
+    }
+
+    public int QueuedCommandCount => queuedCommands.Count;
 
     public void OrderAttackMove(Vector3 destination) // UNUSED
     {

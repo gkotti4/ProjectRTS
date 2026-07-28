@@ -13,6 +13,10 @@ public class GameManager : MonoBehaviour
     [SerializeField] private int startingResources = 1000;
     [SerializeField] private int startingPopulationCap = 1000;
 
+    [Header("Starting Upgrades")]
+    [SerializeField] private List<UpgradeData> playerStartingUpgrades = new List<UpgradeData>();
+    [SerializeField] private List<UpgradeData> enemyStartingUpgrades = new List<UpgradeData>();
+
     public FactionInstance PlayerFaction { get; private set; }
     public FactionInstance EnemyFaction { get; private set; }
 
@@ -48,6 +52,9 @@ public class GameManager : MonoBehaviour
         allFactions.Clear();
         allFactions.Add(PlayerFaction);
         allFactions.Add(EnemyFaction);
+
+        ApplyStartingUpgrades(PlayerFaction, playerStartingUpgrades);
+        ApplyStartingUpgrades(EnemyFaction, enemyStartingUpgrades);
     }
 
     void Start()
@@ -147,16 +154,60 @@ public class GameManager : MonoBehaviour
         return factionInstance != null && factionInstance.IsUpgradeApplied(upgrade);
     }
 
-    public void RegisterUpgrade(
+    public bool CanApplyFactionUpgrade(
         UpgradeData upgrade,
         FactionInstance factionInstance = null)
     {
         factionInstance ??= PlayerFaction;
+        return factionInstance != null &&
+               factionInstance.CanApplyUpgrade(upgrade);
+    }
 
-        if (factionInstance == null)
+    public bool TryApplyFactionUpgrade(
+        UpgradeData upgrade,
+        FactionInstance factionInstance = null,
+        UpgradeGrantSource grantSource = UpgradeGrantSource.Debug)
+    {
+        factionInstance ??= PlayerFaction;
+
+        return factionInstance != null &&
+               factionInstance.TryApplyUpgrade(upgrade, grantSource);
+    }
+
+    // Compatibility wrapper for older callers.
+    public void RegisterUpgrade(
+        UpgradeData upgrade,
+        FactionInstance factionInstance = null)
+    {
+        TryApplyFactionUpgrade(
+            upgrade,
+            factionInstance,
+            UpgradeGrantSource.Debug);
+    }
+
+    void ApplyStartingUpgrades(
+        FactionInstance factionInstance,
+        IReadOnlyList<UpgradeData> startingUpgrades)
+    {
+        if (factionInstance == null || startingUpgrades == null)
             return;
 
-        factionInstance.RegisterUpgrade(upgrade);
+        for (int index = 0; index < startingUpgrades.Count; index++)
+        {
+            UpgradeData upgrade = startingUpgrades[index];
+
+            if (upgrade == null)
+                continue;
+
+            if (!factionInstance.TryApplyUpgrade(
+                    upgrade,
+                    UpgradeGrantSource.MatchStartingUpgrade))
+            {
+                Debug.LogWarning(
+                    $"Could not apply starting upgrade {upgrade.name} to faction {factionInstance.factionId}.",
+                    this);
+            }
+        }
     }
 
     public void CheckWinLose()

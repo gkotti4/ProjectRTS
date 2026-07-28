@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -26,19 +25,10 @@ public class SquadData : ScriptableObject
     public Sprite squadIcon;
 
     [Header("Classification")]
-    [Tooltip("Nation/culture roster this unit belongs to. This is content classification, not runtime faction ownership.")]
     public NationData nation;
-
-    [Tooltip("Broad battlefield role such as Infantry, Ranged, Cavalry, or Siege.")]
     public SquadCategory category = SquadCategory.Infantry;
-
-    [Tooltip("Optional specialization beneath the broad category. Leave None until this unit needs it.")]
     public SquadCombatSubcategory combatSubcategory = SquadCombatSubcategory.None;
-
-    [Tooltip("Lore/content families shared by related units across different combat roles, such as Marauder.")]
     public List<UnitFamilyData> unitFamilies = new List<UnitFamilyData>();
-
-    [Tooltip("Mechanical traits used for upgrade targeting, such as Shielded, Shock, or AntiLarge.")]
     public UnitTrait unitTraits = UnitTrait.None;
 
     [FormerlySerializedAs("defaultCombatBehavior")]
@@ -57,7 +47,7 @@ public class SquadData : ScriptableObject
     public SoldierData soldierData;
 
     [FormerlySerializedAs("numMembers")]
-    [Min(1)] public int startingSoldierCount = 15;
+    [Min(1)] public int startingSoldierCount = 5;
 
     [Tooltip("Future reinforcement/replenishment cap. Not used by current starting spawn logic.")]
     [Min(1)] public int maxSoldierCount = 50;
@@ -67,7 +57,7 @@ public class SquadData : ScriptableObject
     public SquadStance defaultStance = SquadStance.Hold;
 
     [Header("Formation")]
-    [Min(1)] public int defaultUnitsPerRow = 5;
+    [Min(1)] public int defaultUnitsPerRow = 10;
     [Min(0.1f)] public float defaultSpacing = 2.5f;
 
     [Header("Morale")]
@@ -78,7 +68,6 @@ public class SquadData : ScriptableObject
     [Min(0f)] public float reinforcementCostMultiplier = 1f;
     [Min(0)] public int officerSlots = 0;
     [Min(0)] public int specialistSlots = 0;
-    // Banner carrier unit
 
     [Header("Formation Limits")]
     [Min(0.1f)] public float minimumSpacing = 0.5f;
@@ -122,5 +111,3 @@ public class SquadCommandSet : ScriptableObject
         return result;
     }
 }
-
-

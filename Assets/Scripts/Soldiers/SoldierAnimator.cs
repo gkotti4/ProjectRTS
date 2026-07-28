@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// -----------------------------------------------------------------------------
@@ -13,6 +14,18 @@ public class SoldierAnimator : MonoBehaviour
     [SerializeField] private Animator animator;
     [SerializeField] private SoldierController soldierController;
     [SerializeField] private SoldierMotor soldierMotor;
+
+    #endregion
+
+    #region Runtime Animation Packages
+
+    private RuntimeAnimatorController prefabBaseController;
+    private AnimatorOverrideController runtimeOverrideController;
+    private SoldierAnimationProfile currentSoldierAnimationProfile;
+    private WeaponAnimationProfile currentWeaponAnimationProfile;
+    private int attackVariantCount = 2; // uses attacks 1 though attackVariantCount attacks at random
+    private bool attackUsesFullBody = true;
+    private bool hasAttackVariantParameter = true;
 
     #endregion
 
@@ -42,6 +55,13 @@ public class SoldierAnimator : MonoBehaviour
 
     #endregion
 
+    // Reserve Unit Rally Animation MVP
+    private bool useReserveRallyAnimation = true;
+    private float reserveRallyAnimationChance = 0.45f;
+    private float reserveRallyAnimationMinTime = 6.0f;
+    private float reserveRallyAnimationMaxTime = 12.0f;
+    private float reserveRallyAnimationTimer = 0f;
+
     #region Combat State
 
     [Header("Combat State")]
@@ -69,9 +89,13 @@ public class SoldierAnimator : MonoBehaviour
     private static readonly int IsMoving = Animator.StringToHash("IsMoving");
     private static readonly int IsMovingBackwards = Animator.StringToHash("IsMovingBackwards");
     private static readonly int InCombat = Animator.StringToHash("InCombat");
+    private static readonly int IsUsingRangedWeapon = Animator.StringToHash("IsUsingRangedWeapon");
     private static readonly int Attack = Animator.StringToHash("Attack");
+    private static readonly int AttackVariant = Animator.StringToHash("AttackVariant");
     private static readonly int HitReact = Animator.StringToHash("HitReact");
     private static readonly int Death = Animator.StringToHash("Death");
+    
+    private static readonly int Rally = Animator.StringToHash("Rally");
 
     #endregion
 
@@ -80,8 +104,13 @@ public class SoldierAnimator : MonoBehaviour
     void Awake()
     {
         ResolveReferences();
+        CapturePrefabBaseController();
         InitializeUpperBodyLayer();
+        RefreshOptionalAnimatorParameters();
         InitializeMeasuredVelocity();
+        
+        // Reserve Rally MVP
+        reserveRallyAnimationTimer = Random.Range(reserveRallyAnimationMinTime, reserveRallyAnimationMaxTime);
     }
 
     void OnValidate()
@@ -99,6 +128,10 @@ public class SoldierAnimator : MonoBehaviour
         UpdateMeasuredWorldVelocity(); // PERFORMANCE
         UpdateMovementParameters(); // PERFORMANCE!
         UpdateCombatParameter(); // PERFORMANCE
+        UpdateActiveWeaponParameter();
+        
+        // Reserve Rally MVP
+        TickReserveRally();
     }
 
     #endregion
@@ -124,6 +157,138 @@ public class SoldierAnimator : MonoBehaviour
 
         if (soldierMotor == null)
             Debug.LogError($"{name}: SoldierAnimator could not find SoldierMotor in parent.", this);
+    }
+
+    void CapturePrefabBaseController()
+    {
+        if (animator != null)
+            prefabBaseController = animator.runtimeAnimatorController;
+    }
+
+    /// <summary>
+    /// Combines soldier-owned locomotion/general overrides with weapon-owned combat
+    /// overrides. Weapon replacements are applied second and therefore win when both
+    /// packages target the same placeholder clip.
+    /// </summary>
+    public void ApplyResolvedAnimationProfiles(
+        SoldierAnimationProfile soldierAnimationProfile,
+        WeaponAnimationProfile weaponAnimationProfile)
+    {
+        if (animator == null)
+            return;
+
+        if (currentSoldierAnimationProfile == soldierAnimationProfile &&
+            currentWeaponAnimationProfile == weaponAnimationProfile)
+        {
+            return;
+        }
+
+        currentSoldierAnimationProfile = soldierAnimationProfile;
+        currentWeaponAnimationProfile = weaponAnimationProfile;
+
+        RuntimeAnimatorController baseController =
+            soldierAnimationProfile != null && soldierAnimationProfile.baseController != null
+                ? soldierAnimationProfile.baseController
+                : prefabBaseController;
+
+        attackVariantCount = weaponAnimationProfile != null
+            ? Mathf.Max(1, weaponAnimationProfile.attackVariantCount)
+            : 1;
+
+        attackUsesFullBody = weaponAnimationProfile == null ||
+                             weaponAnimationProfile.disableUpperBodyLayerDuringAttack;
+
+        if (baseController == null)
+        {
+            Debug.LogWarning($"{name}: No base RuntimeAnimatorController is available for resolved animation profiles.", this);
+            return;
+        }
+
+        runtimeOverrideController = new AnimatorOverrideController(baseController);
+
+        List<KeyValuePair<AnimationClip, AnimationClip>> resolvedOverrides =
+            new List<KeyValuePair<AnimationClip, AnimationClip>>();
+
+        runtimeOverrideController.GetOverrides(resolvedOverrides);
+
+        ApplyClipReplacements(
+            resolvedOverrides,
+            soldierAnimationProfile != null
+                ? soldierAnimationProfile.clipReplacements
+                : null);
+
+        ApplyClipReplacements(
+            resolvedOverrides,
+            weaponAnimationProfile != null
+                ? weaponAnimationProfile.clipReplacements
+                : null);
+
+        runtimeOverrideController.ApplyOverrides(resolvedOverrides);
+        animator.runtimeAnimatorController = runtimeOverrideController;
+
+        InitializeUpperBodyLayer();
+        RefreshOptionalAnimatorParameters();
+    }
+
+    void ApplyClipReplacements(
+        List<KeyValuePair<AnimationClip, AnimationClip>> resolvedOverrides,
+        IReadOnlyList<AnimationClipReplacement> replacements)
+    {
+        if (resolvedOverrides == null || replacements == null)
+            return;
+
+        for (int replacementIndex = 0;
+             replacementIndex < replacements.Count;
+             replacementIndex++)
+        {
+            AnimationClipReplacement replacement = replacements[replacementIndex];
+
+            if (replacement.originalClip == null || replacement.replacementClip == null)
+                continue;
+
+            for (int overrideIndex = 0;
+                 overrideIndex < resolvedOverrides.Count;
+                 overrideIndex++)
+            {
+                if (resolvedOverrides[overrideIndex].Key != replacement.originalClip)
+                    continue;
+
+                resolvedOverrides[overrideIndex] =
+                    new KeyValuePair<AnimationClip, AnimationClip>(
+                        resolvedOverrides[overrideIndex].Key,
+                        replacement.replacementClip);
+
+                break;
+            }
+        }
+    }
+
+    void RefreshOptionalAnimatorParameters()
+    {
+        hasAttackVariantParameter = HasAnimatorParameter(
+            AttackVariant,
+            AnimatorControllerParameterType.Int);
+    }
+
+    bool HasAnimatorParameter(
+        int parameterHash,
+        AnimatorControllerParameterType parameterType)
+    {
+        if (animator == null)
+            return false;
+
+        AnimatorControllerParameter[] parameters = animator.parameters;
+
+        for (int index = 0; index < parameters.Length; index++)
+        {
+            if (parameters[index].nameHash == parameterHash &&
+                parameters[index].type == parameterType)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     void InitializeUpperBodyLayer()
@@ -359,6 +524,17 @@ public class SoldierAnimator : MonoBehaviour
             IsInCombatAnimationState());
     }
 
+    void UpdateActiveWeaponParameter()
+    {
+        if (animator == null)
+            return;
+
+        animator.SetBool(
+            IsUsingRangedWeapon,
+            soldierController != null &&
+            soldierController.IsUsingRangedWeapon);
+    }
+
     bool IsInCombatAnimationState()
     {
         if (!useCombatStateFromSquad)
@@ -395,7 +571,16 @@ public class SoldierAnimator : MonoBehaviour
         switch (actionState)
         {
             case SoldierActionState.Attack:
-                DisableUpperBodyLayer();
+                if (attackUsesFullBody)
+                    DisableUpperBodyLayer();
+
+                if (hasAttackVariantParameter)
+                {
+                    animator.SetInteger(
+                        AttackVariant,
+                        Random.Range(1, attackVariantCount+1));
+                }
+
                 animator.ResetTrigger(HitReact);
                 animator.SetTrigger(Attack);
                 break;
@@ -420,6 +605,10 @@ public class SoldierAnimator : MonoBehaviour
         switch (actionState)
         {
             case SoldierActionState.Attack:
+                if (attackUsesFullBody)
+                    EnableUpperBodyLayer();
+                break;
+
             case SoldierActionState.HitReact:
                 EnableUpperBodyLayer();
                 break;
@@ -439,7 +628,9 @@ public class SoldierAnimator : MonoBehaviour
         {
             case SoldierActionState.Attack:
                 animator.ResetTrigger(Attack);
-                EnableUpperBodyLayer();
+
+                if (attackUsesFullBody)
+                    EnableUpperBodyLayer();
                 break;
 
             case SoldierActionState.HitReact:
@@ -543,6 +734,29 @@ public class SoldierAnimator : MonoBehaviour
     }
 
     #endregion
+    
+    
+    
+    #region Reserve Rally Animations
+
+    void TickReserveRally()
+    {
+        if (!useReserveRallyAnimation) return;
+
+        if (soldierController.Role != SoldierRole.Reserve) return;
+
+        reserveRallyAnimationTimer -= Time.deltaTime;
+        if (reserveRallyAnimationTimer <= 0f)
+        {
+            reserveRallyAnimationTimer = Random.Range(reserveRallyAnimationMinTime, reserveRallyAnimationMaxTime);
+            if (Random.Range(0f, 1f) > reserveRallyAnimationChance)
+            {
+                // Play Rally Animation
+                animator.SetTrigger(Rally);
+            }
+        }
+
+    }
+    
+    #endregion
 }
-
-

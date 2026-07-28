@@ -83,6 +83,25 @@ public class SquadHealth : MonoBehaviour
         Recalculate();
     }
 
+
+    public void RefreshMaximumHealthFromRoster()
+    {
+        if (roster == null)
+            return;
+
+        MaxHealth = 0;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || soldier.Health == null)
+                continue;
+
+            MaxHealth += soldier.Health.MaxHealth;
+        }
+
+        Recalculate();
+    }
+
     void HandleRosterChanged(SquadRoster changedRoster)
     {
         RefreshSubscriptions();

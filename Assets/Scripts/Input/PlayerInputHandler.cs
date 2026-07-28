@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -146,6 +147,12 @@ public class PlayerInputHandler : MonoBehaviour
         }
     }
 
+    bool IsQueueCommandModifierHeld()
+    {
+        return Input.GetKey(KeyCode.LeftShift) ||
+               Input.GetKey(KeyCode.RightShift);
+    }
+
     void HandleRightClick()
     {
         if (Input.GetMouseButtonDown(1))
@@ -168,16 +175,18 @@ public class PlayerInputHandler : MonoBehaviour
 
         if (Input.GetMouseButtonUp(1))
         {
+            bool queueCommand = IsQueueCommandModifierHeld();
+
             if (isDragOrdering)
-                HandleSquadDragRightClick();
+                HandleSquadDragRightClick(queueCommand);
             else
-                HandleNormalRightClick();
+                HandleNormalRightClick(queueCommand);
 
             isDragOrdering = false;
         }
     }
 
-    void HandleNormalRightClick()
+    void HandleNormalRightClick(bool queueCommand)
     {
         if (mainCamera == null)
             return;
@@ -192,7 +201,7 @@ public class PlayerInputHandler : MonoBehaviour
             switch (kind)
             {
                 case SelectableKind.Squad:
-                    HandleSquadRightClick(GetSelectedSquads(), hit);
+                    HandleSquadRightClick(GetSelectedSquads(), hit, queueCommand);
                     return;
 
                 case SelectableKind.Worker:
@@ -206,7 +215,10 @@ public class PlayerInputHandler : MonoBehaviour
         }
     }
 
-    void HandleSquadRightClick(List<SquadController> squads, RaycastHit hit)
+    void HandleSquadRightClick(
+        List<SquadController> squads,
+        RaycastHit hit,
+        bool queueCommand)
     {
         if (squads.Count == 0)
             return;
@@ -216,12 +228,12 @@ public class PlayerInputHandler : MonoBehaviour
         if (enemySquad != null)
         {
             foreach (SquadController squad in squads)
-                squad.OrderAttack(enemySquad);
+                squad.OrderAttack(enemySquad, queueCommand);
 
             return;
         }
 
-        MoveSquadsToPoint(squads, hit.point);
+        MoveSquadsToPoint(squads, hit.point, queueCommand);
     }
 
     void HandleWorkerRightClick(List<WorkerController> workers, RaycastHit hit)
@@ -236,7 +248,7 @@ public class PlayerInputHandler : MonoBehaviour
             building.SetRallyPoint(hit.point);
     }
 
-    void HandleSquadDragRightClick()
+    void HandleSquadDragRightClick(bool queueCommand)
     {
         FormationVisualizer.Instance?.HideAll();
 
@@ -278,7 +290,8 @@ public class PlayerInputHandler : MonoBehaviour
             orderedSquads[i].OrderMove(
                 destination + squadOffsets[i],
                 facing,
-                width);
+                width,
+                queueCommand);
         }
     }
 
@@ -330,7 +343,10 @@ public class PlayerInputHandler : MonoBehaviour
         FormationVisualizer.Instance?.ShowSlots(previewSlots, facing, true);
     }
 
-    void MoveSquadsToPoint(List<SquadController> squads, Vector3 point)
+    void MoveSquadsToPoint(
+        List<SquadController> squads,
+        Vector3 point,
+        bool queueCommand)
     {
         Vector3 groupFacing = ResolveFacingForSquads(squads, point);
 
@@ -345,7 +361,9 @@ public class PlayerInputHandler : MonoBehaviour
         {
             orderedSquads[i].OrderMove(
                 point + squadOffsets[i],
-                groupFacing);
+                groupFacing,
+                -1f,
+                queueCommand);
         }
     }
 
@@ -784,4 +802,3 @@ public class PlayerInputHandler : MonoBehaviour
     }
 
 }
-

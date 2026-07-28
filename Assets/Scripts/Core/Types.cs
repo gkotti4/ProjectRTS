@@ -1,4 +1,4 @@
-
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -15,15 +15,6 @@ public enum SelectableKind
     Resource
 }
 
-// public enum CommandContext
-// {
-//     Default,
-//     SquadSelected,
-//     WorkerSelected,
-//     BuildingSelected,
-//     ResourceSelected,
-//     
-// }
 
 // ============================================================
 // SQUADS / SOLDIERS
@@ -146,9 +137,9 @@ public enum SoldierRole
 {
     None,
     Frontline,
-    Support,
+    // Support,
     Reserve,
-    Replacing,
+    // Replacing,
     Ranged,
     Routing
 }
@@ -160,6 +151,19 @@ public enum SoldierActionState
     HitReact,
     Death
 }
+
+
+// ============================================================
+// EQUIPMENT
+// ============================================================
+// public enum EquipmentType
+// {
+//     None,
+//     Weapon,
+//     Armor
+// }
+
+
 
 // ============================================================
 // WORKERS
@@ -838,10 +842,7 @@ public enum WeaponEffectOperation
 }
 
 /// <summary>
-/// Determines which SquadData unit definitions are eligible for one upgrade or effect.
-/// Standard squads are homogeneous: SquadData is the gameplay unit, while its
-/// SoldierData defines the repeated individual body used by that unit.
-///
+/// Determines which SquadData unit types are eligible for one upgrade or effect.
 /// Empty normal-filter lists mean no restriction. Entries inside a populated list
 /// use OR; separate populated filter groups use AND. Explicit exclusion always wins,
 /// while explicit additional inclusion bypasses the normal classification filters.
@@ -862,12 +863,15 @@ public struct UpgradeTargetFilter
     [Tooltip("A target is rejected if it contains any selected excluded trait.")]
     public UnitTrait excludedTraits;
 
-    [Header("Exact Squad Overrides")]
-    [Tooltip("These SquadData unit types are included even when normal classification filters do not match.")]
+    [Header("Exact Additional Targets")]
+    [Tooltip("These SquadData assets are included even when normal classification filters do not match.")]
     public List<SquadData> additionallyIncludedSquads;
 
-    [Tooltip("These SquadData unit types never receive this effect. Exclusions always win.")]
+
+    [Header("Exact Exclusions")]
+    [Tooltip("These SquadData assets never receive this effect.")]
     public List<SquadData> excludedSquads;
+
 }
 
 [System.Serializable]
@@ -898,7 +902,10 @@ public struct WeaponReplacementEffect
     public UpgradeTargetFilter targetOverride;
     public UpgradeEntityApplicationMode applicationMode;
 
-    [Tooltip("Optional. When assigned, only soldiers currently resolving this weapon are changed.")]
+    [Tooltip("Which SoldierData weapon slot this replacement modifies.")]
+    public WeaponSlot weaponSlot;
+
+    [Tooltip("Optional. When assigned, only soldiers currently resolving this weapon in the selected slot are changed.")]
     public WeaponProfile requiredWeapon;
 
     public WeaponProfile replacementWeapon;
@@ -951,7 +958,6 @@ public struct SquadVisualReplacementEffect
 #endregion
 
 
-
 [System.Serializable]
 public struct FormationBounds
 {
@@ -973,5 +979,3 @@ public struct FormationBounds
             depth = 0f
         };
 }
-
-

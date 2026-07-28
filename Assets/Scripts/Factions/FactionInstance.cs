@@ -1,14 +1,16 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// Runtime faction state for one player/team in the match.
-/// This intentionally does not store EntityStats or apply upgrades directly to old entity components.
-/// New systems should ask this faction whether an upgrade is applied, then apply that upgrade through
-/// role-specific systems later: Squad/Soldier/Worker/Building.
+/// Owns faction-wide upgrade stacks and notifies matching runtime units when a new
+/// upgrade is applied.
 /// </summary>
 public class FactionInstance
 {
+    public event Action<FactionInstance, UpgradeData, UpgradeGrantSource, int> OnUpgradeApplied;
+
     public FactionData baseData;
     public int factionId => baseData != null ? baseData.factionId : -1;
 
@@ -19,10 +21,14 @@ public class FactionInstance
     public int currentPopulation = 0;
     public int populationCap = 10;
 
-    public readonly HashSet<UpgradeData> appliedUpgrades = new HashSet<UpgradeData>();
+    private readonly Dictionary<UpgradeData, int> appliedUpgradeStacks =
+        new Dictionary<UpgradeData, int>();
+
+    public IReadOnlyDictionary<UpgradeData, int> AppliedUpgradeStacks =>
+        appliedUpgradeStacks;
 
     public bool isEliminated = false;
-    
+
     public TeamVisualSettings Visuals =>
         baseData != null ? baseData.visuals : TeamVisualSettings.Default;
 
@@ -38,7 +44,7 @@ public class FactionInstance
         this.isPlayerControlled = isPlayerControlled;
         this.populationCap = Mathf.Max(0, populationCap);
 
-        foreach (ResourceType type in System.Enum.GetValues(typeof(ResourceType)))
+        foreach (ResourceType type in Enum.GetValues(typeof(ResourceType)))
             resources[type] = Mathf.Max(0, startingResources);
     }
 
@@ -117,20 +123,95 @@ public class FactionInstance
         GameEvents.PopulationChanged(this);
     }
 
-    public bool IsUpgradeApplied(UpgradeData upgradeData)
-    {
-        return upgradeData != null && appliedUpgrades.Contains(upgradeData);
-    }
-
-    public void RegisterUpgrade(UpgradeData upgradeData)
+    public int GetUpgradeStackCount(UpgradeData upgradeData)
     {
         if (upgradeData == null)
-            return;
+            return 0;
 
-        if (!appliedUpgrades.Add(upgradeData))
+        return appliedUpgradeStacks.TryGetValue(upgradeData, out int stackCount)
+            ? Mathf.Max(0, stackCount)
+            : 0;
+    }
+
+    public bool IsUpgradeApplied(UpgradeData upgradeData)
+    {
+        return GetUpgradeStackCount(upgradeData) > 0;
+    }
+
+    public bool CanApplyUpgrade(UpgradeData upgradeData)
+    {
+        if (upgradeData == null)
+            return false;
+
+        if (upgradeData.scope != UpgradeScope.Faction)
+            return false;
+
+        int currentStacks = GetUpgradeStackCount(upgradeData);
+        int maximumStacks = upgradeData.repeatable
+            ? Mathf.Max(1, upgradeData.maximumStacks)
+            : 1;
+
+        if (currentStacks >= maximumStacks)
+            return false;
+
+        if (upgradeData.requiredUpgrades != null)
+        {
+            for (int index = 0; index < upgradeData.requiredUpgrades.Count; index++)
+            {
+                UpgradeData requiredUpgrade = upgradeData.requiredUpgrades[index];
+
+                if (requiredUpgrade != null && !IsUpgradeApplied(requiredUpgrade))
+                    return false;
+            }
+        }
+
+        if (upgradeData.blockedByUpgrades != null)
+        {
+            for (int index = 0; index < upgradeData.blockedByUpgrades.Count; index++)
+            {
+                UpgradeData blockedUpgrade = upgradeData.blockedByUpgrades[index];
+
+                if (blockedUpgrade != null && IsUpgradeApplied(blockedUpgrade))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    public bool TryApplyUpgrade(
+        UpgradeData upgradeData,
+        UpgradeGrantSource grantSource)
+    {
+        if (!CanApplyUpgrade(upgradeData))
+            return false;
+
+        int newStackCount = GetUpgradeStackCount(upgradeData) + 1;
+        appliedUpgradeStacks[upgradeData] = newStackCount;
+
+        OnUpgradeApplied?.Invoke(
+            this,
+            upgradeData,
+            grantSource,
+            newStackCount);
+
+        GameEvents.FactionUpgradeApplied(
+            this,
+            upgradeData,
+            grantSource,
+            newStackCount);
+
+        return true;
+    }
+
+    // Compatibility wrapper for older callers.
+    public void RegisterUpgrade(UpgradeData upgradeData)
+    {
+        if (!TryApplyUpgrade(upgradeData, UpgradeGrantSource.Debug))
         {
             string factionName = baseData != null ? baseData.name : "Unknown Faction";
-            Debug.LogWarning($"Upgrade already applied: {upgradeData.name} in {factionName}.");
+            Debug.LogWarning(
+                $"Could not apply upgrade {upgradeData?.name ?? "null"} to {factionName}.");
         }
     }
 

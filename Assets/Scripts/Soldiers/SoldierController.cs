@@ -45,6 +45,40 @@ public class SoldierController : MonoBehaviour
     public SoldierMotor Motor { get; private set; }
     public SoldierAnimator SoldierAnimator { get; private set; }
     public SoldierSelectionVisualUI SelectionVisual { get; private set; }
+    public SoldierEquipmentController Equipment { get; private set; }
+
+    public WeaponProfile MeleeWeaponProfile =>
+        Stats != null
+            ? Stats.meleeWeaponProfile
+            : Data != null
+                ? Data.meleeWeaponProfile
+                : null;
+
+    public WeaponProfile RangedWeaponProfile =>
+        Stats != null
+            ? Stats.rangedWeaponProfile
+            : Data != null
+                ? Data.rangedWeaponProfile
+                : null;
+
+    public WeaponProfile ActiveWeaponProfile { get; private set; }
+    public bool IsUsingMeleeWeapon =>
+        ActiveWeaponProfile != null && ActiveWeaponProfile == MeleeWeaponProfile;
+    public bool IsUsingRangedWeapon =>
+        ActiveWeaponProfile != null && ActiveWeaponProfile == RangedWeaponProfile;
+    public bool HasMeleeWeapon => MeleeWeaponProfile != null;
+    public bool HasRangedWeapon => RangedWeaponProfile != null;
+
+    public int CurrentRangedAmmunition { get; private set; } = 0;
+    public int MaximumRangedAmmunition =>
+        Stats != null ? Stats.ranged.ammunition : 0;
+
+    public bool HasUnlimitedRangedAmmunition =>
+        MaximumRangedAmmunition < 0;
+
+    public bool HasRangedAmmunition =>
+        HasRangedWeapon &&
+        (HasUnlimitedRangedAmmunition || CurrentRangedAmmunition > 0);
     
     // -----------------------------------------------------------------------------
     // Prefab / Socket References
@@ -100,6 +134,7 @@ public class SoldierController : MonoBehaviour
         Combat = GetComponent<SoldierCombat>();
         ContactSensor = GetComponent<SoldierContactSensor>();
         SelectionVisual = GetComponentInChildren<SoldierSelectionVisualUI>();
+        Equipment = GetComponent<SoldierEquipmentController>();
 
         SetSelectionVisual(false);
         SetHoverVisual(false);
@@ -149,7 +184,9 @@ public class SoldierController : MonoBehaviour
         Roster = roster;
         Faction = faction;
 
-        RefreshRuntimeStats(preserveHealthPercent: false);
+        RefreshRuntimeStats(
+            preserveHealthPercent: false,
+            preserveRangedAmmunition: false);
 
         if (Stats != null)
         {
@@ -193,15 +230,20 @@ public class SoldierController : MonoBehaviour
         if (SelectionVisual == null)
             Debug.LogWarning($"{name}: Soldier Initialize validation warning. SelectionVisual is null.", this);
 
-        if (Data != null && Data.weaponProfile == null)
-            Debug.LogWarning($"{name}: SoldierData has no WeaponProfile. WeaponProfile is required because it is the combat attack-stat source of truth.", this);
+        if (Data != null &&
+            Data.meleeWeaponProfile == null &&
+            Data.rangedWeaponProfile == null)
+        {
+            Debug.LogWarning(
+                $"{name}: SoldierData has no melee or ranged weapon assigned. This soldier cannot attack.",
+                this);
+        }
 
         if (Data != null && Data.prefab == null)
             Debug.LogWarning($"{name}: SoldierData has no prefab assigned. This is okay only if this SoldierData is not used for spawning.", this);
 
         if (Data != null &&
-            Data.weaponProfile != null &&
-            Data.weaponProfile.weaponKind == WeaponKind.Ranged &&
+            Data.rangedWeaponProfile != null &&
             attackOrigin == null)
         {
             Debug.LogWarning(
@@ -211,13 +253,18 @@ public class SoldierController : MonoBehaviour
     }
 
 
-    public void RefreshRuntimeStats(bool preserveHealthPercent = true)
+    public void RefreshRuntimeStats(
+        bool preserveHealthPercent = true,
+        bool preserveRangedAmmunition = true)
     {
+        int previousMaximumRangedAmmunition = MaximumRangedAmmunition;
+        int previousCurrentRangedAmmunition = CurrentRangedAmmunition;
+
         Stats = RuntimeStatResolver.ResolveSoldier(
             Data,
             Squad != null ? Squad.Data : null,
             Faction,
-            Squad != null ? Squad.AppliedUpgrades : null);
+            Squad != null ? Squad.AppliedUpgradeStacks : null);
 
         if (Stats == null)
             return;
@@ -226,6 +273,138 @@ public class SoldierController : MonoBehaviour
             Health.ApplyStats(Stats.health, Stats.defense.armor, preserveHealthPercent);
 
         Motor?.ApplyStats(Stats.movement, Stats.body);
+
+        RefreshRangedAmmunition(
+            previousMaximumRangedAmmunition,
+            previousCurrentRangedAmmunition,
+            preserveRangedAmmunition);
+
+        WeaponProfile previousActiveWeapon = ActiveWeaponProfile;
+        ActiveWeaponProfile = ResolveRefreshedActiveWeapon(previousActiveWeapon);
+        ApplyActiveWeaponPresentation();
+    }
+
+
+    void RefreshRangedAmmunition(
+        int previousMaximumAmmunition,
+        int previousCurrentAmmunition,
+        bool preserveRangedAmmunition)
+    {
+        int resolvedMaximumAmmunition = MaximumRangedAmmunition;
+
+        if (!HasRangedWeapon)
+        {
+            CurrentRangedAmmunition = 0;
+            return;
+        }
+
+        if (resolvedMaximumAmmunition < 0)
+        {
+            CurrentRangedAmmunition = -1;
+            return;
+        }
+
+        if (!preserveRangedAmmunition || previousMaximumAmmunition < 0)
+        {
+            CurrentRangedAmmunition = Mathf.Max(0, resolvedMaximumAmmunition);
+            return;
+        }
+
+        CurrentRangedAmmunition = Mathf.Clamp(
+            previousCurrentAmmunition,
+            0,
+            Mathf.Max(0, resolvedMaximumAmmunition));
+    }
+
+    public bool TryConsumeRangedAmmunition(int amount = 1)
+    {
+        amount = Mathf.Max(0, amount);
+
+        if (!HasRangedAmmunition)
+            return false;
+
+        if (HasUnlimitedRangedAmmunition || amount == 0)
+            return true;
+
+        if (CurrentRangedAmmunition < amount)
+            return false;
+
+        CurrentRangedAmmunition -= amount;
+        return true;
+    }
+
+    public bool SetActiveWeaponProfile(WeaponProfile weaponProfile)
+    {
+        if (weaponProfile != null &&
+            weaponProfile != MeleeWeaponProfile &&
+            weaponProfile != RangedWeaponProfile)
+        {
+            return false;
+        }
+
+        if (ActiveWeaponProfile == weaponProfile)
+            return false;
+
+        ActiveWeaponProfile = weaponProfile;
+        ApplyActiveWeaponPresentation();
+        return true;
+    }
+
+    public bool UseMeleeWeapon()
+    {
+        if (MeleeWeaponProfile == null)
+            return false;
+
+        return SetActiveWeaponProfile(MeleeWeaponProfile);
+    }
+
+    public bool UseRangedWeapon()
+    {
+        if (RangedWeaponProfile == null)
+            return false;
+
+        return SetActiveWeaponProfile(RangedWeaponProfile);
+    }
+
+    public bool UseDefaultWeapon()
+    {
+        return SetActiveWeaponProfile(ResolveDefaultWeapon());
+    }
+
+    WeaponProfile ResolveRefreshedActiveWeapon(WeaponProfile previousActiveWeapon)
+    {
+        if (previousActiveWeapon != null)
+        {
+            if (previousActiveWeapon == MeleeWeaponProfile)
+                return MeleeWeaponProfile;
+
+            if (previousActiveWeapon == RangedWeaponProfile)
+                return RangedWeaponProfile;
+        }
+
+        return ResolveDefaultWeapon();
+    }
+
+    WeaponProfile ResolveDefaultWeapon()
+    {
+        return RangedWeaponProfile != null
+            ? RangedWeaponProfile
+            : MeleeWeaponProfile;
+    }
+
+    void ApplyActiveWeaponPresentation()
+    {
+        WeaponProfile activeWeapon = ActiveWeaponProfile != null
+            ? ActiveWeaponProfile
+            : ResolveDefaultWeapon();
+
+        SoldierAnimator?.ApplyResolvedAnimationProfiles(
+            Data != null ? Data.animationProfile : null,
+            activeWeapon != null ? activeWeapon.animationProfile : null);
+
+        Equipment?.ApplyResolvedEquipment(
+            activeWeapon,
+            Stats != null ? Stats.armorProfile : Data != null ? Data.armorProfile : null);
     }
 
     public void SetSquad(
@@ -597,10 +776,3 @@ public class SoldierController : MonoBehaviour
     #endregion
 
 }
-
-
-
-
-
-
-

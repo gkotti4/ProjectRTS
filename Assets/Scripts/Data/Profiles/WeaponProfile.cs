@@ -1,6 +1,13 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public enum WeaponKind
+{
+    Melee,
+    Ranged
+}
+
+public enum WeaponSlot
 {
     Melee,
     Ranged
@@ -20,6 +27,18 @@ public class WeaponProfile : ScriptableObject
 
     [Header("Ranged Stats")]
     public RangedCombatStats ranged = RangedCombatStats.Default;
+
+    [Header("Runtime Effects")]
+    [Tooltip("Effects this weapon has before upgrades add or remove effects.")]
+    public List<WeaponEffectData> baseWeaponEffects = new List<WeaponEffectData>();
+
+    [Header("Animation")]
+    [Tooltip("Optional weapon-owned idle/attack/upper-body animation package.")]
+    public WeaponAnimationProfile animationProfile;
+
+    [Header("Presentation")]
+    [Tooltip("Optional child visual spawned by SoldierEquipmentController when this weapon is resolved.")]
+    public GameObject weaponVisualPrefab;
 
     void OnValidate()
     {

@@ -9,8 +9,10 @@ public sealed class SoldierRuntimeStats
     public CombatDefenseStats defense;
     public MeleeCombatStats melee;
     public RangedCombatStats ranged;
-    public WeaponProfile weaponProfile;
+    public WeaponProfile meleeWeaponProfile;
+    public WeaponProfile rangedWeaponProfile;
     public ArmorProfile armorProfile;
+    public readonly List<WeaponEffectData> weaponEffects = new List<WeaponEffectData>();
 }
 
 public sealed class SquadRuntimeStats
@@ -25,9 +27,45 @@ public static class RuntimeStatResolver
     public static SquadRuntimeStats ResolveSquad(
         SquadData data,
         FactionInstance faction,
-        IReadOnlyList<UpgradeData> squadUpgrades = null)
+        IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null)
+    {
+        SquadRuntimeStats result = BuildBaseSquadStats(data);
+
+        ApplySquadUpgradeCollection(result, data, faction?.AppliedUpgradeStacks);
+        ApplySquadUpgradeCollection(result, data, squadUpgradeStacks);
+
+        ClampSquad(result);
+        return result;
+    }
+
+    public static SoldierRuntimeStats ResolveSoldier(
+        SoldierData data,
+        SquadData squadData,
+        FactionInstance faction,
+        IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null)
+    {
+        SoldierRuntimeStats result = BuildBaseSoldierStats(data);
+
+        // Equipment is resolved before equipment-provided stats and normal stat modifiers.
+        ApplyEquipmentReplacementCollection(result, squadData, faction?.AppliedUpgradeStacks);
+        ApplyEquipmentReplacementCollection(result, squadData, squadUpgradeStacks);
+
+        ApplyResolvedEquipmentStats(result);
+
+        ApplyWeaponEffectCollection(result, squadData, faction?.AppliedUpgradeStacks);
+        ApplyWeaponEffectCollection(result, squadData, squadUpgradeStacks);
+
+        ApplySoldierUpgradeCollection(result, squadData, faction?.AppliedUpgradeStacks);
+        ApplySoldierUpgradeCollection(result, squadData, squadUpgradeStacks);
+
+        ClampSoldier(result);
+        return result;
+    }
+
+    static SquadRuntimeStats BuildBaseSquadStats(SquadData data)
     {
         SquadRuntimeStats result = new SquadRuntimeStats();
+
         if (data == null)
         {
             result.capacity = SquadCapacityStats.Default;
@@ -45,6 +83,7 @@ public static class RuntimeStatResolver
             officerSlots = Mathf.Max(0, data.officerSlots),
             specialistSlots = Mathf.Max(0, data.specialistSlots)
         };
+
         result.formation = new FormationStats
         {
             defaultFormation = data.defaultFormation,
@@ -55,71 +94,263 @@ public static class RuntimeStatResolver
             reformSpeedMultiplier = Mathf.Max(0f, data.reformSpeedMultiplier),
             cohesionDistanceMultiplier = Mathf.Max(0f, data.cohesionDistanceMultiplier)
         };
+
         result.morale = data.morale;
-
-        ApplyFactionSquadUpgrades(result, data, faction);
-        if (squadUpgrades != null)
-            for (int i = 0; i < squadUpgrades.Count; i++)
-                if (squadUpgrades[i] != null) ApplySquadModifier(result, squadUpgrades[i].squadModifiers);
-
-        ClampSquad(result);
         return result;
     }
 
-    public static SoldierRuntimeStats ResolveSoldier(
-        SoldierData data,
-        SquadData squadData,
-        FactionInstance faction,
-        IReadOnlyList<UpgradeData> squadUpgrades = null)
+    static SoldierRuntimeStats BuildBaseSoldierStats(SoldierData data)
     {
-        SoldierRuntimeStats result = new SoldierRuntimeStats
+        return new SoldierRuntimeStats
         {
             health = data != null ? data.health : HealthStats.Default,
             movement = data != null ? data.movement : MovementStats.Default,
             body = data != null ? data.body : BodyStats.Default,
             defense = data != null ? data.defense : CombatDefenseStats.Default,
-            weaponProfile = data != null ? data.weaponProfile : null,
+            meleeWeaponProfile = data != null ? data.meleeWeaponProfile : null,
+            rangedWeaponProfile = data != null ? data.rangedWeaponProfile : null,
             armorProfile = data != null ? data.armorProfile : null,
-            melee = data != null && data.weaponProfile != null ? data.weaponProfile.melee : MeleeCombatStats.Default,
-            ranged = data != null && data.weaponProfile != null ? data.weaponProfile.ranged : RangedCombatStats.Default
+            melee = MeleeCombatStats.Default,
+            ranged = RangedCombatStats.Default
         };
+    }
 
-        // if (result.defense.armor <= 0 && result.health.legacyArmor > 0)
-        //     result.defense.armor = result.health.legacyArmor;
+    static void ApplyResolvedEquipmentStats(SoldierRuntimeStats result)
+    {
+        ApplyResolvedWeaponStats(result, result.meleeWeaponProfile, WeaponSlot.Melee);
+        ApplyResolvedWeaponStats(result, result.rangedWeaponProfile, WeaponSlot.Ranged);
 
         if (result.armorProfile != null)
             ApplyArmor(result, result.armorProfile.stats);
-
-        ApplyFactionSoldierUpgrades(result, squadData, faction);
-        if (squadUpgrades != null)
-            for (int i = 0; i < squadUpgrades.Count; i++)
-                if (squadUpgrades[i] != null) ApplySoldierModifier(result, squadUpgrades[i].soldierModifiers);
-
-        ClampSoldier(result);
-        return result;
     }
 
-    static void ApplyFactionSquadUpgrades(SquadRuntimeStats result, SquadData data, FactionInstance faction)
+    static void ApplyResolvedWeaponStats(
+        SoldierRuntimeStats result,
+        WeaponProfile weaponProfile,
+        WeaponSlot weaponSlot)
     {
-        if (faction == null) return;
-        foreach (UpgradeData upgrade in faction.appliedUpgrades)
-            if (AffectsSquad(upgrade, data)) ApplySquadModifier(result, upgrade.squadModifiers);
+        if (weaponProfile == null)
+            return;
+
+        if (weaponSlot == WeaponSlot.Melee)
+            result.melee = weaponProfile.melee;
+        else
+            result.ranged = weaponProfile.ranged;
+
+        if (weaponProfile.baseWeaponEffects == null)
+            return;
+
+        for (int index = 0; index < weaponProfile.baseWeaponEffects.Count; index++)
+            AddWeaponEffect(result, weaponProfile.baseWeaponEffects[index]);
     }
 
-    static void ApplyFactionSoldierUpgrades(SoldierRuntimeStats result, SquadData data, FactionInstance faction)
+    static void ApplyEquipmentReplacementCollection(
+        SoldierRuntimeStats result,
+        SquadData squadData,
+        IReadOnlyDictionary<UpgradeData, int> upgradeStacks)
     {
-        if (faction == null) return;
-        foreach (UpgradeData upgrade in faction.appliedUpgrades)
-            if (AffectsSquad(upgrade, data)) ApplySoldierModifier(result, upgrade.soldierModifiers);
+        if (result == null || squadData == null || upgradeStacks == null)
+            return;
+
+        foreach (KeyValuePair<UpgradeData, int> pair in upgradeStacks)
+        {
+            UpgradeData upgrade = pair.Key;
+            int stackCount = Mathf.Max(0, pair.Value);
+
+            if (upgrade == null || stackCount <= 0)
+                continue;
+
+            for (int stackIndex = 0; stackIndex < stackCount; stackIndex++)
+            {
+                ApplyWeaponReplacements(result, squadData, upgrade);
+                ApplyArmorReplacements(result, squadData, upgrade);
+            }
+        }
     }
 
-    static bool AffectsSquad(UpgradeData upgrade, SquadData data)
+    static void ApplyWeaponReplacements(
+        SoldierRuntimeStats result,
+        SquadData squadData,
+        UpgradeData upgrade)
     {
-        if (upgrade == null || data == null) return false;
-        if (upgrade.affectedSquadCategories == null || upgrade.affectedSquadCategories.Length == 0) return true;
-        for (int i = 0; i < upgrade.affectedSquadCategories.Length; i++)
-            if (upgrade.affectedSquadCategories[i] == data.category) return true;
-        return false;
+        if (upgrade.weaponReplacementEffects == null)
+            return;
+
+        for (int index = 0; index < upgrade.weaponReplacementEffects.Count; index++)
+        {
+            WeaponReplacementEffect effect = upgrade.weaponReplacementEffects[index];
+            UpgradeTargetFilter target = effect.overrideDefaultTarget
+                ? effect.targetOverride
+                : upgrade.defaultTarget;
+
+            if (!UpgradeTargetMatcher.MatchesSquad(target, squadData))
+                continue;
+
+            if (effect.replacementWeapon == null)
+                continue;
+
+            WeaponProfile currentWeapon = effect.weaponSlot == WeaponSlot.Ranged
+                ? result.rangedWeaponProfile
+                : result.meleeWeaponProfile;
+
+            if (effect.requiredWeapon != null && currentWeapon != effect.requiredWeapon)
+                continue;
+
+            if (effect.weaponSlot == WeaponSlot.Ranged)
+                result.rangedWeaponProfile = effect.replacementWeapon;
+            else
+                result.meleeWeaponProfile = effect.replacementWeapon;
+        }
+    }
+
+    static void ApplyArmorReplacements(
+        SoldierRuntimeStats result,
+        SquadData squadData,
+        UpgradeData upgrade)
+    {
+        if (upgrade.armorReplacementEffects == null)
+            return;
+
+        for (int index = 0; index < upgrade.armorReplacementEffects.Count; index++)
+        {
+            ArmorReplacementEffect effect = upgrade.armorReplacementEffects[index];
+            UpgradeTargetFilter target = effect.overrideDefaultTarget
+                ? effect.targetOverride
+                : upgrade.defaultTarget;
+
+            if (!UpgradeTargetMatcher.MatchesSquad(target, squadData))
+                continue;
+
+            if (effect.replacementArmor == null)
+                continue;
+
+            if (effect.requiredArmor != null && result.armorProfile != effect.requiredArmor)
+                continue;
+
+            result.armorProfile = effect.replacementArmor;
+        }
+    }
+
+    static void ApplyWeaponEffectCollection(
+        SoldierRuntimeStats result,
+        SquadData squadData,
+        IReadOnlyDictionary<UpgradeData, int> upgradeStacks)
+    {
+        if (result == null || squadData == null || upgradeStacks == null)
+            return;
+
+        foreach (KeyValuePair<UpgradeData, int> pair in upgradeStacks)
+        {
+            UpgradeData upgrade = pair.Key;
+            int stackCount = Mathf.Max(0, pair.Value);
+
+            if (upgrade == null || stackCount <= 0 || upgrade.weaponEffectEffects == null)
+                continue;
+
+            for (int stackIndex = 0; stackIndex < stackCount; stackIndex++)
+            {
+                for (int effectIndex = 0; effectIndex < upgrade.weaponEffectEffects.Count; effectIndex++)
+                {
+                    WeaponEffectUpgradeEffect effect = upgrade.weaponEffectEffects[effectIndex];
+                    UpgradeTargetFilter target = effect.overrideDefaultTarget
+                        ? effect.targetOverride
+                        : upgrade.defaultTarget;
+
+                    if (!UpgradeTargetMatcher.MatchesSquad(target, squadData))
+                        continue;
+
+                    if (effect.weaponEffect == null)
+                        continue;
+
+                    if (effect.requiredWeapon != null &&
+                        result.meleeWeaponProfile != effect.requiredWeapon &&
+                        result.rangedWeaponProfile != effect.requiredWeapon)
+                    {
+                        continue;
+                    }
+
+                    if (effect.operation == WeaponEffectOperation.Remove)
+                        result.weaponEffects.Remove(effect.weaponEffect);
+                    else
+                        AddWeaponEffect(result, effect.weaponEffect);
+                }
+            }
+        }
+    }
+
+    static void AddWeaponEffect(
+        SoldierRuntimeStats result,
+        WeaponEffectData weaponEffect)
+    {
+        if (result == null || weaponEffect == null)
+            return;
+
+        if (!result.weaponEffects.Contains(weaponEffect))
+            result.weaponEffects.Add(weaponEffect);
+    }
+
+    static void ApplySquadUpgradeCollection(
+        SquadRuntimeStats result,
+        SquadData squadData,
+        IReadOnlyDictionary<UpgradeData, int> upgradeStacks)
+    {
+        if (result == null || squadData == null || upgradeStacks == null)
+            return;
+
+        foreach (KeyValuePair<UpgradeData, int> pair in upgradeStacks)
+        {
+            UpgradeData upgrade = pair.Key;
+            int stackCount = Mathf.Max(0, pair.Value);
+
+            if (upgrade == null || stackCount <= 0 || upgrade.squadStatEffects == null)
+                continue;
+
+            for (int effectIndex = 0; effectIndex < upgrade.squadStatEffects.Count; effectIndex++)
+            {
+                TargetedSquadStatModifier effect = upgrade.squadStatEffects[effectIndex];
+                UpgradeTargetFilter target = effect.overrideDefaultTarget
+                    ? effect.targetOverride
+                    : upgrade.defaultTarget;
+
+                if (!UpgradeTargetMatcher.MatchesSquad(target, squadData))
+                    continue;
+
+                for (int stackIndex = 0; stackIndex < stackCount; stackIndex++)
+                    ApplySquadModifier(result, effect.modifiers);
+            }
+        }
+    }
+
+    static void ApplySoldierUpgradeCollection(
+        SoldierRuntimeStats result,
+        SquadData squadData,
+        IReadOnlyDictionary<UpgradeData, int> upgradeStacks)
+    {
+        if (result == null || squadData == null || upgradeStacks == null)
+            return;
+
+        foreach (KeyValuePair<UpgradeData, int> pair in upgradeStacks)
+        {
+            UpgradeData upgrade = pair.Key;
+            int stackCount = Mathf.Max(0, pair.Value);
+
+            if (upgrade == null || stackCount <= 0 || upgrade.soldierStatEffects == null)
+                continue;
+
+            for (int effectIndex = 0; effectIndex < upgrade.soldierStatEffects.Count; effectIndex++)
+            {
+                TargetedSoldierStatModifier effect = upgrade.soldierStatEffects[effectIndex];
+                UpgradeTargetFilter target = effect.overrideDefaultTarget
+                    ? effect.targetOverride
+                    : upgrade.defaultTarget;
+
+                if (!UpgradeTargetMatcher.MatchesSquad(target, squadData))
+                    continue;
+
+                for (int stackIndex = 0; stackIndex < stackCount; stackIndex++)
+                    ApplySoldierModifier(result, effect.modifiers);
+            }
+        }
     }
 
     static void ApplyArmor(SoldierRuntimeStats s, ArmorStats a)

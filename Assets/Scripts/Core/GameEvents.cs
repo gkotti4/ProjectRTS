@@ -13,6 +13,9 @@ public static class GameEvents
     
     // Production
     public static event Action<BuildingController> OnProductionQueueChanged;
+    
+    // Upgrades
+    public static event Action<FactionInstance, UpgradeData, UpgradeGrantSource, int> OnFactionUpgradeApplied;
 
     // Combat / Death
     public static event Action<GameObject> OnEntityDied;
@@ -37,6 +40,13 @@ public static class GameEvents
     
     public static void ResourcesChanged(FactionInstance fi) => OnResourcesChanged?.Invoke(fi);
     public static void PopulationChanged(FactionInstance fi) => OnPopulationChanged?.Invoke(fi);
+
+    public static void FactionUpgradeApplied(
+        FactionInstance faction,
+        UpgradeData upgrade,
+        UpgradeGrantSource source,
+        int stackCount) =>
+        OnFactionUpgradeApplied?.Invoke(faction, upgrade, source, stackCount);
 }
 
 
