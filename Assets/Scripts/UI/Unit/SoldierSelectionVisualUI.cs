@@ -6,11 +6,19 @@ public class SoldierSelectionVisualUI : MonoBehaviour
     [Header("Visual Roots")]
     [SerializeField] private GameObject selectionRoot;
     [SerializeField] private GameObject hoverRoot;
+    [SerializeField] private Outline outlineComponent;
 
     void Awake()
     {
+        if (outlineComponent != null)
+        {
+            outlineComponent.OutlineMode = Outline.Mode.OutlineVisible;
+            outlineComponent.enabled = false;
+        }    
+        
         SetSelected(false);
         SetHovered(false);
+        
     }
 
     public void ApplyColors(
@@ -21,18 +29,28 @@ public class SoldierSelectionVisualUI : MonoBehaviour
 
         if (hoverRoot != selectionRoot)
             ApplyColorToRoot(hoverRoot, hoverColor);
+        
+        // NEW Outline color
+        ApplyColorToOutline(selectionColor);
     }
 
     public void SetSelected(bool selected)
     {
         if (selectionRoot != null)
             selectionRoot.SetActive(selected);
+        
+        if (outlineComponent != null)
+        {
+            Debug.Log("outlineComponent.enabled = " + selected);
+            outlineComponent.enabled = selected;
+        }
     }
 
     public void SetHovered(bool hovered)
     {
         if (hoverRoot != null)
             hoverRoot.SetActive(hovered);
+        
     }
 
     void ApplyColorToRoot(GameObject root, Color color)
@@ -51,5 +69,13 @@ public class SoldierSelectionVisualUI : MonoBehaviour
 
         foreach (Image image in images)
             image.color = color;
+    }
+
+    void ApplyColorToOutline(Color color, float width = 2f)
+    {
+        if (!outlineComponent) return;
+        
+        outlineComponent.OutlineColor = color;
+        outlineComponent.OutlineWidth = width;
     }
 }
