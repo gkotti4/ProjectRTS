@@ -1881,6 +1881,12 @@ public class SquadCombat : MonoBehaviour
         if (attacker == null || target == null)
             return;
 
+        // Empty soldiers may remain in the squad's ranged posture while squadmates
+        // still have ammunition, but they must not play attack animations or create
+        // pending projectile releases.
+        if (isRangedWeapon && !attacker.HasRangedAmmunition)
+            return;
+
         bool beganAttack =
             attacker.TryBeginAction(SoldierActionState.Attack);
 
@@ -3008,8 +3014,40 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
+        float rangedMinimumRange = soldier.Stats != null
+            ? soldier.Stats.ranged.minimumRange
+            : rangedWeapon.ranged.minimumRange;
+
+        float forcedMeleeEnterDistance = Mathf.Max(
+            rangedMinimumRange,
+            squadCombatProfile.formationRangedMeleeFallbackEnterDistance);
+
+        float rangedResumeDistance = Mathf.Max(
+            forcedMeleeEnterDistance,
+            squadCombatProfile.formationRangedMeleeFallbackExitDistance);
+
         if (!soldier.HasRangedAmmunition)
         {
+            bool isPersonallyForcedIntoMelee =
+                meleeWeapon != null &&
+                squadCombatProfile.formationRangedMeleeFallbackEnabled &&
+                distanceToTarget <= forcedMeleeEnterDistance;
+
+            if (isPersonallyForcedIntoMelee)
+            {
+                soldier.UseMeleeWeapon();
+                return;
+            }
+
+            // Individual ammunition does not break squad behavior. An empty soldier
+            // remains with the ranged formation while any living squadmate can still
+            // shoot, but cannot begin another ranged attack.
+            if (HasLivingRangedAmmunition())
+            {
+                soldier.UseRangedWeapon();
+                return;
+            }
+
             if (meleeWeapon != null)
                 soldier.UseMeleeWeapon();
             else
@@ -3024,18 +3062,6 @@ public class SquadCombat : MonoBehaviour
             soldier.UseRangedWeapon();
             return;
         }
-
-        float rangedMinimumRange = soldier.Stats != null
-            ? soldier.Stats.ranged.minimumRange
-            : rangedWeapon.ranged.minimumRange;
-
-        float forcedMeleeEnterDistance = Mathf.Max(
-            rangedMinimumRange,
-            squadCombatProfile.formationRangedMeleeFallbackEnterDistance);
-
-        float rangedResumeDistance = Mathf.Max(
-            forcedMeleeEnterDistance,
-            squadCombatProfile.formationRangedMeleeFallbackExitDistance);
 
         if (soldier.IsUsingMeleeWeapon)
         {
@@ -3052,6 +3078,26 @@ public class SquadCombat : MonoBehaviour
         }
 
         soldier.UseRangedWeapon();
+    }
+
+    bool HasLivingRangedAmmunition()
+    {
+        if (roster == null)
+            return false;
+
+        foreach (SoldierController squadMember in roster.Soldiers)
+        {
+            if (squadMember == null || !squadMember.IsAlive)
+                continue;
+
+            if (squadMember.HasRangedWeapon &&
+                squadMember.HasRangedAmmunition)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     WeaponProfile GetWeaponProfile(SoldierController soldier)
