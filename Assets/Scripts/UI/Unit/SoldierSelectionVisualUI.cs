@@ -41,7 +41,7 @@ public class SoldierSelectionVisualUI : MonoBehaviour
         
         if (outlineComponent != null)
         {
-            Debug.Log("outlineComponent.enabled = " + selected);
+            // Debug.Log("outlineComponent.enabled = " + selected);
             outlineComponent.enabled = selected;
         }
     }

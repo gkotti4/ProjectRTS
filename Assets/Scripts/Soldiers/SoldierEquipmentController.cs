@@ -16,25 +16,25 @@ public class SoldierEquipmentController : MonoBehaviour
 {
     [Header("Weapon Presentation")]
     [SerializeField] private Transform weaponSocket;
-    [SerializeField] private bool clearExistingSocketChildrenOnFirstApply = false;
+    // [SerializeField] private bool clearExistingSocketChildrenOnFirstApply = false;
 
     private WeaponProfile currentWeaponProfile;
     private ArmorProfile currentArmorProfile;
-    private GameObject runtimeWeaponVisual;
+    private GameObject runtimeWeaponPrefab;
     private bool hasAppliedEquipment;
 
     public WeaponProfile CurrentWeaponProfile => currentWeaponProfile;
     public ArmorProfile CurrentArmorProfile => currentArmorProfile;
-    public GameObject RuntimeWeaponVisual => runtimeWeaponVisual;
+    public GameObject RuntimeWeaponPrefab => runtimeWeaponPrefab;
 
     public void ApplyResolvedEquipment(
         WeaponProfile weaponProfile,
         ArmorProfile armorProfile)
     {
-        if (!hasAppliedEquipment && clearExistingSocketChildrenOnFirstApply)
-            ClearWeaponSocketChildren();
-
-        hasAppliedEquipment = true;
+        // Clear previous weapon from socket
+        // if (!hasAppliedEquipment && clearExistingSocketChildrenOnFirstApply)
+        ClearWeaponSocketChildren();
+        // hasAppliedEquipment = true;
 
         if (currentWeaponProfile != weaponProfile)
             ApplyWeaponProfile(weaponProfile);
@@ -46,26 +46,23 @@ public class SoldierEquipmentController : MonoBehaviour
     {
         currentWeaponProfile = weaponProfile;
 
-        if (runtimeWeaponVisual != null)
+        if (runtimeWeaponPrefab != null)
         {
-            Destroy(runtimeWeaponVisual);
-            runtimeWeaponVisual = null;
+            Destroy(runtimeWeaponPrefab);
+            runtimeWeaponPrefab = null;
         }
 
         if (weaponProfile == null ||
-            weaponProfile.weaponVisualPrefab == null ||
-            weaponSocket == null)
-        {
-            return;
-        }
+            weaponProfile.weaponPrefab == null ||
+            weaponSocket == null) return;
 
-        runtimeWeaponVisual = Instantiate(
-            weaponProfile.weaponVisualPrefab,
+        runtimeWeaponPrefab = Instantiate(
+            weaponProfile.weaponPrefab,
             weaponSocket);
 
-        runtimeWeaponVisual.transform.localPosition = Vector3.zero;
-        runtimeWeaponVisual.transform.localRotation = Quaternion.identity;
-        runtimeWeaponVisual.transform.localScale = Vector3.one;
+        runtimeWeaponPrefab.transform.localPosition += weaponProfile.attachedLocalPositionOffset;
+        runtimeWeaponPrefab.transform.localRotation = Quaternion.Euler(weaponProfile.attachedLocalEulerAnglesOffset + runtimeWeaponPrefab.transform.localRotation.eulerAngles);
+        runtimeWeaponPrefab.transform.localScale += weaponProfile.attachedLocalScaleOffset;
     }
 
     void ClearWeaponSocketChildren()

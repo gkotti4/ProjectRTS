@@ -241,24 +241,42 @@ public class SoldierAnimator : MonoBehaviour
              replacementIndex < replacements.Count;
              replacementIndex++)
         {
-            AnimationClipReplacement replacement = replacements[replacementIndex];
+            AnimationClipReplacement replacement =
+                replacements[replacementIndex];
 
-            if (replacement.originalClip == null || replacement.replacementClip == null)
+            if (replacement.originalClip == null ||
+                replacement.replacementClip == null)
+            {
                 continue;
+            }
+
+            bool replacementApplied = false;
 
             for (int overrideIndex = 0;
                  overrideIndex < resolvedOverrides.Count;
                  overrideIndex++)
             {
-                if (resolvedOverrides[overrideIndex].Key != replacement.originalClip)
+                if (resolvedOverrides[overrideIndex].Key !=
+                    replacement.originalClip)
+                {
                     continue;
+                }
 
                 resolvedOverrides[overrideIndex] =
                     new KeyValuePair<AnimationClip, AnimationClip>(
                         resolvedOverrides[overrideIndex].Key,
                         replacement.replacementClip);
 
+                replacementApplied = true;
                 break;
+            }
+
+            if (!replacementApplied)
+            {
+                Debug.LogWarning(
+                    $"{name}: Animation override could not find placeholder " +
+                    $"'{replacement.originalClip.name}' in the active base controller.",
+                    this);
             }
         }
     }

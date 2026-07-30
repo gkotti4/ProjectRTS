@@ -27,6 +27,7 @@ using UnityEngine.AI;
 [RequireComponent(typeof(SoldierMotor))]
 [RequireComponent(typeof(SoldierCombat))]
 [RequireComponent(typeof(SoldierContactSensor))] // SESSION: FORMATION COMBAT
+[RequireComponent(typeof(SoldierEquipmentController))]
 
 public class SoldierController : MonoBehaviour
 {

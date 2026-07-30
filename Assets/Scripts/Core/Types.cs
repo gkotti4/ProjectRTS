@@ -503,11 +503,13 @@ public struct RangedCombatStats
     [Min(0)] public int armorPiercingDamage;
     [Min(0.05f)] public float attackInterval;
     [Min(0.1f)] public float attackRange;
+    [Range(1f, 360f)] public float attackRangeArc;
     [Min(0f)] public float minimumRange;
     [Range(0f, 1f)] public float criticalHitChance;
     [Min(1f)] public float criticalHitDamageMultiplier;
     public GameObject projectilePrefab;
     [Min(0.1f)] public float projectileSpeed;
+    
     [Min(0f)] public float projectileGravityMultiplier;
     [Min(0f)] public float spreadRadius;
     [Min(0f)] public float suppressionStrength;
@@ -520,6 +522,7 @@ public struct RangedCombatStats
         armorPiercingDamage = 0,
         attackInterval = 2f,
         attackRange = 100f,
+        attackRangeArc = 120f,
         minimumRange = 0f,
         criticalHitChance = 0f,
         criticalHitDamageMultiplier = 1.5f,
