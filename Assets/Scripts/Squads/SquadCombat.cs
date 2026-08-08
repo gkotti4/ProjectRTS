@@ -48,6 +48,9 @@ public class SquadCombat : MonoBehaviour
     // Ranged squads switch as one unit between ranged and melee fallback.
     private bool formationRangedSquadUsingMeleeFallback = false;
 
+    // Future ranged-fire behavior toggle. Current firing behavior is unchanged.
+    private bool rangedVolleyEnabled = false;
+
     // Ranged ammunition belongs to the squad, not individual soldiers.
     // -1 means unlimited ammunition.
     private int currentRangedAmmunition = 0;
@@ -137,6 +140,7 @@ public class SquadCombat : MonoBehaviour
     public SquadController TargetSquad => targetSquad;
     public SquadCombatStyle CurrentCombatStyle => currentCombatStyle;
     public SquadEngagementReason CurrentEngagementType => currentEngagementType;
+    public bool RangedVolleyEnabled => rangedVolleyEnabled;
 
     public int CurrentRangedAmmunition => currentRangedAmmunition;
     public int MaximumRangedAmmunition => maximumRangedAmmunition;
@@ -170,12 +174,25 @@ public class SquadCombat : MonoBehaviour
         squadCombatProfile = data != null ? data.squadCombatProfile : null;
         currentCombatStyle = ResolveCombatStyle();
         currentEngagementType = SquadEngagementReason.None;
+        rangedVolleyEnabled =
+            squadCombatProfile != null &&
+            squadCombatProfile.rangedVolleyEnabledByDefault;
 
         rangedAmmunitionStartingSoldierCount = CountLivingRangedSoldiers();
         InitializeRangedAmmunition();
 
         if (!HasCombatProfile())
             enabled = false;
+    }
+
+    public void SetRangedVolleyEnabled(bool enabled)
+    {
+        rangedVolleyEnabled = enabled;
+    }
+
+    public void ToggleRangedVolley()
+    {
+        rangedVolleyEnabled = !rangedVolleyEnabled;
     }
 
     bool HasCombatProfile()
@@ -460,14 +477,19 @@ public class SquadCombat : MonoBehaviour
         {
             return;
         }
-
+        
+        // Ranged Volley (or Synced Attack) MVP
+        bool waitToAttack = false;
+        if (rangedVolleyEnabled && IsRangedCombatStyle() && !IsAllSoldierAttackTimersReady())
+            waitToAttack = true;
+        
         foreach (SoldierController soldier in roster.Soldiers)
         {
-            TickFormationSoldier(soldier);
+            TickFormationSoldier(soldier, waitToAttack);
         }
     }
 
-    void TickFormationSoldier(SoldierController soldier)
+    void TickFormationSoldier(SoldierController soldier, bool waitToAttack = false)
     {
         if (soldier == null || !soldier.IsAlive)
             return;
@@ -558,6 +580,10 @@ public class SquadCombat : MonoBehaviour
             else
                 ClearFormationActiveAttackerCombatLockCandidate(soldier);
 
+            // Ranged Volley (Attack Sync) MVP
+            if (waitToAttack)
+                return;
+            
             TickFormationActiveSoldier(
                 soldier,
                 currentTarget,
@@ -738,6 +764,7 @@ public class SquadCombat : MonoBehaviour
             stoppingDistance,
             squadCombatProfile.formationCombatMoveSpeedMultiplier);
     }
+
 
     void MarkFormationActiveAttackerCombatLockCandidate(
         SoldierController soldier,
@@ -1862,6 +1889,32 @@ public class SquadCombat : MonoBehaviour
             attackRange * squadCombatProfile.formationMeleeStoppingDistanceMultiplier);
     }
 
+    
+    bool IsAllSoldierAttackTimersReady()
+    {
+        if (roster == null)
+            return false;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            if (soldier.IsMovementLocked)
+                return false;
+
+            if (formationAttackTimers.TryGetValue(
+                    soldier,
+                    out float timer) &&
+                timer > 0f)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+    
     Vector3 GetRangedMoveDestination(
         SoldierController soldier,
         SoldierController target,
@@ -1881,41 +1934,6 @@ public class SquadCombat : MonoBehaviour
 
         return target.transform.position - directionToTarget * preferredDistance;
     }
-
-    // void TryFormationAttack(
-    //     SoldierController attacker,
-    //     SoldierController target,
-    //     WeaponProfile weaponProfile,
-    //     MeleeCombatStats meleeStats,
-    //     RangedCombatStats rangedStats,
-    //     bool isRangedWeapon,
-    //     float attackInterval)
-    // {
-    //     if (attacker == null || target == null)
-    //         return;
-    //
-    //     bool beganAttack = attacker.TryBeginAction(SoldierActionState.Attack);
-    //
-    //     if (!beganAttack)
-    //         return;
-    //
-    //     formationAttackTimers[attacker] = Mathf.Max(0.05f, attackInterval);
-    //
-    //     if (isRangedWeapon)
-    //     {
-    //         BeginFormationRangedAttack(
-    //             attacker,
-    //             target,
-    //             weaponProfile,
-    //             rangedStats);
-    //         return;
-    //     }
-    //
-    //     ResolveFormationCombatHit(
-    //         attacker,
-    //         target,
-    //         meleeStats);
-    // }
     
     void TryFormationAttack(
         SoldierController attacker,

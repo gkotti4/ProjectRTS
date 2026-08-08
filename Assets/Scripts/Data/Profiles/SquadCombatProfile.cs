@@ -75,6 +75,9 @@ public class SquadCombatProfile : ScriptableObject
 
 
     [Header("Formation Ranged")]
+    [Tooltip("If true, currently shootable ranged soldiers wait for one another and fire together using a shared attack cooldown.")]
+    public bool rangedVolleyEnabledByDefault = false;
+
     [Tooltip("If true, ranged squads derive scan/start/preferred/break distances from WeaponProfile.ranged.attackRange.")]
     public bool rangedUseWeaponRangeForTacticalRanges = true;
 
@@ -392,5 +395,6 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
+
 
 
