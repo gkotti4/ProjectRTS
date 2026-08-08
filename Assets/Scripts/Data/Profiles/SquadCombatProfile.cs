@@ -100,16 +100,16 @@ public class SquadCombatProfile : ScriptableObject
 
     [Header("Formation Ranged Setup")]
     [Tooltip("Living-soldier ratio that must be reasonably close to formation slots before a ranged squad begins firing.")]
-    [Range(0f, 1f)] public float formationRangedSetupRequiredRatio = 0.70f;
+    [Range(0f, 1f)] public float formationRangedSetupRequiredRatio = 0.75f;
 
     [Tooltip("Maximum distance from an assigned formation slot for a soldier to count as ready to fire.")]
-    [Min(0.05f)] public float formationRangedSetupSlotDistance = 1.25f;
+    [Min(0.05f)] public float formationRangedSetupSlotDistance = 1.0f;
 
     [Tooltip("If the target moves farther than this angle from the formation facing, the ranged squad turns/reforms before firing again.")]
-    [Range(0f, 180f)] public float formationRangedRefacingAngle = 15f;
+    [Range(0f, 180f)] public float formationRangedRefacingAngle = 25f;
 
     [Tooltip("Movement speed multiplier used while ranged soldiers settle into their firing formation.")]
-    [Min(0.1f)] public float formationRangedSetupMoveSpeedMultiplier = 1.0f;
+    [Min(0.1f)] public float formationRangedSetupMoveSpeedMultiplier = 0.85f;
 
     [Header("Formation Ranged Melee Fallback")]
     [Tooltip("Allows a ranged squad with melee sidearms to switch the entire squad into melee mode when enemies breach close range.")]
