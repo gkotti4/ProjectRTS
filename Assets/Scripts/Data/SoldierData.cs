@@ -27,10 +27,6 @@ public class SoldierData : ScriptableObject
     public BodyStats body = BodyStats.Default;
     public CombatDefenseStats defense = CombatDefenseStats.Default;
 
-    [Header("Animation")]
-    [Tooltip("Optional soldier-owned base controller and locomotion/general animation overrides.")]
-    public SoldierAnimationProfile animationProfile;
-
     [Header("Weapons")]
     [Tooltip("Optional melee capability. Leave empty for a unit that cannot fight in melee.")]
     public WeaponProfile meleeWeaponProfile;

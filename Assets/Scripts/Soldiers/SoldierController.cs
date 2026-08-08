@@ -27,7 +27,6 @@ using UnityEngine.AI;
 [RequireComponent(typeof(SoldierMotor))]
 [RequireComponent(typeof(SoldierCombat))]
 [RequireComponent(typeof(SoldierContactSensor))] // SESSION: FORMATION COMBAT
-[RequireComponent(typeof(SoldierEquipmentController))]
 
 public class SoldierController : MonoBehaviour
 {
@@ -351,7 +350,7 @@ public class SoldierController : MonoBehaviour
         return true;
     }
 
-    public bool UseMeleeWeapon()
+    public bool UseMeleeWeapon() // Rename for clarity? 
     {
         if (MeleeWeaponProfile == null)
             return false;
@@ -359,7 +358,7 @@ public class SoldierController : MonoBehaviour
         return SetActiveWeaponProfile(MeleeWeaponProfile);
     }
 
-    public bool UseRangedWeapon()
+    public bool UseRangedWeapon() // Rename for clarity? SwitchSoldierWeapon? SwitchToRangedWeapon?
     {
         if (RangedWeaponProfile == null)
             return false;
@@ -399,13 +398,32 @@ public class SoldierController : MonoBehaviour
             ? ActiveWeaponProfile
             : ResolveDefaultWeapon();
 
-        SoldierAnimator?.ApplyResolvedAnimationProfiles(
-            Data != null ? Data.animationProfile : null,
-            activeWeapon != null ? activeWeapon.animationProfile : null);
+        if (SoldierAnimator != null)
+        {
+            SoldierAnimator.ApplyWeaponAnimationSettings(activeWeapon);
+            SoldierAnimator.SwitchAnimatorController(
+                activeWeapon != null
+                    ? activeWeapon.animatorOverrideController
+                    : null);
+        }
 
-        Equipment?.ApplyResolvedEquipment(
-            activeWeapon,
-            Stats != null ? Stats.armorProfile : Data != null ? Data.armorProfile : null);
+        if (Equipment != null)
+        {
+            WeaponSlot activeWeaponSlot = IsUsingRangedWeapon
+                ? WeaponSlot.Ranged
+                : WeaponSlot.Melee;
+
+            Equipment.SetActiveWeapon(
+                activeWeapon,
+                activeWeaponSlot);
+
+            Equipment.SetArmorProfile(
+                Stats != null
+                    ? Stats.armorProfile
+                    : Data != null
+                        ? Data.armorProfile
+                        : null);
+        }
     }
 
     public void SetSquad(

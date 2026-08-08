@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 /// -----------------------------------------------------------------------------
@@ -20,9 +19,6 @@ public class SoldierAnimator : MonoBehaviour
     #region Runtime Animation Packages
 
     private RuntimeAnimatorController prefabBaseController;
-    private AnimatorOverrideController runtimeOverrideController;
-    private SoldierAnimationProfile currentSoldierAnimationProfile;
-    private WeaponAnimationProfile currentWeaponAnimationProfile;
     private int attackVariantCount = 2; // uses attacks 1 though attackVariantCount attacks at random
     private bool attackUsesFullBody = true;
     private bool hasAttackVariantParameter = true;
@@ -166,119 +162,59 @@ public class SoldierAnimator : MonoBehaviour
     }
 
     /// <summary>
-    /// Combines soldier-owned locomotion/general overrides with weapon-owned combat
-    /// overrides. Weapon replacements are applied second and therefore win when both
-    /// packages target the same placeholder clip.
+    /// Switches the Animator to the passed override controller. Passing null restores
+    /// the controller originally assigned to the soldier prefab.
     /// </summary>
-    public void ApplyResolvedAnimationProfiles(
-        SoldierAnimationProfile soldierAnimationProfile,
-        WeaponAnimationProfile weaponAnimationProfile)
+    public bool SwitchAnimatorController(
+        AnimatorOverrideController animatorOverrideController)
     {
         if (animator == null)
-            return;
+            return false;
 
-        if (currentSoldierAnimationProfile == soldierAnimationProfile &&
-            currentWeaponAnimationProfile == weaponAnimationProfile)
-        {
-            return;
-        }
-
-        currentSoldierAnimationProfile = soldierAnimationProfile;
-        currentWeaponAnimationProfile = weaponAnimationProfile;
-
-        RuntimeAnimatorController baseController =
-            soldierAnimationProfile != null && soldierAnimationProfile.baseController != null
-                ? soldierAnimationProfile.baseController
+        RuntimeAnimatorController targetController =
+            animatorOverrideController != null
+                ? animatorOverrideController
                 : prefabBaseController;
 
-        attackVariantCount = weaponAnimationProfile != null
-            ? Mathf.Max(1, weaponAnimationProfile.attackVariantCount)
-            : 1;
-
-        attackUsesFullBody = weaponAnimationProfile == null ||
-                             weaponAnimationProfile.disableUpperBodyLayerDuringAttack;
-
-        if (baseController == null)
+        if (targetController == null)
         {
-            Debug.LogWarning($"{name}: No base RuntimeAnimatorController is available for resolved animation profiles.", this);
-            return;
+            Debug.LogWarning(
+                $"{name}: Cannot switch Animator Controller because no controller is available.",
+                this);
+            return false;
         }
 
-        runtimeOverrideController = new AnimatorOverrideController(baseController);
+        if (animator.runtimeAnimatorController == targetController)
+            return false;
 
-        List<KeyValuePair<AnimationClip, AnimationClip>> resolvedOverrides =
-            new List<KeyValuePair<AnimationClip, AnimationClip>>();
+        if (animatorOverrideController != null &&
+            prefabBaseController != null &&
+            animatorOverrideController.runtimeAnimatorController != prefabBaseController)
+        {
+            Debug.LogWarning(
+                $"{name}: Animator Override Controller '{animatorOverrideController.name}' " +
+                $"does not use the prefab base controller '{prefabBaseController.name}'.",
+                this);
+        }
 
-        runtimeOverrideController.GetOverrides(resolvedOverrides);
-
-        ApplyClipReplacements(
-            resolvedOverrides,
-            soldierAnimationProfile != null
-                ? soldierAnimationProfile.clipReplacements
-                : null);
-
-        ApplyClipReplacements(
-            resolvedOverrides,
-            weaponAnimationProfile != null
-                ? weaponAnimationProfile.clipReplacements
-                : null);
-
-        runtimeOverrideController.ApplyOverrides(resolvedOverrides);
-        animator.runtimeAnimatorController = runtimeOverrideController;
+        animator.runtimeAnimatorController = targetController;
 
         InitializeUpperBodyLayer();
         RefreshOptionalAnimatorParameters();
+        return true;
     }
 
-    void ApplyClipReplacements(
-        List<KeyValuePair<AnimationClip, AnimationClip>> resolvedOverrides,
-        IReadOnlyList<AnimationClipReplacement> replacements)
+    /// <summary>
+    /// Applies the animation behavior configured by the active weapon profile.
+    /// </summary>
+    public void ApplyWeaponAnimationSettings(WeaponProfile weaponProfile)
     {
-        if (resolvedOverrides == null || replacements == null)
-            return;
+        attackVariantCount = weaponProfile != null
+            ? Mathf.Max(1, weaponProfile.animationAttackVariantCount)
+            : 1;
 
-        for (int replacementIndex = 0;
-             replacementIndex < replacements.Count;
-             replacementIndex++)
-        {
-            AnimationClipReplacement replacement =
-                replacements[replacementIndex];
-
-            if (replacement.originalClip == null ||
-                replacement.replacementClip == null)
-            {
-                continue;
-            }
-
-            bool replacementApplied = false;
-
-            for (int overrideIndex = 0;
-                 overrideIndex < resolvedOverrides.Count;
-                 overrideIndex++)
-            {
-                if (resolvedOverrides[overrideIndex].Key !=
-                    replacement.originalClip)
-                {
-                    continue;
-                }
-
-                resolvedOverrides[overrideIndex] =
-                    new KeyValuePair<AnimationClip, AnimationClip>(
-                        resolvedOverrides[overrideIndex].Key,
-                        replacement.replacementClip);
-
-                replacementApplied = true;
-                break;
-            }
-
-            if (!replacementApplied)
-            {
-                Debug.LogWarning(
-                    $"{name}: Animation override could not find placeholder " +
-                    $"'{replacement.originalClip.name}' in the active base controller.",
-                    this);
-            }
-        }
+        attackUsesFullBody = weaponProfile == null ||
+                             weaponProfile.animationDisableUpperBodyLayerDuringAttack;
     }
 
     void RefreshOptionalAnimatorParameters()

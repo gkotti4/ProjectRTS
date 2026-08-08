@@ -1,81 +1,153 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// -----------------------------------------------------------------------------
 /// SoldierEquipmentController
 /// -----------------------------------------------------------------------------
 ///
-/// Optional presentation bridge for resolved runtime equipment.
-/// SoldierController keeps the gameplay body alive while this component swaps only
-/// the child weapon visual when upgrades resolve a different WeaponProfile.
+/// Owns authored equipment presentation references for one soldier. Default
+/// weapons, shields, off-hand items, quivers, and similar equipment are positioned
+/// directly on the prefab in the editor. Switching combat weapons only enables the
+/// authored object set for the active melee/ranged slot; it does not clear sockets
+/// or instantiate weapon prefabs.
 ///
-/// Armor replacement is exposed as resolved state now, but model/material swapping
-/// remains intentionally dormant until armor presentation rules are finalized.
+/// Right/left hand and VFX sockets remain available as stable attachment points for
+/// future runtime replacements or effects if the game later needs them.
 ///
 [DisallowMultipleComponent]
 public class SoldierEquipmentController : MonoBehaviour
 {
-    [Header("Weapon Presentation")]
-    [SerializeField] private Transform weaponSocket;
-    // [SerializeField] private bool clearExistingSocketChildrenOnFirstApply = false;
+    #region Authored Equipment
+
+    [Header("Authored Equipment")]
+    [Tooltip("Prefab-authored objects shown while the soldier is using its melee weapon. This set may contain multiple objects, such as a sword + shield or two dual-wielded weapons.")]
+    [SerializeField] private GameObject[] meleeEquipmentObjects;
+
+    [Tooltip("Prefab-authored objects shown while the soldier is using its ranged weapon. This set may contain multiple objects, such as a bow + quiver or a firearm + supporting equipment.")]
+    [SerializeField] private GameObject[] rangedEquipmentObjects;
+
+    #endregion
+
+    #region Attachment Sockets
+
+    [Header("Attachment Sockets")]
+    [FormerlySerializedAs("weaponSocket_RightHand")]
+    [FormerlySerializedAs("weaponSocketRightHand")]
+    [SerializeField] private Transform rightHandSocket;
+
+    [FormerlySerializedAs("weaponSocketLeftHand")]
+    [SerializeField] private Transform leftHandSocket;
+
+    [Header("VFX Sockets")]
+    [SerializeField] private Transform rightHandVfxSocket;
+    [SerializeField] private Transform leftHandVfxSocket;
+
+    public Transform RightHandSocket => rightHandSocket;
+    public Transform LeftHandSocket => leftHandSocket;
+    public Transform RightHandVfxSocket => rightHandVfxSocket;
+    public Transform LeftHandVfxSocket => leftHandVfxSocket;
+
+    #endregion
+
+    #region Runtime State
 
     private WeaponProfile currentWeaponProfile;
+    private WeaponSlot currentWeaponSlot;
     private ArmorProfile currentArmorProfile;
-    private GameObject runtimeWeaponPrefab;
-    private bool hasAppliedEquipment;
+    private bool hasActiveWeaponPresentation;
 
     public WeaponProfile CurrentWeaponProfile => currentWeaponProfile;
+    public WeaponSlot CurrentWeaponSlot => currentWeaponSlot;
     public ArmorProfile CurrentArmorProfile => currentArmorProfile;
-    public GameObject RuntimeWeaponPrefab => runtimeWeaponPrefab;
 
-    public void ApplyResolvedEquipment(
+    #endregion
+
+    #region Public API
+
+    /// <summary>
+    /// Updates the active weapon metadata and toggles the prefab-authored equipment
+    /// objects for the requested melee/ranged slot. No equipment is destroyed or
+    /// instantiated here.
+    /// </summary>
+    public bool SetActiveWeapon(
         WeaponProfile weaponProfile,
-        ArmorProfile armorProfile)
+        WeaponSlot weaponSlot)
     {
-        // Clear previous weapon from socket
-        // if (!hasAppliedEquipment && clearExistingSocketChildrenOnFirstApply)
-        ClearWeaponSocketChildren();
-        // hasAppliedEquipment = true;
+        if (hasActiveWeaponPresentation &&
+            currentWeaponProfile == weaponProfile &&
+            currentWeaponSlot == weaponSlot)
+        {
+            return false;
+        }
 
-        if (currentWeaponProfile != weaponProfile)
-            ApplyWeaponProfile(weaponProfile);
+        currentWeaponProfile = weaponProfile;
+        currentWeaponSlot = weaponSlot;
+        hasActiveWeaponPresentation = true;
+
+        SetEquipmentObjectsActive(
+            meleeEquipmentObjects,
+            weaponProfile != null && weaponSlot == WeaponSlot.Melee);
+
+        SetEquipmentObjectsActive(
+            rangedEquipmentObjects,
+            weaponProfile != null && weaponSlot == WeaponSlot.Ranged);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Stores the active armor profile. Armor presentation remains authored on the
+    /// prefab until runtime armor replacement is actually needed.
+    /// </summary>
+    public bool SetArmorProfile(ArmorProfile armorProfile)
+    {
+        if (currentArmorProfile == armorProfile)
+            return false;
 
         currentArmorProfile = armorProfile;
+        return true;
     }
 
-    void ApplyWeaponProfile(WeaponProfile weaponProfile)
+    /// <summary>
+    /// Returns the physical hand socket requested by equipment metadata. Intended
+    /// for future runtime replacement/effect code; default equipment does not use it.
+    /// </summary>
+    public Transform GetHandSocket(WeaponSocketType socketType)
     {
-        currentWeaponProfile = weaponProfile;
-
-        if (runtimeWeaponPrefab != null)
-        {
-            Destroy(runtimeWeaponPrefab);
-            runtimeWeaponPrefab = null;
-        }
-
-        if (weaponProfile == null ||
-            weaponProfile.weaponPrefab == null ||
-            weaponSocket == null) return;
-
-        runtimeWeaponPrefab = Instantiate(
-            weaponProfile.weaponPrefab,
-            weaponSocket);
-
-        runtimeWeaponPrefab.transform.localPosition += weaponProfile.attachedLocalPositionOffset;
-        runtimeWeaponPrefab.transform.localRotation = Quaternion.Euler(weaponProfile.attachedLocalEulerAnglesOffset + runtimeWeaponPrefab.transform.localRotation.eulerAngles);
-        runtimeWeaponPrefab.transform.localScale += weaponProfile.attachedLocalScaleOffset;
+        return socketType == WeaponSocketType.LeftHand
+            ? leftHandSocket
+            : rightHandSocket;
     }
 
-    void ClearWeaponSocketChildren()
+    /// <summary>
+    /// Returns the VFX attachment point associated with the requested hand.
+    /// </summary>
+    public Transform GetHandVfxSocket(WeaponSocketType socketType)
     {
-        if (weaponSocket == null)
+        return socketType == WeaponSocketType.LeftHand
+            ? leftHandVfxSocket
+            : rightHandVfxSocket;
+    }
+
+    #endregion
+
+    #region Helpers
+
+    void SetEquipmentObjectsActive(
+        GameObject[] equipmentObjects,
+        bool active)
+    {
+        if (equipmentObjects == null)
             return;
 
-        for (int childIndex = weaponSocket.childCount - 1; childIndex >= 0; childIndex--)
+        for (int index = 0; index < equipmentObjects.Length; index++)
         {
-            Transform child = weaponSocket.GetChild(childIndex);
+            GameObject equipmentObject = equipmentObjects[index];
 
-            if (child != null)
-                Destroy(child.gameObject);
+            if (equipmentObject != null && equipmentObject.activeSelf != active)
+                equipmentObject.SetActive(active);
         }
     }
+
+    #endregion
 }

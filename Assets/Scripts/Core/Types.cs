@@ -961,6 +961,12 @@ public struct SquadVisualReplacementEffect
 #endregion
 
 
+public enum WeaponSocketType
+{
+    RightHand = 0,
+    LeftHand = 1,
+}
+
 [System.Serializable]
 public struct FormationBounds
 {

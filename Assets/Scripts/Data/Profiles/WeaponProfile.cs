@@ -22,21 +22,15 @@ public class WeaponProfile : ScriptableObject
     [Header("Identity")]
     public string weaponName = "Weapon";
     public WeaponKind weaponKind = WeaponKind.Melee;
-
-    [FormerlySerializedAs("weaponVisualPrefab")]
-    [Header("Weapon")]
-    [Tooltip("Optional child visual spawned by SoldierEquipmentController when this weapon is resolved.")]
-    public GameObject weaponPrefab;
+    public Sprite weaponIcon = null;
     
-    [Header("Local Socket Offsets")] 
-    /// Added to the current local values of the weapon when attached to the weapon socket
-    public Vector3 attachedLocalPositionOffset = Vector3.zero;
-    public Vector3 attachedLocalEulerAnglesOffset = Vector3.zero;
-    public Vector3 attachedLocalScaleOffset = Vector3.zero;
+    [Header("Presentation")]
+    [Tooltip("Canonical weapon prefab reserved for future runtime replacement. Default soldier equipment is authored directly on the soldier prefab and is not spawned automatically.")]
+    public GameObject weaponPrefab; 
     
-    [Header("Animation")]
-    [Tooltip("Optional weapon-owned idle/attack/upper-body animation package.")]
-    public WeaponAnimationProfile animationProfile;
+    [Space(10), Header("Attachment")]
+    [Tooltip("Physical hand used by this weapon when a runtime replacement or hand-specific effect needs an attachment socket. Melee/ranged type does not imply a hand.")]
+    public WeaponSocketType weaponSocketType = WeaponSocketType.RightHand;
 
     [Header("Melee Stats")]
     public MeleeCombatStats melee = MeleeCombatStats.Default;
@@ -47,10 +41,23 @@ public class WeaponProfile : ScriptableObject
     [Header("Runtime Effects")]
     [Tooltip("Effects this weapon has before upgrades add or remove effects.")]
     public List<WeaponEffectData> baseWeaponEffects = new List<WeaponEffectData>();
-    
 
+    [Header("Animation Presentation")]
+    [Tooltip("Pre-authored Animator Override Controller applied while this weapon is active. It must use the soldier's compatible base controller.")]
+    public AnimatorOverrideController animatorOverrideController;
+
+    [Min(1)]
+    [Tooltip("Number of authored AttackVariant melee states available while this weapon is active.")]
+    public int animationAttackVariantCount = 1;
+
+    [Tooltip("Temporarily disables the UpperBody layer while this weapon's attack animation plays as a full-body action.")]
+    public bool animationDisableUpperBodyLayerDuringAttack = true;
+    
+    
     void OnValidate()
     {
+        animationAttackVariantCount = Mathf.Max(1, animationAttackVariantCount);
+
         melee.meleeAttack = Mathf.Max(0, melee.meleeAttack);
         melee.weaponDamage = Mathf.Max(0, melee.weaponDamage);
         melee.armorPiercingDamage = Mathf.Max(0, melee.armorPiercingDamage);
@@ -65,7 +72,6 @@ public class WeaponProfile : ScriptableObject
         ranged.armorPiercingDamage = Mathf.Max(0, ranged.armorPiercingDamage);
         ranged.attackInterval = Mathf.Max(0.05f, ranged.attackInterval);
         ranged.attackRange = Mathf.Max(0.1f, ranged.attackRange);
-        ranged.attackRangeArc = Mathf.Clamp(ranged.attackRangeArc,1f, 360f); // 
         ranged.minimumRange = Mathf.Clamp(ranged.minimumRange, 0f, ranged.attackRange);
         ranged.criticalHitChance = Mathf.Clamp01(ranged.criticalHitChance);
         ranged.criticalHitDamageMultiplier = Mathf.Max(1f, ranged.criticalHitDamageMultiplier);
