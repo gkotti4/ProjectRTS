@@ -69,17 +69,6 @@ public class SoldierController : MonoBehaviour
     public bool HasMeleeWeapon => MeleeWeaponProfile != null;
     public bool HasRangedWeapon => RangedWeaponProfile != null;
 
-    public int CurrentRangedAmmunition { get; private set; } = 0;
-    public int MaximumRangedAmmunition =>
-        Stats != null ? Stats.ranged.ammunition : 0;
-
-    public bool HasUnlimitedRangedAmmunition =>
-        MaximumRangedAmmunition < 0;
-
-    public bool HasRangedAmmunition =>
-        HasRangedWeapon &&
-        (HasUnlimitedRangedAmmunition || CurrentRangedAmmunition > 0);
-    
     // -----------------------------------------------------------------------------
     // Prefab / Socket References
     // -----------------------------------------------------------------------------
@@ -185,8 +174,7 @@ public class SoldierController : MonoBehaviour
         Faction = faction;
 
         RefreshRuntimeStats(
-            preserveHealthPercent: false,
-            preserveRangedAmmunition: false);
+            preserveHealthPercent: false);
 
         if (Stats != null)
         {
@@ -254,12 +242,8 @@ public class SoldierController : MonoBehaviour
 
 
     public void RefreshRuntimeStats(
-        bool preserveHealthPercent = true,
-        bool preserveRangedAmmunition = true)
+        bool preserveHealthPercent = true)
     {
-        int previousMaximumRangedAmmunition = MaximumRangedAmmunition;
-        int previousCurrentRangedAmmunition = CurrentRangedAmmunition;
-
         Stats = RuntimeStatResolver.ResolveSoldier(
             Data,
             Squad != null ? Squad.Data : null,
@@ -274,64 +258,11 @@ public class SoldierController : MonoBehaviour
 
         Motor?.ApplyStats(Stats.movement, Stats.body);
 
-        RefreshRangedAmmunition(
-            previousMaximumRangedAmmunition,
-            previousCurrentRangedAmmunition,
-            preserveRangedAmmunition);
-
         WeaponProfile previousActiveWeapon = ActiveWeaponProfile;
         ActiveWeaponProfile = ResolveRefreshedActiveWeapon(previousActiveWeapon);
         ApplyActiveWeaponPresentation();
     }
 
-
-    void RefreshRangedAmmunition(
-        int previousMaximumAmmunition,
-        int previousCurrentAmmunition,
-        bool preserveRangedAmmunition)
-    {
-        int resolvedMaximumAmmunition = MaximumRangedAmmunition;
-
-        if (!HasRangedWeapon)
-        {
-            CurrentRangedAmmunition = 0;
-            return;
-        }
-
-        if (resolvedMaximumAmmunition < 0)
-        {
-            CurrentRangedAmmunition = -1;
-            return;
-        }
-
-        if (!preserveRangedAmmunition || previousMaximumAmmunition < 0)
-        {
-            CurrentRangedAmmunition = Mathf.Max(0, resolvedMaximumAmmunition);
-            return;
-        }
-
-        CurrentRangedAmmunition = Mathf.Clamp(
-            previousCurrentAmmunition,
-            0,
-            Mathf.Max(0, resolvedMaximumAmmunition));
-    }
-
-    public bool TryConsumeRangedAmmunition(int amount = 1)
-    {
-        amount = Mathf.Max(0, amount);
-
-        if (!HasRangedAmmunition)
-            return false;
-
-        if (HasUnlimitedRangedAmmunition || amount == 0)
-            return true;
-
-        if (CurrentRangedAmmunition < amount)
-            return false;
-
-        CurrentRangedAmmunition -= amount;
-        return true;
-    }
 
     public bool SetActiveWeaponProfile(WeaponProfile weaponProfile)
     {
@@ -795,3 +726,4 @@ public class SoldierController : MonoBehaviour
     #endregion
 
 }
+

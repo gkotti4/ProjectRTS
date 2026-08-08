@@ -1,5 +1,3 @@
-
-
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -206,6 +204,10 @@ public class SquadController : MonoBehaviour,
 
         foreach (SoldierController soldier in Roster.Soldiers)
             soldier?.RefreshRuntimeStats();
+
+        // Ranged ammunition is squad-owned. Recalculate capacity after soldier
+        // weapon/stat upgrades resolve, while preserving ammunition already spent.
+        Combat?.RefreshRangedAmmunitionCapacity(refill: false);
 
         Health?.RefreshMaximumHealthFromRoster();
     }
@@ -731,3 +733,4 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
+

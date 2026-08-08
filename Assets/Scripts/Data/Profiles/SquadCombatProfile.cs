@@ -98,6 +98,19 @@ public class SquadCombatProfile : ScriptableObject
     [Range(0.1f, 1f)] [FormerlySerializedAs("prototypeRangedPreferredDistanceMultiplier")]
     public float formationRangedPreferredDistanceMultiplier = 0.82f;
 
+    [Header("Formation Ranged Setup")]
+    [Tooltip("Living-soldier ratio that must be reasonably close to formation slots before a ranged squad begins firing.")]
+    [Range(0f, 1f)] public float formationRangedSetupRequiredRatio = 0.70f;
+
+    [Tooltip("Maximum distance from an assigned formation slot for a soldier to count as ready to fire.")]
+    [Min(0.05f)] public float formationRangedSetupSlotDistance = 1.25f;
+
+    [Tooltip("If the target moves farther than this angle from the formation facing, the ranged squad turns/reforms before firing again.")]
+    [Range(0f, 180f)] public float formationRangedRefacingAngle = 15f;
+
+    [Tooltip("Movement speed multiplier used while ranged soldiers settle into their firing formation.")]
+    [Min(0.1f)] public float formationRangedSetupMoveSpeedMultiplier = 1.0f;
+
     [Header("Formation Ranged Melee Fallback")]
     [Tooltip("Allows a ranged squad with melee sidearms to switch the entire squad into melee mode when enemies breach close range.")]
     public bool formationRangedMeleeFallbackEnabled = true;
@@ -312,6 +325,10 @@ public class SquadCombatProfile : ScriptableObject
         rangedCombatBreakRangePadding = Mathf.Max(0f, rangedCombatBreakRangePadding);
         formationRangedStoppingDistanceMultiplier = Mathf.Clamp(formationRangedStoppingDistanceMultiplier, 0.1f, 1f);
         formationRangedPreferredDistanceMultiplier = Mathf.Clamp(formationRangedPreferredDistanceMultiplier, 0.1f, 1f);
+        formationRangedSetupRequiredRatio = Mathf.Clamp01(formationRangedSetupRequiredRatio);
+        formationRangedSetupSlotDistance = Mathf.Max(0.05f, formationRangedSetupSlotDistance);
+        formationRangedRefacingAngle = Mathf.Clamp(formationRangedRefacingAngle, 0f, 180f);
+        formationRangedSetupMoveSpeedMultiplier = Mathf.Max(0.1f, formationRangedSetupMoveSpeedMultiplier);
         formationRangedMeleeFallbackEnterDistance = Mathf.Max(0.1f, formationRangedMeleeFallbackEnterDistance);
         formationRangedMeleeFallbackExitDistance = Mathf.Max(
             formationRangedMeleeFallbackEnterDistance + 0.1f,
@@ -371,4 +388,5 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
+
 

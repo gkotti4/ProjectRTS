@@ -48,6 +48,12 @@ public class SquadCombat : MonoBehaviour
     // Ranged squads switch as one unit between ranged and melee fallback.
     private bool formationRangedSquadUsingMeleeFallback = false;
 
+    // Ranged ammunition belongs to the squad, not individual soldiers.
+    // -1 means unlimited ammunition.
+    private int currentRangedAmmunition = 0;
+    private int maximumRangedAmmunition = 0;
+    private int rangedAmmunitionStartingSoldierCount = 0;
+
     // -----------------------------------------------------------------------------
     // Runtime Timers
     // -----------------------------------------------------------------------------
@@ -131,6 +137,13 @@ public class SquadCombat : MonoBehaviour
     public SquadCombatStyle CurrentCombatStyle => currentCombatStyle;
     public SquadEngagementReason CurrentEngagementType => currentEngagementType;
 
+    public int CurrentRangedAmmunition => currentRangedAmmunition;
+    public int MaximumRangedAmmunition => maximumRangedAmmunition;
+    public bool HasUnlimitedRangedAmmunition => maximumRangedAmmunition < 0;
+    public bool HasRangedAmmunition =>
+        IsAuthoredRangedSquad() &&
+        (HasUnlimitedRangedAmmunition || currentRangedAmmunition > 0);
+
     #endregion
 
     #region Initialization
@@ -156,6 +169,9 @@ public class SquadCombat : MonoBehaviour
         squadCombatProfile = data != null ? data.squadCombatProfile : null;
         currentCombatStyle = ResolveCombatStyle();
         currentEngagementType = SquadEngagementReason.None;
+
+        rangedAmmunitionStartingSoldierCount = CountLivingRangedSoldiers();
+        InitializeRangedAmmunition();
 
         if (!HasCombatProfile())
             enabled = false;
@@ -424,6 +440,14 @@ public class SquadCombat : MonoBehaviour
 
         combatContactDirection = GetContactDirection();
 
+        // Ranged combat is formation-owned. The whole squad turns and settles
+        // before individual soldiers are allowed to fire.
+        if (IsRangedCombatStyle() &&
+            !TickFormationRangedSetup())
+        {
+            return;
+        }
+
         foreach (SoldierController soldier in roster.Soldiers)
         {
             TickFormationSoldier(soldier);
@@ -619,9 +643,20 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
-        Vector3 moveDestination = isRangedWeapon
-            ? GetRangedMoveDestination(soldier, currentTarget, attackRange)
-            : currentTarget.transform.position;
+        Vector3 moveDestination;
+
+        if (isRangedWeapon &&
+            formation != null &&
+            formation.TryGetSlotForSoldier(soldier, out Vector3 rangedFormationSlot))
+        {
+            // Ranged soldiers hold the squad formation instead of individually
+            // chasing their personal targets.
+            moveDestination = rangedFormationSlot;
+        }
+        else
+        {
+            moveDestination = currentTarget.transform.position;
+        }
 
         Vector3 desiredMoveDirection = moveDestination - soldier.transform.position;
         desiredMoveDirection.y = 0f;
@@ -1881,11 +1916,14 @@ public class SquadCombat : MonoBehaviour
         if (attacker == null || target == null)
             return;
 
-        // Empty soldiers may remain in the squad's ranged posture while squadmates
-        // still have ammunition, but they must not play attack animations or create
-        // pending projectile releases.
-        if (isRangedWeapon && !attacker.HasRangedAmmunition)
-            return;
+        if (isRangedWeapon)
+        {
+            if (!HasRangedAmmunition)
+                return;
+
+            if (!IsTargetSquadWithinRangedFiringArc(rangedStats.attackRangeArc))
+                return;
+        }
 
         bool beganAttack =
             attacker.TryBeginAction(SoldierActionState.Attack);
@@ -1983,7 +2021,7 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
-        if (!attacker.TryConsumeRangedAmmunition())
+        if (!TryConsumeRangedAmmunition())
             return;
 
         ResolveFormationRangedHit(
@@ -2049,7 +2087,7 @@ public class SquadCombat : MonoBehaviour
             weaponProfile.ranged.projectilePrefab == null)
             return;
 
-        if (!attacker.TryConsumeRangedAmmunition())
+        if (!TryConsumeRangedAmmunition())
             return;
 
         Transform attackOrigin = attacker.AttackOrigin;
@@ -2895,21 +2933,14 @@ public class SquadCombat : MonoBehaviour
 
     SquadCombatStyle ResolveCombatStyle()
     {
-        if (data == null)
-            return SquadCombatStyle.FormationCombat;
+        return data != null
+            ? data.defaultCombatStyle
+            : SquadCombatStyle.FormationCombat;
+    }
 
-        if (data.defaultCombatStyle == SquadCombatStyle.RangedLine)
-            return SquadCombatStyle.RangedLine;
-
-        WeaponProfile weaponProfile = GetSquadWeaponProfile();
-
-        if (weaponProfile != null && weaponProfile.weaponKind == WeaponKind.Ranged)
-            return SquadCombatStyle.RangedLine;
-
-        if (data.category == SquadCategory.Ranged)
-            return SquadCombatStyle.RangedLine;
-
-        return SquadCombatStyle.FormationCombat;
+    bool IsAuthoredRangedSquad()
+    {
+        return ResolveCombatStyle() == SquadCombatStyle.RangedLine;
     }
 
     bool IsRangedCombatStyle()
@@ -2987,15 +3018,323 @@ public class SquadCombat : MonoBehaviour
         if (data == null || data.soldierData == null)
             return null;
 
-        return data.soldierData.rangedWeaponProfile != null
+        if (IsRangedCombatStyle() &&
+            data.soldierData.rangedWeaponProfile != null)
+        {
+            return data.soldierData.rangedWeaponProfile;
+        }
+
+        return data.soldierData.meleeWeaponProfile != null
+            ? data.soldierData.meleeWeaponProfile
+            : data.soldierData.rangedWeaponProfile;
+    }
+
+    void InitializeRangedAmmunition()
+    {
+        RefreshRangedAmmunitionCapacity(refill: true);
+    }
+
+    public void RefreshRangedAmmunitionCapacity(bool refill = false)
+    {
+        int previousMaximum = maximumRangedAmmunition;
+        int previousCurrent = currentRangedAmmunition;
+
+        maximumRangedAmmunition = CalculateMaximumRangedAmmunition();
+
+        if (maximumRangedAmmunition < 0)
+        {
+            currentRangedAmmunition = -1;
+            return;
+        }
+
+        if (refill || previousMaximum < 0)
+        {
+            currentRangedAmmunition = maximumRangedAmmunition;
+            return;
+        }
+
+        currentRangedAmmunition = Mathf.Clamp(
+            previousCurrent,
+            0,
+            maximumRangedAmmunition);
+    }
+
+    int CalculateMaximumRangedAmmunition()
+    {
+        if (!IsAuthoredRangedSquad() || rangedAmmunitionStartingSoldierCount <= 0)
+            return 0;
+
+        WeaponProfile rangedWeapon = GetSquadRangedWeaponProfile();
+
+        if (rangedWeapon == null)
+            return 0;
+
+        int ammunitionPerSoldier = rangedWeapon.ranged.ammunition;
+
+        if (roster != null)
+        {
+            foreach (SoldierController soldier in roster.Soldiers)
+            {
+                if (soldier == null || !soldier.HasRangedWeapon || soldier.Stats == null)
+                    continue;
+
+                ammunitionPerSoldier = soldier.Stats.ranged.ammunition;
+                break;
+            }
+        }
+
+        if (ammunitionPerSoldier < 0)
+            return -1;
+
+        return rangedAmmunitionStartingSoldierCount *
+               Mathf.Max(0, ammunitionPerSoldier);
+    }
+
+    int CountLivingRangedSoldiers()
+    {
+        if (!IsAuthoredRangedSquad() || roster == null)
+            return 0;
+
+        int count = 0;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier != null && soldier.IsAlive && soldier.HasRangedWeapon)
+                count++;
+        }
+
+        return count;
+    }
+
+    bool TryConsumeRangedAmmunition(int amount = 1)
+    {
+        amount = Mathf.Max(0, amount);
+
+        if (!HasRangedAmmunition)
+            return false;
+
+        if (HasUnlimitedRangedAmmunition || amount == 0)
+            return true;
+
+        if (currentRangedAmmunition < amount)
+            return false;
+
+        currentRangedAmmunition -= amount;
+        return true;
+    }
+
+    bool TickFormationRangedSetup()
+    {
+        if (!IsRangedCombatStyle())
+            return true;
+
+        if (formation == null || roster == null || targetSquad == null)
+            return false;
+
+        if (!TryGetLivingSoldierCenter(
+                targetSquad.Roster,
+                out Vector3 targetCenter))
+        {
+            return false;
+        }
+
+        Vector3 desiredFacing = targetCenter - transform.position;
+        desiredFacing.y = 0f;
+
+        if (desiredFacing.sqrMagnitude <= 0.0001f)
+            desiredFacing = formation.Facing;
+
+        desiredFacing.y = 0f;
+
+        if (desiredFacing.sqrMagnitude <= 0.0001f)
+            desiredFacing = Vector3.forward;
+
+        desiredFacing.Normalize();
+
+        float facingError = Vector3.Angle(
+            formation.Facing,
+            desiredFacing);
+
+        float halfFiringArc = GetSquadRangedAttackArc() * 0.5f;
+        bool targetOutsideFiringArc = facingError > halfFiringArc;
+
+        if (targetOutsideFiringArc ||
+            facingError > squadCombatProfile.formationRangedRefacingAngle)
+        {
+            formation.SetFacing(desiredFacing);
+        }
+        else
+        {
+            formation.UpdateSlots(transform.position, formation.Facing);
+        }
+
+        if (!IsFormationRangedSetupReady())
+        {
+            MoveRangedSquadTowardFormationSlots(targetCenter);
+            return false;
+        }
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive || soldier.IsMovementLocked)
+                continue;
+
+            soldier.Stop();
+        }
+
+        return IsTargetSquadWithinRangedFiringArc(
+            GetSquadRangedAttackArc());
+    }
+
+    bool IsFormationRangedSetupReady()
+    {
+        if (formation == null || roster == null)
+            return false;
+
+        IReadOnlyList<Vector3> slots = formation.CurrentSlots;
+
+        if (slots == null || slots.Count == 0)
+            return true;
+
+        int livingCount = 0;
+        int readyCount = 0;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            int slotIndex = soldier.SlotIndex;
+
+            if (slotIndex < 0 || slotIndex >= slots.Count)
+                continue;
+
+            livingCount++;
+
+            float slotDistance = Vector3.Distance(
+                Flatten(soldier.transform.position),
+                Flatten(slots[slotIndex]));
+
+            if (slotDistance <= squadCombatProfile.formationRangedSetupSlotDistance)
+                readyCount++;
+        }
+
+        if (livingCount <= 0)
+            return false;
+
+        float readyRatio = (float)readyCount / livingCount;
+
+        return readyRatio >=
+               squadCombatProfile.formationRangedSetupRequiredRatio;
+    }
+
+    void MoveRangedSquadTowardFormationSlots(Vector3 targetCenter)
+    {
+        if (formation == null || roster == null)
+            return;
+
+        IReadOnlyList<Vector3> slots = formation.CurrentSlots;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null ||
+                !soldier.IsAlive ||
+                soldier.IsMovementLocked)
+            {
+                continue;
+            }
+
+            int slotIndex = soldier.SlotIndex;
+
+            if (slotIndex < 0 || slotIndex >= slots.Count)
+                continue;
+
+            soldier.SetCombatRole(SoldierRole.Ranged);
+            soldier.MoveToSlot(
+                slots[slotIndex],
+                0.05f,
+                0.1f,
+                squadCombatProfile.formationRangedSetupMoveSpeedMultiplier);
+
+            soldier.FaceToward(
+                targetCenter,
+                soldier.Stats != null
+                    ? soldier.Stats.movement.turnSpeed
+                    : soldier.Data.movement.turnSpeed,
+                false);
+        }
+    }
+
+    bool IsTargetSquadWithinRangedFiringArc(float attackArc)
+    {
+        if (formation == null || targetSquad == null)
+            return false;
+
+        if (!TryGetLivingSoldierCenter(
+                targetSquad.Roster,
+                out Vector3 targetCenter))
+        {
+            return false;
+        }
+
+        Vector3 toTarget = targetCenter - transform.position;
+        toTarget.y = 0f;
+
+        if (toTarget.sqrMagnitude <= 0.0001f)
+            return true;
+
+        Vector3 formationFacing = formation.Facing;
+        formationFacing.y = 0f;
+
+        if (formationFacing.sqrMagnitude <= 0.0001f)
+            formationFacing = transform.forward;
+
+        formationFacing.y = 0f;
+
+        if (formationFacing.sqrMagnitude <= 0.0001f)
+            formationFacing = Vector3.forward;
+
+        float halfArc = Mathf.Clamp(attackArc, 1f, 360f) * 0.5f;
+        float angleToTarget = Vector3.Angle(
+            formationFacing.normalized,
+            toTarget.normalized);
+
+        return angleToTarget <= halfArc;
+    }
+
+    float GetSquadRangedAttackArc()
+    {
+        WeaponProfile rangedWeapon = GetSquadRangedWeaponProfile();
+
+        return rangedWeapon != null
+            ? Mathf.Clamp(rangedWeapon.ranged.attackRangeArc, 1f, 360f)
+            : 360f;
+    }
+
+    WeaponProfile GetSquadRangedWeaponProfile()
+    {
+        if (roster != null)
+        {
+            foreach (SoldierController soldier in roster.Soldiers)
+            {
+                if (soldier != null &&
+                    soldier.IsAlive &&
+                    soldier.RangedWeaponProfile != null)
+                {
+                    return soldier.RangedWeaponProfile;
+                }
+            }
+        }
+
+        return data != null && data.soldierData != null
             ? data.soldierData.rangedWeaponProfile
-            : data.soldierData.meleeWeaponProfile;
+            : null;
     }
 
     void UpdateFormationSquadCombatMode()
     {
         bool isRangedSquad =
-            ResolveCombatStyle() == SquadCombatStyle.RangedLine &&
+            IsAuthoredRangedSquad() &&
             HasLivingRangedWeapon();
 
         if (!isRangedSquad)
@@ -3125,22 +3464,7 @@ public class SquadCombat : MonoBehaviour
 
     bool HasLivingRangedAmmunition()
     {
-        if (roster == null)
-            return false;
-
-        foreach (SoldierController squadMember in roster.Soldiers)
-        {
-            if (squadMember == null || !squadMember.IsAlive)
-                continue;
-
-            if (squadMember.HasRangedWeapon &&
-                squadMember.HasRangedAmmunition)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return HasRangedAmmunition;
     }
 
     float GetSquadRangedMinimumRange()
@@ -3292,4 +3616,5 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
+
 
