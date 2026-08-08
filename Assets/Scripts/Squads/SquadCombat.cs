@@ -45,6 +45,9 @@ public class SquadCombat : MonoBehaviour
     private SquadCombatStyle currentCombatStyle = SquadCombatStyle.FormationCombat;
     private SquadEngagementReason currentEngagementType = SquadEngagementReason.None;
 
+    // Ranged squads switch as one unit between ranged and melee fallback.
+    private bool formationRangedSquadUsingMeleeFallback = false;
+
     // -----------------------------------------------------------------------------
     // Runtime Timers
     // -----------------------------------------------------------------------------
@@ -246,7 +249,9 @@ public class SquadCombat : MonoBehaviour
     public void ClearTargets()
     {
         targetSquad = null;
+        currentCombatStyle = ResolveCombatStyle();
         currentEngagementType = SquadEngagementReason.None;
+        formationRangedSquadUsingMeleeFallback = false;
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
         formationChargeTimer = 0f;
@@ -394,6 +399,18 @@ public class SquadCombat : MonoBehaviour
         if (!HasCombatProfile())
             return;
 
+        if (roster == null ||
+            targetSquad == null ||
+            targetSquad.Roster == null)
+        {
+            EndCombatAndReform();
+            return;
+        }
+
+        // Ranged/melee fallback is a squad decision, not a per-soldier decision.
+        // Update it before range/break checks so the correct combat mode owns them.
+        UpdateFormationSquadCombatMode();
+
         if (!CanAttack(targetSquad) || !IsWithinCombatBreakRange(targetSquad))
         {
             if (!TrySwitchPrimaryCombatTarget())
@@ -401,14 +418,8 @@ public class SquadCombat : MonoBehaviour
                 EndCombatAndReform();
                 return;
             }
-        }
 
-        if (roster == null ||
-            targetSquad == null ||
-            targetSquad.Roster == null)
-        {
-            EndCombatAndReform();
-            return;
+            UpdateFormationSquadCombatMode();
         }
 
         combatContactDirection = GetContactDirection();
@@ -440,17 +451,6 @@ public class SquadCombat : MonoBehaviour
             soldier.ClearCombatTarget();
             ClearFormationReserveBlockedState(soldier);
             return;
-        }
-
-        float initialDistanceToTarget = Vector3.Distance(
-            Flatten(soldier.transform.position),
-            Flatten(currentTarget.transform.position));
-
-        if (!soldier.IsMovementLocked)
-        {
-            ResolveFormationActiveWeapon(
-                soldier,
-                initialDistanceToTarget);
         }
 
         WeaponProfile weaponProfile = GetWeaponProfile(soldier);
@@ -2914,7 +2914,7 @@ public class SquadCombat : MonoBehaviour
 
     bool IsRangedCombatStyle()
     {
-        return ResolveCombatStyle() == SquadCombatStyle.RangedLine;
+        return currentCombatStyle == SquadCombatStyle.RangedLine;
     }
 
     float GetEffectiveScanRange()
@@ -2992,92 +2992,135 @@ public class SquadCombat : MonoBehaviour
             : data.soldierData.meleeWeaponProfile;
     }
 
-    void ResolveFormationActiveWeapon(
-        SoldierController soldier,
-        float distanceToTarget)
+    void UpdateFormationSquadCombatMode()
     {
-        if (soldier == null)
-            return;
+        bool isRangedSquad =
+            ResolveCombatStyle() == SquadCombatStyle.RangedLine &&
+            HasLivingRangedWeapon();
 
-        WeaponProfile meleeWeapon = soldier.MeleeWeaponProfile;
-        WeaponProfile rangedWeapon = soldier.RangedWeaponProfile;
-
-        if (meleeWeapon == null && rangedWeapon == null)
+        if (!isRangedSquad)
         {
-            soldier.SetActiveWeaponProfile(null);
+            formationRangedSquadUsingMeleeFallback = false;
+            currentCombatStyle = SquadCombatStyle.FormationCombat;
+            SetFormationSquadWeaponMode(useRangedWeapon: false);
             return;
         }
 
-        if (rangedWeapon == null)
+        bool hasRangedAmmunition = HasLivingRangedAmmunition();
+        bool hasMeleeFallback = HasLivingMeleeWeapon();
+
+        if (!hasRangedAmmunition)
         {
-            soldier.UseMeleeWeapon();
+            formationRangedSquadUsingMeleeFallback = hasMeleeFallback;
+            currentCombatStyle = SquadCombatStyle.FormationCombat;
+            SetFormationSquadWeaponMode(useRangedWeapon: false);
             return;
         }
 
-        float rangedMinimumRange = soldier.Stats != null
-            ? soldier.Stats.ranged.minimumRange
-            : rangedWeapon.ranged.minimumRange;
+        if (!squadCombatProfile.formationRangedMeleeFallbackEnabled ||
+            !hasMeleeFallback)
+        {
+            formationRangedSquadUsingMeleeFallback = false;
+            currentCombatStyle = SquadCombatStyle.RangedLine;
+            SetFormationSquadWeaponMode(useRangedWeapon: true);
+            return;
+        }
 
-        float forcedMeleeEnterDistance = Mathf.Max(
-            rangedMinimumRange,
+        float meleeFallbackEnterDistance = Mathf.Max(
+            GetSquadRangedMinimumRange(),
             squadCombatProfile.formationRangedMeleeFallbackEnterDistance);
 
-        float rangedResumeDistance = Mathf.Max(
-            forcedMeleeEnterDistance,
+        float meleeFallbackExitDistance = Mathf.Max(
+            meleeFallbackEnterDistance,
             squadCombatProfile.formationRangedMeleeFallbackExitDistance);
 
-        if (!soldier.HasRangedAmmunition)
+        if (formationRangedSquadUsingMeleeFallback)
         {
-            bool isPersonallyForcedIntoMelee =
-                meleeWeapon != null &&
-                squadCombatProfile.formationRangedMeleeFallbackEnabled &&
-                distanceToTarget <= forcedMeleeEnterDistance;
-
-            if (isPersonallyForcedIntoMelee)
+            if (!IsAnyLivingSquadMemberThreatenedWithin(meleeFallbackExitDistance))
             {
-                soldier.UseMeleeWeapon();
-                return;
+                formationRangedSquadUsingMeleeFallback = false;
+                currentCombatStyle = SquadCombatStyle.RangedLine;
+                SetFormationSquadWeaponMode(useRangedWeapon: true);
             }
 
-            // Individual ammunition does not break squad behavior. An empty soldier
-            // remains with the ranged formation while any living squadmate can still
-            // shoot, but cannot begin another ranged attack.
-            if (HasLivingRangedAmmunition())
+            return;
+        }
+
+        if (IsAnyLivingSquadMemberThreatenedWithin(meleeFallbackEnterDistance))
+        {
+            formationRangedSquadUsingMeleeFallback = true;
+            currentCombatStyle = SquadCombatStyle.FormationCombat;
+            SetFormationSquadWeaponMode(useRangedWeapon: false);
+            return;
+        }
+
+        currentCombatStyle = SquadCombatStyle.RangedLine;
+        SetFormationSquadWeaponMode(useRangedWeapon: true);
+    }
+
+    void SetFormationSquadWeaponMode(bool useRangedWeapon)
+    {
+        if (roster == null)
+            return;
+
+        foreach (SoldierController squadMember in roster.Soldiers)
+        {
+            if (squadMember == null || !squadMember.IsAlive)
+                continue;
+
+            if (useRangedWeapon)
             {
-                soldier.UseRangedWeapon();
-                return;
+                if (squadMember.HasRangedWeapon)
+                    squadMember.UseRangedWeapon();
+                else if (squadMember.HasMeleeWeapon)
+                    squadMember.UseMeleeWeapon();
+                else
+                    squadMember.SetActiveWeaponProfile(null);
+
+                continue;
             }
 
-            if (meleeWeapon != null)
-                soldier.UseMeleeWeapon();
+            if (squadMember.HasMeleeWeapon)
+                squadMember.UseMeleeWeapon();
             else
-                soldier.SetActiveWeaponProfile(null);
-
-            return;
+                squadMember.SetActiveWeaponProfile(null);
         }
+    }
 
-        if (meleeWeapon == null ||
-            !squadCombatProfile.formationRangedMeleeFallbackEnabled)
+    bool HasLivingMeleeWeapon()
+    {
+        if (roster == null)
+            return false;
+
+        foreach (SoldierController squadMember in roster.Soldiers)
         {
-            soldier.UseRangedWeapon();
-            return;
+            if (squadMember != null &&
+                squadMember.IsAlive &&
+                squadMember.HasMeleeWeapon)
+            {
+                return true;
+            }
         }
 
-        if (soldier.IsUsingMeleeWeapon)
+        return false;
+    }
+
+    bool HasLivingRangedWeapon()
+    {
+        if (roster == null)
+            return false;
+
+        foreach (SoldierController squadMember in roster.Soldiers)
         {
-            if (distanceToTarget >= rangedResumeDistance)
-                soldier.UseRangedWeapon();
-
-            return;
+            if (squadMember != null &&
+                squadMember.IsAlive &&
+                squadMember.HasRangedWeapon)
+            {
+                return true;
+            }
         }
 
-        if (distanceToTarget <= forcedMeleeEnterDistance)
-        {
-            soldier.UseMeleeWeapon();
-            return;
-        }
-
-        soldier.UseRangedWeapon();
+        return false;
     }
 
     bool HasLivingRangedAmmunition()
@@ -3094,6 +3137,102 @@ public class SquadCombat : MonoBehaviour
                 squadMember.HasRangedAmmunition)
             {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    float GetSquadRangedMinimumRange()
+    {
+        if (roster == null)
+            return 0f;
+
+        float minimumRange = 0f;
+
+        foreach (SoldierController squadMember in roster.Soldiers)
+        {
+            if (squadMember == null ||
+                !squadMember.IsAlive ||
+                !squadMember.HasRangedWeapon)
+            {
+                continue;
+            }
+
+            float memberMinimumRange = squadMember.Stats != null
+                ? squadMember.Stats.ranged.minimumRange
+                : squadMember.RangedWeaponProfile.ranged.minimumRange;
+
+            minimumRange = Mathf.Max(
+                minimumRange,
+                Mathf.Max(0f, memberMinimumRange));
+        }
+
+        return minimumRange;
+    }
+
+    bool IsAnyLivingSquadMemberThreatenedWithin(float distance)
+    {
+        if (roster == null)
+            return false;
+
+        float clampedDistance = Mathf.Max(0f, distance);
+        float distanceSqr = clampedDistance * clampedDistance;
+
+        if (squadCombatProfile.formationMultiSquadLocalTargetingEnabled &&
+            SquadManager.Instance != null)
+        {
+            foreach (SquadController candidateSquad in SquadManager.Instance.Squads)
+            {
+                if (!CanAttack(candidateSquad))
+                    continue;
+
+                if (IsAnyLivingSquadMemberThreatenedBySquad(
+                        candidateSquad,
+                        distanceSqr))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return IsAnyLivingSquadMemberThreatenedBySquad(
+            targetSquad,
+            distanceSqr);
+    }
+
+    bool IsAnyLivingSquadMemberThreatenedBySquad(
+        SquadController enemySquad,
+        float distanceSqr)
+    {
+        if (roster == null ||
+            enemySquad == null ||
+            enemySquad.Roster == null)
+        {
+            return false;
+        }
+
+        foreach (SoldierController squadMember in roster.Soldiers)
+        {
+            if (squadMember == null || !squadMember.IsAlive)
+                continue;
+
+            Vector3 squadMemberPosition =
+                Flatten(squadMember.transform.position);
+
+            foreach (SoldierController enemy in enemySquad.Roster.Soldiers)
+            {
+                if (enemy == null || !enemy.IsAlive)
+                    continue;
+
+                float enemyDistanceSqr = Vector3.SqrMagnitude(
+                    squadMemberPosition -
+                    Flatten(enemy.transform.position));
+
+                if (enemyDistanceSqr <= distanceSqr)
+                    return true;
             }
         }
 
@@ -3153,3 +3292,4 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
+

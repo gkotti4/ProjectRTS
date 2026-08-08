@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -100,14 +99,14 @@ public class SquadCombatProfile : ScriptableObject
     public float formationRangedPreferredDistanceMultiplier = 0.82f;
 
     [Header("Formation Ranged Melee Fallback")]
-    [Tooltip("Allows a ranged soldier with SoldierData.secondaryWeaponProfile to automatically switch to it at close range.")]
+    [Tooltip("Allows a ranged squad with melee sidearms to switch the entire squad into melee mode when enemies breach close range.")]
     public bool formationRangedMeleeFallbackEnabled = true;
 
-    [Tooltip("Enemy distance at or below which a ranged soldier switches to its secondary melee weapon.")]
-    [Min(0.1f)] public float formationRangedMeleeFallbackEnterDistance = 2.1f;
+    [Tooltip("If any living enemy reaches this distance from any living squad member, the entire ranged squad switches to melee mode.")]
+    [Min(0.1f)] public float formationRangedMeleeFallbackEnterDistance = 5.0f;
 
-    [Tooltip("Enemy distance at or above which a soldier using its melee fallback returns to its primary ranged weapon. Keep this above enter distance to prevent flicker.")]
-    [Min(0.1f)] public float formationRangedMeleeFallbackExitDistance = 3.25f;
+    [Tooltip("The squad returns to ranged mode only after no living enemy remains within this distance and the squad still has ranged ammunition. Keep this above enter distance to prevent flicker.")]
+    [Min(0.1f)] public float formationRangedMeleeFallbackExitDistance = 7.5f;
 
     
     
@@ -372,3 +371,4 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
+
