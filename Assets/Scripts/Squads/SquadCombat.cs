@@ -3161,11 +3161,19 @@ public class SquadCombat : MonoBehaviour
         if (targetOutsideFiringArc ||
             facingError > squadCombatProfile.formationRangedRefacingAngle)
         {
-            formation.SetFacing(desiredFacing);
+            // Match the established large-turn movement behavior:
+            // rotate the formation, then give each living soldier the nearest
+            // available slot in the new facing. Preserving old slot indices
+            // across a large rotation makes soldiers cross through the squad.
+            formation.ReassignLivingSoldiersToNearestSlots(
+                transform.position,
+                desiredFacing);
         }
         else
         {
-            formation.UpdateSlots(transform.position, formation.Facing);
+            formation.UpdateSlots(
+                transform.position,
+                formation.Facing);
         }
 
         if (!IsFormationRangedSetupReady())
