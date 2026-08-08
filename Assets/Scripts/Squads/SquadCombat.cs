@@ -60,6 +60,7 @@ public class SquadCombat : MonoBehaviour
     private float scanTimer = 0f;
     private float approachRefreshTimer = 0f;
     private float approachEngagementSettleTimer = 0f;
+    private float formationRangedInitialFireSettleTimer = 0f;
     
     // -----------------------------------------------------------------------------
     // Formation Combat Runtime State
@@ -270,6 +271,7 @@ public class SquadCombat : MonoBehaviour
         formationRangedSquadUsingMeleeFallback = false;
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
+        formationRangedInitialFireSettleTimer = 0f;
         formationChargeTimer = 0f;
         formationChargeImpactedTargets.Clear();
         formationChargeLeadSoldiers.Clear();
@@ -436,6 +438,17 @@ public class SquadCombat : MonoBehaviour
             }
 
             UpdateFormationSquadCombatMode();
+        }
+
+        // Ranged squads pursue their current squad target as a formation.
+        // If the target leaves the normal ranged engagement distance, reuse the
+        // existing approach/preferred-range behavior instead of letting individual
+        // soldiers chase or waiting until the larger combat break range is exceeded.
+        if (IsRangedCombatStyle() &&
+            !IsCloseEnoughToStartEngagement(targetSquad))
+        {
+            BeginApproachingCombat();
+            return;
         }
 
         combatContactDirection = GetContactDirection();
@@ -2283,6 +2296,14 @@ public class SquadCombat : MonoBehaviour
         ClearSoldierCombatStates();
         approachEngagementSettleTimer = 0f;
 
+        if (IsAuthoredRangedSquad())
+        {
+            formationRangedInitialFireSettleTimer =
+                squadCombatProfile != null
+                    ? squadCombatProfile.formationRangedInitialFireSettleTime
+                    : 0f;
+        }
+
         if (squad != null)
             squad.SetState(SquadState.ApproachingCombat);
 
@@ -2621,6 +2642,12 @@ public class SquadCombat : MonoBehaviour
         currentCombatStyle = ResolveCombatStyle();
         combatContactDirection = GetContactDirection();
         approachEngagementSettleTimer = 0f;
+
+        if (IsRangedCombatStyle())
+        {
+            formationRangedInitialFireSettleTimer =
+                squadCombatProfile.formationRangedInitialFireSettleTime;
+        }
 
         ClearFormationRuntimeState(clearAttackTimers: false);
 
@@ -3178,6 +3205,9 @@ public class SquadCombat : MonoBehaviour
 
         if (!IsFormationRangedSetupReady())
         {
+            formationRangedInitialFireSettleTimer =
+                squadCombatProfile.formationRangedInitialFireSettleTime;
+
             MoveRangedSquadTowardFormationSlots(targetCenter);
             return false;
         }
@@ -3188,6 +3218,12 @@ public class SquadCombat : MonoBehaviour
                 continue;
 
             soldier.Stop();
+        }
+
+        if (formationRangedInitialFireSettleTimer > 0f)
+        {
+            formationRangedInitialFireSettleTimer -= Time.deltaTime;
+            return false;
         }
 
         return IsTargetSquadWithinRangedFiringArc(
