@@ -7,17 +7,24 @@ public class SoldierSelectionVisualUI : MonoBehaviour
     [SerializeField] private GameObject selectionRoot;
     [SerializeField] private GameObject hoverRoot;
     [SerializeField] private Outline outlineComponent;
+    // [SerializeField] private MeshRenderer mainBodyMeshRenderer;
     
-    private MeshRenderer meshRenderer;
-
     void Awake()
     {
         if (outlineComponent != null)
         {
             outlineComponent.OutlineMode = Outline.Mode.OutlineVisible;
             outlineComponent.enabled = false;
-        }    
-        meshRenderer = GetComponentInParent<MeshRenderer>(); // CHECK NEW
+        }
+        else
+        {
+            Debug.LogError("SoldierSelectionVisualUI: Outline component is null");
+        }
+        // meshRenderer = GetComponentInChildren<MeshRenderer>(outlineComponent); // CHECK
+        // if (meshRenderer == null)
+        // {
+        //     Debug.LogError("SoldierSelectionVisualUI: MeshRenderer component is null");
+        // }
         
         SetSelected(false);
         SetHovered(false);
@@ -42,7 +49,7 @@ public class SoldierSelectionVisualUI : MonoBehaviour
         if (selectionRoot != null)
             selectionRoot.SetActive(selected);
         
-        if (outlineComponent != null && meshRenderer != null)
+        if (outlineComponent != null) // && mainBodyMeshRenderer != null)
         {
             // Debug.Log("outlineComponent.enabled = " + selected);
             outlineComponent.enabled = selected; // Was throwing (tried to acess mesh renderer after component destroyed error, so added mr check)

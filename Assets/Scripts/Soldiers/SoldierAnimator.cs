@@ -18,7 +18,7 @@ public class SoldierAnimator : MonoBehaviour
 
     #region Runtime Animation Packages
 
-    private RuntimeAnimatorController prefabBaseController;
+    private RuntimeAnimatorController prefabBaseController; // currently base controller depends on weapon so the base of a unit with 2 weapons will already be an ACO...CHECK
     private int attackVariantCount = 2; // uses attacks 1 though attackVariantCount attacks at random
     private bool attackUsesFullBody = true;
     private bool hasAttackVariantParameter = true;
@@ -40,7 +40,7 @@ public class SoldierAnimator : MonoBehaviour
     [SerializeField] private bool useMovingBackwardsParameter = true;
 
     [Tooltip("During clean squad movement states, this can force IsMoving even if one frame of agent velocity is missing.")]
-    [SerializeField] private bool trustSquadMovementState = true;
+    [SerializeField] private bool trustSquadMovementState = true; // UNUSED
 
     private bool isMovingVisual = false;
     private float movementReleaseTimer = 0f;
@@ -187,15 +187,15 @@ public class SoldierAnimator : MonoBehaviour
         if (animator.runtimeAnimatorController == targetController)
             return false;
 
-        if (animatorOverrideController != null &&
-            prefabBaseController != null &&
-            animatorOverrideController.runtimeAnimatorController != prefabBaseController)
-        {
-            Debug.LogWarning(
-                $"{name}: Animator Override Controller '{animatorOverrideController.name}' " +
-                $"does not use the prefab base controller '{prefabBaseController.name}'.",
-                this);
-        }
+        // if (animatorOverrideController != null &&
+        //     prefabBaseController != null &&
+        //     animatorOverrideController.runtimeAnimatorController != prefabBaseController)
+        // {
+        //     Debug.LogWarning(
+        //         $"{name}: Animator Override Controller '{animatorOverrideController.name}' " +
+        //         $"does not use the prefab base controller '{prefabBaseController.name}'.",
+        //         this);
+        // }
 
         animator.runtimeAnimatorController = targetController;
 

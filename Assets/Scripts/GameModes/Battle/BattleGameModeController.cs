@@ -65,12 +65,14 @@ public class BattleGameModeController : MonoBehaviour
     private BattleGameState state = BattleGameState.Setup;
     private float automaticStartTimer = 0f;
     private float battleEndCheckTimer = 0f;
+    private float battleElapsedTime = 0f;
 
     public BattleDefinitionData BattleDefinition => battleDefinition;
     public BattleGameState State => state;
     public IReadOnlyList<SquadController> PlayerSquads => playerSquads;
     public IReadOnlyList<SquadController> EnemySquads => enemySquads;
     public bool IsBattleActive => state == BattleGameState.Battle;
+    public float BattleElapsedTime => battleElapsedTime;
 
     #endregion
 
@@ -116,6 +118,7 @@ public class BattleGameModeController : MonoBehaviour
         if (state != BattleGameState.Battle)
             return;
 
+        battleElapsedTime += Time.deltaTime;
         battleEndCheckTimer -= Time.deltaTime;
 
         if (battleEndCheckTimer <= 0f)
@@ -142,6 +145,7 @@ public class BattleGameModeController : MonoBehaviour
 
         ClearPreviousArmies();
 
+        battleElapsedTime = 0f;
         SetState(BattleGameState.Setup);
 
         SpawnArmy(
