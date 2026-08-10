@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -208,7 +209,10 @@ public class SquadFormationController : MonoBehaviour
     List<Vector2> BuildFormationOffsets(
         float requestedFormationWidth = -1f)
     {
-        int count = roster != null ? roster.Count : 0;
+        // Formation slots represent the current living body. Dead SoldierController
+        // objects remain in the roster for combat/death bookkeeping, so roster.Count
+        // would leave permanent holes after casualties.
+        int count = roster != null ? roster.LivingCount : 0;
 
         if (count <= 0)
             return new List<Vector2>();

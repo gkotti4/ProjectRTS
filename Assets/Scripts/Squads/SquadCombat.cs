@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -69,6 +68,8 @@ public class SquadCombat : MonoBehaviour
     private float approachRefreshTimer = 0f;
     private float approachEngagementSettleTimer = 0f;
     private float formationRangedInitialFireSettleTimer = 0f;
+    private bool formationRangedSetupRequired = false;
+    private bool formationRangedSetupInitialized = false;
     
     // -----------------------------------------------------------------------------
     // Formation Combat Runtime State
@@ -191,6 +192,7 @@ public class SquadCombat : MonoBehaviour
         rangedAmmunitionStartingSoldierCount = CountLivingRangedSoldiers();
         InitializeRangedAmmunition();
 
+
         if (!HasCombatProfile())
             enabled = false;
     }
@@ -242,7 +244,7 @@ public class SquadCombat : MonoBehaviour
         OrderAttack(target, SquadEngagementReason.OrderedAttack);
     }
 
-    /// Starts an attack-like engagement from either a direct ordered attack or auto-scan.
+    /// Starts an attack-like engagement from either an ordered attack or auto-scan.
     void OrderAttack(
         SquadController target,
         SquadEngagementReason engagementType)
@@ -310,6 +312,8 @@ public class SquadCombat : MonoBehaviour
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
         formationRangedInitialFireSettleTimer = 0f;
+        formationRangedSetupRequired = false;
+        formationRangedSetupInitialized = false;
         formationChargeTimer = 0f;
         formationChargeImpactedTargets.Clear();
         formationChargeLeadSoldiers.Clear();
@@ -494,9 +498,9 @@ public class SquadCombat : MonoBehaviour
         }
         else if (!IsWithinCombatBreakRange(targetSquad))
         {
-            // A direct ordered attack stays committed to its living target. The
-            // normal combat break range is only a leash for autonomous/passive
-            // engagements, not permission to abandon a player/AI ordered target.
+            // A direct ordered attack is persistent: if the living target opens a
+            // large gap, return to formation approach instead of abandoning it.
+            // Autonomous/passive engagements still respect the normal combat leash.
             if (currentEngagementType == SquadEngagementReason.OrderedAttack)
             {
                 BeginApproachingCombat();
@@ -2091,26 +2095,6 @@ public class SquadCombat : MonoBehaviour
         return true;
     }
     
-    Vector3 GetRangedMoveDestination(
-        SoldierController soldier,
-        SoldierController target,
-        float attackRange)
-    {
-        Vector3 toTarget = target.transform.position - soldier.transform.position;
-        toTarget.y = 0f;
-
-        if (toTarget.sqrMagnitude <= 0.0001f)
-            return soldier.transform.position;
-
-        Vector3 directionToTarget = toTarget.normalized;
-
-        float preferredDistance = Mathf.Max(
-            0.1f,
-            attackRange * squadCombatProfile.formationRangedPreferredDistanceMultiplier);
-
-        return target.transform.position - directionToTarget * preferredDistance;
-    }
-    
     void TryFormationAttack(
         SoldierController attacker,
         SoldierController target,
@@ -2492,6 +2476,8 @@ public class SquadCombat : MonoBehaviour
 
         if (IsAuthoredRangedSquad())
         {
+            formationRangedSetupRequired = true;
+            formationRangedSetupInitialized = false;
             formationRangedInitialFireSettleTimer =
                 squadCombatProfile != null
                     ? squadCombatProfile.formationRangedInitialFireSettleTime
@@ -2839,6 +2825,13 @@ public class SquadCombat : MonoBehaviour
 
         if (IsRangedCombatStyle())
         {
+            // Entering a new ranged firing position is one of the few times the
+            // formation is allowed to compact around current survivors. Once setup
+            // completes, casualties leave holes until another deliberate formation
+            // event (approach/reface/reform) occurs.
+            formation?.Rebuild();
+            formationRangedSetupRequired = true;
+            formationRangedSetupInitialized = false;
             formationRangedInitialFireSettleTimer =
                 squadCombatProfile.formationRangedInitialFireSettleTime;
         }
@@ -2878,9 +2871,13 @@ public class SquadCombat : MonoBehaviour
 
         fromTargetToMe.Normalize();
 
-        Vector3 approachPoint =
-            targetCenter +
-            fromTargetToMe * GetEffectiveApproachStopDistance();
+        // Ranged approach has no preferred-distance repositioning. The formation
+        // simply advances toward the enemy; TickApproachingCombat enters combat as
+        // soon as the ranged combat-start range is satisfied. If already in range,
+        // ranged squads never back away unless Ranged Avoidance explicitly does it.
+        Vector3 approachPoint = IsRangedCombatStyle()
+            ? targetCenter
+            : targetCenter + fromTargetToMe * GetEffectiveApproachStopDistance();
 
         Vector3 facing = -fromTargetToMe;
 
@@ -3198,12 +3195,7 @@ public class SquadCombat : MonoBehaviour
 
     float GetEffectiveApproachStopDistance()
     {
-        if (!IsRangedCombatStyle() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
-            return Mathf.Max(0f, squadCombatProfile.defaultApproachStopDistance);
-
-        return Mathf.Max(
-            0.1f,
-            GetSquadWeaponAttackRange() * squadCombatProfile.rangedPreferredRangeMultiplier);
+        return Mathf.Max(0f, squadCombatProfile.defaultApproachStopDistance);
     }
 
     float GetEffectiveCombatBreakRange()
@@ -3365,8 +3357,6 @@ public class SquadCombat : MonoBehaviour
         if (desiredFacing.sqrMagnitude <= 0.0001f)
             desiredFacing = formation.Facing;
 
-        desiredFacing.y = 0f;
-
         if (desiredFacing.sqrMagnitude <= 0.0001f)
             desiredFacing = Vector3.forward;
 
@@ -3379,29 +3369,37 @@ public class SquadCombat : MonoBehaviour
         float halfFiringArc = GetSquadRangedAttackArc() * 0.5f;
         bool targetOutsideFiringArc = facingError > halfFiringArc;
 
-        if (targetOutsideFiringArc ||
-            facingError > squadCombatProfile.formationRangedRefacingAngle)
+        // Sustained ranged fire is intentionally stable. Small target-center shifts
+        // and casualties do not force the squad back through formation setup. Only
+        // a real firing-arc failure starts a deliberate reface/setup cycle.
+        if (!formationRangedSetupRequired && !targetOutsideFiringArc)
+            return true;
+
+        if (!formationRangedSetupRequired && targetOutsideFiringArc)
         {
-            // Match the established large-turn movement behavior:
-            // rotate the formation, then give each living soldier the nearest
-            // available slot in the new facing. Preserving old slot indices
-            // across a large rotation makes soldiers cross through the squad.
+            // Major refacing is a meaningful formation event, so this is an
+            // appropriate time to compact around the current survivors.
+            formation.Rebuild();
+            formationRangedSetupRequired = true;
+            formationRangedSetupInitialized = false;
+            formationRangedInitialFireSettleTimer =
+                squadCombatProfile.formationRangedInitialFireSettleTime;
+        }
+
+        if (!formationRangedSetupInitialized)
+        {
+            // Pick the new facing and nearest slot assignment ONCE. CurrentSlots then
+            // stay fixed for this setup cycle so root-following cannot move the
+            // soldiers' goalposts while they are trying to settle.
             formation.ReassignLivingSoldiersToNearestSlots(
                 transform.position,
                 desiredFacing);
-        }
-        else
-        {
-            formation.UpdateSlots(
-                transform.position,
-                formation.Facing);
+
+            formationRangedSetupInitialized = true;
         }
 
         if (!IsFormationRangedSetupReady())
         {
-            formationRangedInitialFireSettleTimer =
-                squadCombatProfile.formationRangedInitialFireSettleTime;
-
             MoveRangedSquadTowardFormationSlots(targetCenter);
             return false;
         }
@@ -3420,8 +3418,9 @@ public class SquadCombat : MonoBehaviour
             return false;
         }
 
-        return IsTargetSquadWithinRangedFiringArc(
-            GetSquadRangedAttackArc());
+        formationRangedSetupRequired = false;
+        formationRangedSetupInitialized = false;
+        return true;
     }
 
     bool IsFormationRangedSetupReady()
@@ -3854,5 +3853,4 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
-
 

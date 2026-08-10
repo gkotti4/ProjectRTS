@@ -81,7 +81,7 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Default runtime state for simple ranged avoidance. While enabled, a ranged squad with ammunition performs a short formation retreat when its target gets too close.")]
     public bool rangedAvoidanceEnabledByDefault = false;
 
-    [Tooltip("If true, ranged squads derive scan/start/preferred/break distances from WeaponProfile.ranged.attackRange.")]
+    [Tooltip("If true, ranged squads derive scan/start/break distances from WeaponProfile.ranged.attackRange.")]
     public bool rangedUseWeaponRangeForTacticalRanges = true;
 
     [Tooltip("Extra scan range added to ranged weapon range.")]
@@ -90,8 +90,6 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Combat start range as a multiplier of ranged weapon range.")]
     [Min(0.1f)] public float rangedCombatStartRangeMultiplier = 0.9f;
 
-    [Tooltip("Preferred approach/firing range as a multiplier of ranged weapon range.")]
-    [Range(0.1f, 1f)] public float rangedPreferredRangeMultiplier = 0.82f;
 
     [Tooltip("Combat break padding added beyond ranged weapon range.")]
     [Min(0f)] public float rangedCombatBreakRangePadding = 4f;
@@ -100,9 +98,6 @@ public class SquadCombatProfile : ScriptableObject
     [Range(0.1f, 1f)] [FormerlySerializedAs("prototypeRangedStoppingDistanceMultiplier")]
     public float formationRangedStoppingDistanceMultiplier = 0.82f;
 
-    [Tooltip("Preferred soldier firing distance as a multiplier of ranged weapon range.")]
-    [Range(0.1f, 1f)] [FormerlySerializedAs("prototypeRangedPreferredDistanceMultiplier")]
-    public float formationRangedPreferredDistanceMultiplier = 0.82f;
 
     [Header("Formation Ranged Setup")]
     [Tooltip("Living-soldier ratio that must be reasonably close to formation slots before a ranged squad begins firing.")]
@@ -110,9 +105,6 @@ public class SquadCombatProfile : ScriptableObject
 
     [Tooltip("Maximum distance from an assigned formation slot for a soldier to count as ready to fire.")]
     [Min(0.05f)] public float formationRangedSetupSlotDistance = 1.25f;
-
-    [Tooltip("If the target moves farther than this angle from the formation facing, the ranged squad turns/reforms before firing again.")]
-    [Range(0f, 180f)] public float formationRangedRefacingAngle = 15f;
 
     [Tooltip("Movement speed multiplier used while ranged soldiers settle into their firing formation.")]
     [Min(0.1f)] public float formationRangedSetupMoveSpeedMultiplier = 1.0f;
@@ -341,13 +333,10 @@ public class SquadCombatProfile : ScriptableObject
 
         rangedScanRangePadding = Mathf.Max(0f, rangedScanRangePadding);
         rangedCombatStartRangeMultiplier = Mathf.Max(0.1f, rangedCombatStartRangeMultiplier);
-        rangedPreferredRangeMultiplier = Mathf.Clamp(rangedPreferredRangeMultiplier, 0.1f, 1f);
         rangedCombatBreakRangePadding = Mathf.Max(0f, rangedCombatBreakRangePadding);
         formationRangedStoppingDistanceMultiplier = Mathf.Clamp(formationRangedStoppingDistanceMultiplier, 0.1f, 1f);
-        formationRangedPreferredDistanceMultiplier = Mathf.Clamp(formationRangedPreferredDistanceMultiplier, 0.1f, 1f);
         formationRangedSetupRequiredRatio = Mathf.Clamp01(formationRangedSetupRequiredRatio);
         formationRangedSetupSlotDistance = Mathf.Max(0.05f, formationRangedSetupSlotDistance);
-        formationRangedRefacingAngle = Mathf.Clamp(formationRangedRefacingAngle, 0f, 180f);
         formationRangedSetupMoveSpeedMultiplier = Mathf.Max(0.1f, formationRangedSetupMoveSpeedMultiplier);
         formationRangedInitialFireSettleTime = Mathf.Max(0f, formationRangedInitialFireSettleTime);
         formationRangedAvoidanceEnterDistance = Mathf.Max(0.1f, formationRangedAvoidanceEnterDistance);
@@ -412,3 +401,4 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
+

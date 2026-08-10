@@ -9,6 +9,7 @@ public class TemporaryTestSquadSpawner : MonoBehaviour
     [SerializeField] private SquadData squadDataTest;
     [SerializeField] private SquadData squadDataRangedTest;
     [SerializeField] private SquadData squadDataTestAsEnemy;
+    [SerializeField] private SquadData squadDataRangedTestAsEnemy;
     
     private Camera mainCamera;
 
@@ -55,7 +56,7 @@ public class TemporaryTestSquadSpawner : MonoBehaviour
         }
 
         // Spawn Ranged Squad as Player
-        if (Input.GetKeyDown(KeyCode.Backslash))
+        if (Input.GetKeyDown(KeyCode.Backslash) && !Input.GetKey(KeyCode.LeftControl))
         {
             FactionInstance _factionInstance = GameManager.Instance.PlayerFaction;
             if (_factionInstance == null)
@@ -70,5 +71,25 @@ public class TemporaryTestSquadSpawner : MonoBehaviour
             Vector3 spawnPos = new Vector3(hit.point.x, 0.1f, hit.point.z);
             SquadFactory.SpawnSquad(squadDataRangedTest, spawnPos, Quaternion.identity, _factionInstance);
         }
+        
+        
+        // Spawn Squad as Enemy
+        if (Input.GetKeyDown(KeyCode.Backslash) && Input.GetKey(KeyCode.LeftControl))
+        {
+            FactionInstance _factionInstance = GameManager.Instance.EnemyFaction;
+            if (_factionInstance == null)
+            {
+                Debug.LogError("InitializeSquad failed: squad members have not spawned on a faction.");
+                return;
+            }
+
+            Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+            if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, GameLayers.Instance.GroundLayers))
+                return;
+            Vector3 spawnPos = new Vector3(hit.point.x, 0.1f, hit.point.z);
+            SquadFactory.SpawnSquad(squadDataRangedTestAsEnemy, spawnPos, Quaternion.identity, _factionInstance);
+        }
+
+        
     }
 }
