@@ -60,6 +60,13 @@ public class SquadData : ScriptableObject
     [Min(1)] public int defaultUnitsPerRow = 10;
     [Min(0.1f)] public float defaultSpacing = 2.5f;
 
+    [Header("Squad Survival")]
+    [Tooltip("If above 0, the squad is eliminated when combined current health falls at or below this percentage of its starting maximum health. Example: 5 = 5%. Set to 0 to disable early elimination by health.")]
+    [Range(0f, 100f)] public float squadDeathHealthPercentageThreshold = 5f;
+
+    [Tooltip("If above 0, the squad is eliminated when living manpower falls to this number or lower. This never eliminates a squad that started at or below the configured threshold. Set to 0 to disable early elimination by manpower.")]
+    [Min(0)] public int squadDeathLivingSoldierThreshold = 1;
+
     [Header("Morale")]
     public MoraleStats morale = MoraleStats.Default;
 

@@ -34,6 +34,10 @@ public class SoldierData : ScriptableObject
     [Tooltip("Optional ranged capability. Leave empty for a unit that cannot perform ranged attacks.")]
     public WeaponProfile rangedWeaponProfile;
 
+    [Header("Combat Reaction")]
+    [Tooltip("Gameplay lock duration after this soldier begins a HitReact. The animation may finish independently; gameplay no longer depends on an animation-end event.")]
+    [Min(0f)] public float hitReactLockDuration = 1.0f;
+
     [Header("Armor")]
     public ArmorProfile armorProfile;
 

@@ -3,28 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(SquadRoster))]
-
-
-/// -----------------------------------------------------------------------------
-/// SquadHealth
-/// -----------------------------------------------------------------------------
-///
-/// Aggregates individual SoldierHealth values into squad-level health and manpower.
-/// Subscribes to soldier health/death events, recalculates current squad health,
-/// living soldier count, health percentage, and manpower percentage.
-///
-/// The squad's maximum health and total soldier count are initialized from the
-/// starting roster and remain stable so deaths reduce manpower instead of shrinking
-/// the denominator.
-///
-/// Design role:
-/// Converts individual soldier health into squad UI/gameplay health state.
-///
 public class SquadHealth : MonoBehaviour
 {
     public event Action<SquadHealth> OnSquadHealthChanged;
 
     private SquadRoster roster;
+    private SquadData data;
+    private bool isInitialized = false;
+    private bool isEliminatingSquad = false;
     private readonly HashSet<SoldierHealth> subscribedHealth = new HashSet<SoldierHealth>();
 
     public int CurrentHealth { get; private set; }
@@ -46,14 +32,16 @@ public class SquadHealth : MonoBehaviour
 
     void OnEnable()
     {
-        if (roster != null)
-            roster.OnRosterChanged += HandleRosterChanged;
+        // SquadHealth may be enabled before SquadController.Initialize() runs.
+        // Do not listen to roster changes until Initialize() has established the
+        // stable MaxHealth / TotalSoldiers denominators.
+        if (isInitialized)
+            SubscribeToRoster();
     }
 
     void OnDisable()
     {
-        if (roster != null)
-            roster.OnRosterChanged -= HandleRosterChanged;
+        UnsubscribeFromRoster();
 
         foreach (SoldierHealth health in subscribedHealth)
         {
@@ -69,24 +57,40 @@ public class SquadHealth : MonoBehaviour
 
     public void Initialize(SquadRoster sourceRoster)
     {
-        roster = sourceRoster;
+        // Prevent duplicate subscriptions if this component was previously bound.
+        UnsubscribeFromRoster();
 
-        if (roster != null)
-            roster.OnRosterChanged += HandleRosterChanged;
-        
+        roster = sourceRoster;
+        data = GetComponent<SquadController>()?.Data;
+
+        if (roster == null)
+        {
+            Debug.LogError($"{name}: SquadHealth.Initialize received a null roster.", this);
+            return;
+        }
+
         TotalSoldiers = roster.Soldiers.Count;
         MaxHealth = 0;
-        foreach (SoldierController soldier in roster.Soldiers)
-            MaxHealth += soldier.Health.MaxHealth;
 
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || soldier.Health == null)
+                continue;
+
+            MaxHealth += soldier.Health.MaxHealth;
+        }
+
+        // From this point onward threshold evaluation is safe.
+        isInitialized = true;
+
+        SubscribeToRoster();
         RefreshSubscriptions();
         Recalculate();
     }
 
-
     public void RefreshMaximumHealthFromRoster()
     {
-        if (roster == null)
+        if (!isInitialized || roster == null)
             return;
 
         MaxHealth = 0;
@@ -102,25 +106,50 @@ public class SquadHealth : MonoBehaviour
         Recalculate();
     }
 
+    void SubscribeToRoster()
+    {
+        if (roster == null)
+            return;
+
+        // Remove first so repeated lifecycle/initialize calls cannot duplicate it.
+        roster.OnRosterChanged -= HandleRosterChanged;
+        roster.OnRosterChanged += HandleRosterChanged;
+    }
+
+    void UnsubscribeFromRoster()
+    {
+        if (roster != null)
+            roster.OnRosterChanged -= HandleRosterChanged;
+    }
+
     void HandleRosterChanged(SquadRoster changedRoster)
     {
+        if (!isInitialized)
+            return;
+
         RefreshSubscriptions();
         Recalculate();
     }
 
     void HandleSoldierHealthChanged(SoldierHealth health)
     {
+        if (!isInitialized)
+            return;
+
         Recalculate();
     }
 
     void HandleSoldierDied(SoldierHealth health)
     {
+        if (!isInitialized)
+            return;
+
         Recalculate();
     }
 
     void RefreshSubscriptions()
     {
-        if (roster == null)
+        if (!isInitialized || roster == null)
             return;
 
         foreach (SoldierController soldier in roster.Soldiers)
@@ -142,10 +171,11 @@ public class SquadHealth : MonoBehaviour
 
     void Recalculate()
     {
+        if (!isInitialized || isEliminatingSquad)
+            return;
+
         CurrentHealth = 0;
         LivingSoldiers = 0;
-        // MaxHealth = 0;
-        // TotalSoldiers = 0;
 
         if (roster == null)
         {
@@ -158,15 +188,67 @@ public class SquadHealth : MonoBehaviour
             if (soldier == null || soldier.Health == null)
                 continue;
 
-            // TotalSoldiers++;
-            // MaxHealth += soldier.Health.MaxHealth;
-            
             CurrentHealth += soldier.Health.CurrentHealth;
 
             if (soldier.Health.IsAlive)
                 LivingSoldiers++;
         }
 
+        if (ShouldEliminateSquad())
+        {
+            EliminateRemainingSoldiers();
+            return;
+        }
+
         OnSquadHealthChanged?.Invoke(this);
+    }
+
+    bool ShouldEliminateSquad()
+    {
+        // MaxHealth and TotalSoldiers are stable starting-roster denominators.
+        // Never evaluate early-elimination rules until they are valid.
+        if (!isInitialized ||
+            data == null ||
+            LivingSoldiers <= 0 ||
+            MaxHealth <= 0 ||
+            TotalSoldiers <= 0)
+        {
+            return false;
+        }
+
+        float healthThreshold = Mathf.Clamp(
+            data.squadDeathHealthPercentageThreshold,
+            0f,
+            100f) / 100f;
+
+        bool healthThresholdReached =
+            healthThreshold > 0f &&
+            HealthPercent <= healthThreshold;
+
+        bool manpowerThresholdReached =
+            data.squadDeathLivingSoldierThreshold > 0 &&
+            TotalSoldiers > data.squadDeathLivingSoldierThreshold &&
+            LivingSoldiers <= data.squadDeathLivingSoldierThreshold;
+
+        return healthThresholdReached || manpowerThresholdReached;
+    }
+
+    void EliminateRemainingSoldiers()
+    {
+        if (roster == null || isEliminatingSquad)
+            return;
+
+        isEliminatingSquad = true;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || soldier.Health == null || !soldier.Health.IsAlive)
+                continue;
+
+            soldier.Health.Kill();
+        }
+
+        isEliminatingSquad = false;
+        Recalculate();
     }
 }

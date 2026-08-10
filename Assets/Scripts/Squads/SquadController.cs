@@ -445,7 +445,11 @@ public class SquadController : MonoBehaviour,
 
             case SquadState.Withdrawing:
                 Combat.TickCombatLocks();
-                Movement.TickMoving();
+
+                // Ranged avoidance can chain another retreat just before arrival
+                // without briefly dropping back into combat between retreats.
+                if (!Combat.TryChainFormationRangedAvoidanceWithdrawal())
+                    Movement.TickMoving();
                 break;
 
             case SquadState.Reforming:
@@ -513,6 +517,13 @@ public class SquadController : MonoBehaviour,
         Vector3 facing,
         float requestedFormationWidth)
     {
+        // Active combat can leave the virtual squad root behind while soldiers move
+        // independently toward enemies. Before creating a normal movement path, snap
+        // the anchor to the actual living squad center so the new order starts from
+        // the squad rather than pulling everyone back toward an old banner position.
+        if (State == SquadState.InCombat)
+            Movement.SyncRootToLivingSoldierCenter();
+
         if (State == SquadState.InCombat)
             Combat.BeginCombatLockedMoveOrder();
         else
@@ -733,4 +744,3 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
-

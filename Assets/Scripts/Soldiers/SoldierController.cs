@@ -69,6 +69,17 @@ public class SoldierController : MonoBehaviour
     public bool HasMeleeWeapon => MeleeWeaponProfile != null;
     public bool HasRangedWeapon => RangedWeaponProfile != null;
 
+    public int CurrentRangedAmmunition { get; private set; } = 0;
+    public int MaximumRangedAmmunition =>
+        Stats != null ? Stats.ranged.ammunition : 0;
+
+    public bool HasUnlimitedRangedAmmunition =>
+        MaximumRangedAmmunition < 0;
+
+    public bool HasRangedAmmunition =>
+        HasRangedWeapon &&
+        (HasUnlimitedRangedAmmunition || CurrentRangedAmmunition > 0);
+    
     // -----------------------------------------------------------------------------
     // Prefab / Socket References
     // -----------------------------------------------------------------------------
@@ -81,14 +92,13 @@ public class SoldierController : MonoBehaviour
     // These are intentionally not serialized.
     // They are watchdog values for catching missing animation events.
     private const bool actionDebugWarningsEnabled = true;
-    private const bool actionWatchdogHitReactRecoveryEnabled = true; // Automatically releases a HitReact action when its animation-end event is missed.
     private const float attackActionWarningSeconds = 3f;
-    private const float hitReactActionWarningSeconds = 2f;
 
     // -----------------------------------------------------------------------------
     // Runtime Action Debug State
     // -----------------------------------------------------------------------------
     private float currentActionStartedAt = 0f;
+    private float hitReactLockTimer = 0f;
     private bool hasLoggedActionStuckWarning = false;
 
     public Transform AttackOrigin => attackOrigin != null ? attackOrigin : transform; // CHECK IF IMPLEMENTED
@@ -149,6 +159,7 @@ public class SoldierController : MonoBehaviour
 
     void Update()
     {
+        TickHitReactLock();
         TickActionDebugWatchdog();
     }
 
@@ -174,7 +185,8 @@ public class SoldierController : MonoBehaviour
         Faction = faction;
 
         RefreshRuntimeStats(
-            preserveHealthPercent: false);
+            preserveHealthPercent: false,
+            preserveRangedAmmunition: false);
 
         if (Stats != null)
         {
@@ -242,8 +254,12 @@ public class SoldierController : MonoBehaviour
 
 
     public void RefreshRuntimeStats(
-        bool preserveHealthPercent = true)
+        bool preserveHealthPercent = true,
+        bool preserveRangedAmmunition = true)
     {
+        int previousMaximumRangedAmmunition = MaximumRangedAmmunition;
+        int previousCurrentRangedAmmunition = CurrentRangedAmmunition;
+
         Stats = RuntimeStatResolver.ResolveSoldier(
             Data,
             Squad != null ? Squad.Data : null,
@@ -258,11 +274,64 @@ public class SoldierController : MonoBehaviour
 
         Motor?.ApplyStats(Stats.movement, Stats.body);
 
+        RefreshRangedAmmunition(
+            previousMaximumRangedAmmunition,
+            previousCurrentRangedAmmunition,
+            preserveRangedAmmunition);
+
         WeaponProfile previousActiveWeapon = ActiveWeaponProfile;
         ActiveWeaponProfile = ResolveRefreshedActiveWeapon(previousActiveWeapon);
         ApplyActiveWeaponPresentation();
     }
 
+
+    void RefreshRangedAmmunition(
+        int previousMaximumAmmunition,
+        int previousCurrentAmmunition,
+        bool preserveRangedAmmunition)
+    {
+        int resolvedMaximumAmmunition = MaximumRangedAmmunition;
+
+        if (!HasRangedWeapon)
+        {
+            CurrentRangedAmmunition = 0;
+            return;
+        }
+
+        if (resolvedMaximumAmmunition < 0)
+        {
+            CurrentRangedAmmunition = -1;
+            return;
+        }
+
+        if (!preserveRangedAmmunition || previousMaximumAmmunition < 0)
+        {
+            CurrentRangedAmmunition = Mathf.Max(0, resolvedMaximumAmmunition);
+            return;
+        }
+
+        CurrentRangedAmmunition = Mathf.Clamp(
+            previousCurrentAmmunition,
+            0,
+            Mathf.Max(0, resolvedMaximumAmmunition));
+    }
+
+    public bool TryConsumeRangedAmmunition(int amount = 1)
+    {
+        amount = Mathf.Max(0, amount);
+
+        if (!HasRangedAmmunition)
+            return false;
+
+        if (HasUnlimitedRangedAmmunition || amount == 0)
+            return true;
+
+        if (CurrentRangedAmmunition < amount)
+            return false;
+
+        CurrentRangedAmmunition -= amount;
+        return true;
+    }
 
     public bool SetActiveWeaponProfile(WeaponProfile weaponProfile)
     {
@@ -529,6 +598,17 @@ public class SoldierController : MonoBehaviour
         currentActionStartedAt = Time.time;
         hasLoggedActionStuckWarning = false;
 
+        if (newAction == SoldierActionState.HitReact)
+        {
+            hitReactLockTimer = Data != null
+                ? Mathf.Max(0f, Data.hitReactLockDuration)
+                : 1.0f;
+        }
+        else
+        {
+            hitReactLockTimer = 0f;
+        }
+
         Stop();
 
         SoldierAnimator?.PlayAction(newAction);
@@ -543,6 +623,7 @@ public class SoldierController : MonoBehaviour
 
         ActionState = SoldierActionState.None;
         currentActionStartedAt = 0f;
+        hitReactLockTimer = 0f;
         hasLoggedActionStuckWarning = false;
 
         SoldierAnimator?.HandleActionCompleted(completedAction);
@@ -561,6 +642,7 @@ public class SoldierController : MonoBehaviour
 
         ActionState = SoldierActionState.None;
         currentActionStartedAt = 0f;
+        hitReactLockTimer = 0f;
         hasLoggedActionStuckWarning = false;
 
         SoldierAnimator?.HandleActionCancelled(cancelledAction);
@@ -608,44 +690,39 @@ public class SoldierController : MonoBehaviour
         }
     }
 
+    void TickHitReactLock()
+    {
+        if (ActionState != SoldierActionState.HitReact)
+            return;
+
+        hitReactLockTimer -= Time.deltaTime;
+
+        if (hitReactLockTimer <= 0f)
+            CompleteAction(SoldierActionState.HitReact);
+    }
+
     void TickActionDebugWatchdog()
     {
         if (!actionDebugWarningsEnabled)
             return;
 
-        if (ActionState == SoldierActionState.None ||
-            ActionState == SoldierActionState.Death)
-        {
+        // HitReact is intentionally timer-owned now. Attack remains animation-event
+        // owned because impact/release/end timing is part of the attack itself.
+        if (ActionState != SoldierActionState.Attack)
             return;
-        }
 
         if (hasLoggedActionStuckWarning)
             return;
 
-        float warningSeconds = ActionState == SoldierActionState.Attack
-            ? attackActionWarningSeconds
-            : hitReactActionWarningSeconds;
-
-        if (warningSeconds <= 0f)
-            return;
-
-        if (Time.time - currentActionStartedAt < warningSeconds)
+        if (Time.time - currentActionStartedAt < attackActionWarningSeconds)
             return;
 
         hasLoggedActionStuckWarning = true;
 
         Debug.LogWarning(
-            $"{name}: ActionState '{ActionState}' has lasted longer than {warningSeconds:0.00}s. " +
-            "Check the animation transition and required animation end event.",
+            $"{name}: ActionState 'Attack' has lasted longer than {attackActionWarningSeconds:0.00}s. " +
+            "Check the attack animation transition and required animation end event.",
             this);
-
-        // Animation events remain the normal completion path, but gameplay state
-        // must never stay permanently locked when a transition skips OnHitEnd.
-        if (actionWatchdogHitReactRecoveryEnabled &&
-            ActionState == SoldierActionState.HitReact)
-        {
-            CompleteAction(SoldierActionState.HitReact);
-        }
     }
     
     #endregion
@@ -726,4 +803,3 @@ public class SoldierController : MonoBehaviour
     #endregion
 
 }
-

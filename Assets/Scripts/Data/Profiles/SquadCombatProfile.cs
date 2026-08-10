@@ -75,8 +75,11 @@ public class SquadCombatProfile : ScriptableObject
 
 
     [Header("Formation Ranged")]
-    [Tooltip("If true, currently shootable ranged soldiers wait for one another and fire together using a shared attack cooldown.")]
+    [Tooltip("Default runtime state for synchronized ranged volleys.")]
     public bool rangedVolleyEnabledByDefault = false;
+
+    [Tooltip("Default runtime state for simple ranged avoidance. While enabled, a ranged squad with ammunition performs a short formation retreat when its target gets too close.")]
+    public bool rangedAvoidanceEnabledByDefault = false;
 
     [Tooltip("If true, ranged squads derive scan/start/preferred/break distances from WeaponProfile.ranged.attackRange.")]
     public bool rangedUseWeaponRangeForTacticalRanges = true;
@@ -116,6 +119,17 @@ public class SquadCombatProfile : ScriptableObject
 
     [Tooltip("Short pause after the ranged formation becomes ready before soldiers may begin firing.")]
     [Min(0f)] public float formationRangedInitialFireSettleTime = 0.25f;
+
+
+    [Header("Formation Ranged Avoidance")]
+    [Tooltip("Enemy squad-center distance that triggers a simple retreat while ranged avoidance is enabled and ammunition remains.")]
+    [Min(0.1f)] public float formationRangedAvoidanceEnterDistance = 10f;
+
+    [Tooltip("How far the squad tries to move directly away from the enemy when avoidance triggers.")]
+    [Min(0.1f)] public float formationRangedAvoidanceRetreatDistance = 10f;
+
+    [Tooltip("When this close to the current avoidance destination, recheck the original threat and immediately chain another retreat if it is still inside avoidance range.")]
+    [Min(0.1f)] public float formationRangedAvoidanceRecheckDistance = 2f;
 
     [Header("Formation Ranged Melee Fallback")]
     [Tooltip("Allows a ranged squad with melee sidearms to switch the entire squad into melee mode when enemies breach close range.")]
@@ -336,6 +350,9 @@ public class SquadCombatProfile : ScriptableObject
         formationRangedRefacingAngle = Mathf.Clamp(formationRangedRefacingAngle, 0f, 180f);
         formationRangedSetupMoveSpeedMultiplier = Mathf.Max(0.1f, formationRangedSetupMoveSpeedMultiplier);
         formationRangedInitialFireSettleTime = Mathf.Max(0f, formationRangedInitialFireSettleTime);
+        formationRangedAvoidanceEnterDistance = Mathf.Max(0.1f, formationRangedAvoidanceEnterDistance);
+        formationRangedAvoidanceRetreatDistance = Mathf.Max(0.1f, formationRangedAvoidanceRetreatDistance);
+        formationRangedAvoidanceRecheckDistance = Mathf.Max(0.1f, formationRangedAvoidanceRecheckDistance);
         formationRangedMeleeFallbackEnterDistance = Mathf.Max(0.1f, formationRangedMeleeFallbackEnterDistance);
         formationRangedMeleeFallbackExitDistance = Mathf.Max(
             formationRangedMeleeFallbackEnterDistance + 0.1f,
@@ -395,6 +412,3 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
-
-
-

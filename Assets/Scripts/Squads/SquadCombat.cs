@@ -48,8 +48,12 @@ public class SquadCombat : MonoBehaviour
     // Ranged squads switch as one unit between ranged and melee fallback.
     private bool formationRangedSquadUsingMeleeFallback = false;
 
-    // Future ranged-fire behavior toggle. Current firing behavior is unchanged.
     private bool rangedVolleyEnabled = false;
+    private bool rangedAvoidanceEnabled = false;
+
+    // The threat that caused the current ranged-avoidance withdrawal.
+    // Kept separately because normal combat targets are cleared during retreat.
+    private SquadController rangedAvoidanceThreatSquad;
 
     // Ranged ammunition belongs to the squad, not individual soldiers.
     // -1 means unlimited ammunition.
@@ -141,6 +145,7 @@ public class SquadCombat : MonoBehaviour
     public SquadCombatStyle CurrentCombatStyle => currentCombatStyle;
     public SquadEngagementReason CurrentEngagementType => currentEngagementType;
     public bool RangedVolleyEnabled => rangedVolleyEnabled;
+    public bool RangedAvoidanceEnabled => rangedAvoidanceEnabled;
 
     public int CurrentRangedAmmunition => currentRangedAmmunition;
     public int MaximumRangedAmmunition => maximumRangedAmmunition;
@@ -178,6 +183,10 @@ public class SquadCombat : MonoBehaviour
             squadCombatProfile != null &&
             squadCombatProfile.rangedVolleyEnabledByDefault;
 
+        rangedAvoidanceEnabled =
+            squadCombatProfile != null &&
+            squadCombatProfile.rangedAvoidanceEnabledByDefault;
+
         rangedAmmunitionStartingSoldierCount = CountLivingRangedSoldiers();
         InitializeRangedAmmunition();
 
@@ -193,6 +202,16 @@ public class SquadCombat : MonoBehaviour
     public void ToggleRangedVolley()
     {
         rangedVolleyEnabled = !rangedVolleyEnabled;
+    }
+
+    public void SetRangedAvoidanceEnabled(bool enabled)
+    {
+        rangedAvoidanceEnabled = enabled;
+    }
+
+    public void ToggleRangedAvoidance()
+    {
+        rangedAvoidanceEnabled = !rangedAvoidanceEnabled;
     }
 
     bool HasCombatProfile()
@@ -286,6 +305,7 @@ public class SquadCombat : MonoBehaviour
         currentCombatStyle = ResolveCombatStyle();
         currentEngagementType = SquadEngagementReason.None;
         formationRangedSquadUsingMeleeFallback = false;
+        rangedAvoidanceThreatSquad = null;
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
         formationRangedInitialFireSettleTimer = 0f;
@@ -334,6 +354,11 @@ public class SquadCombat : MonoBehaviour
             EndCombatAndReform();
             return;
         }
+
+        // Ranged avoidance can trigger while the formation is still approaching,
+        // so a close melee threat does not need to wait for InCombat first.
+        if (TryBeginFormationRangedAvoidance())
+            return;
 
         movement.TickFormationFollow();
 
@@ -442,6 +467,16 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
+        // Active combat can move soldiers independently of the virtual formation
+        // anchor. Keep the squad root/banner locked to the living body center so
+        // later movement/reform orders never inherit a stale combat anchor.
+        movement?.SyncRootToLivingSoldierCenter();
+
+        // Avoidance gets first refusal while the squad still has ammunition. This is
+        // intentionally a simple one-step retreat, not full skirmisher AI.
+        if (TryBeginFormationRangedAvoidance())
+            return;
+
         // Ranged/melee fallback is a squad decision, not a per-soldier decision.
         // Update it before range/break checks so the correct combat mode owns them.
         UpdateFormationSquadCombatMode();
@@ -487,6 +522,126 @@ public class SquadCombat : MonoBehaviour
         {
             TickFormationSoldier(soldier, waitToAttack);
         }
+    }
+
+    bool TryBeginFormationRangedAvoidance()
+    {
+        if (!rangedAvoidanceEnabled ||
+            !IsAuthoredRangedSquad() ||
+            !HasRangedAmmunition ||
+            targetSquad == null ||
+            movement == null ||
+            squad == null)
+        {
+            return false;
+        }
+
+        float avoidanceEnterDistance = Mathf.Max(
+            0.1f,
+            squadCombatProfile.formationRangedAvoidanceEnterDistance);
+
+        // Use the same physical soldier-proximity basis as melee fallback. Squad
+        // roots are virtual formation anchors and can be offset from the actual fight.
+        if (!IsAnyLivingSquadMemberThreatenedWithin(avoidanceEnterDistance))
+            return false;
+
+        BeginFormationRangedAvoidanceRetreat(targetSquad);
+        return true;
+    }
+
+    /// <summary>
+    /// While a ranged-avoidance withdrawal is still in progress, rechecks the
+    /// original threat shortly before arrival. If the threat is still inside the
+    /// avoidance distance, immediately chains another retreat instead of briefly
+    /// returning to combat first.
+    /// </summary>
+    public bool TryChainFormationRangedAvoidanceWithdrawal()
+    {
+        if (!rangedAvoidanceEnabled ||
+            !HasRangedAmmunition ||
+            rangedAvoidanceThreatSquad == null ||
+            movement == null ||
+            squad == null)
+        {
+            rangedAvoidanceThreatSquad = null;
+            return false;
+        }
+
+        if (!CanAttack(rangedAvoidanceThreatSquad))
+        {
+            rangedAvoidanceThreatSquad = null;
+            return false;
+        }
+
+        float distanceToDestination = Vector3.Distance(
+            Flatten(squad.transform.position),
+            Flatten(movement.FinalDestination));
+
+        float recheckDistance = Mathf.Max(
+            0.1f,
+            squadCombatProfile.formationRangedAvoidanceRecheckDistance);
+
+        if (distanceToDestination > recheckDistance)
+            return false;
+
+        float avoidanceDistance = Mathf.Max(
+            0.1f,
+            squadCombatProfile.formationRangedAvoidanceEnterDistance);
+
+        if (!IsAnyLivingSquadMemberThreatenedBySquad(
+                rangedAvoidanceThreatSquad,
+                avoidanceDistance * avoidanceDistance))
+        {
+            rangedAvoidanceThreatSquad = null;
+            return false;
+        }
+
+        BeginFormationRangedAvoidanceRetreat(rangedAvoidanceThreatSquad);
+        return true;
+    }
+
+    void BeginFormationRangedAvoidanceRetreat(SquadController avoidanceThreat)
+    {
+        if (avoidanceThreat == null || avoidanceThreat.Roster == null)
+            return;
+
+        Vector3 myCenter = TryGetLivingSoldierCenter(roster, out Vector3 resolvedMyCenter)
+            ? resolvedMyCenter
+            : squad.transform.position;
+
+        Vector3 targetCenter = TryGetLivingSoldierCenter(avoidanceThreat.Roster, out Vector3 resolvedTargetCenter)
+            ? resolvedTargetCenter
+            : avoidanceThreat.transform.position;
+
+        Vector3 awayFromTarget = myCenter - targetCenter;
+        awayFromTarget.y = 0f;
+
+        if (awayFromTarget.sqrMagnitude <= 0.0001f)
+            awayFromTarget = -avoidanceThreat.transform.forward;
+
+        awayFromTarget.y = 0f;
+
+        if (awayFromTarget.sqrMagnitude <= 0.0001f)
+            awayFromTarget = -squad.transform.forward;
+
+        awayFromTarget.Normalize();
+
+        // Start the next retreat from the real squad body center, not from a stale
+        // virtual anchor that may have been left behind by combat movement.
+        movement.SyncRootToLivingSoldierCenter();
+
+        Vector3 retreatDestination =
+            squad.transform.position +
+            awayFromTarget * squadCombatProfile.formationRangedAvoidanceRetreatDistance;
+
+        // Clear normal combat ownership, but preserve the avoidance threat separately
+        // so withdrawal can recheck it before reaching the destination.
+        ClearTargets();
+        rangedAvoidanceThreatSquad = avoidanceThreat;
+
+        Vector3 facing = -awayFromTarget;
+        movement.OrderMove(retreatDestination, facing);
+        squad.SetState(SquadState.Withdrawing);
     }
 
     void TickFormationSoldier(SoldierController soldier, bool waitToAttack = false)
@@ -1897,11 +2052,12 @@ public class SquadCombat : MonoBehaviour
 
         foreach (SoldierController soldier in roster.Soldiers)
         {
-            if (soldier == null || !soldier.IsAlive)
+            if (soldier == null ||
+                !soldier.IsAlive)
+                // || !soldier.IsUsingRangedWeapon)
+            {
                 continue;
-
-            if (soldier.IsMovementLocked)
-                return false;
+            }
 
             if (formationAttackTimers.TryGetValue(
                     soldier,
@@ -3678,5 +3834,3 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
-
-
