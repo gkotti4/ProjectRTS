@@ -1,3 +1,4 @@
+//-----------------------------------------------------------------------------------------
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -83,7 +84,7 @@ public enum SquadCombatStyle
 public enum SquadEngagementReason
 {
     None,
-    ExplicitAttack,
+    OrderedAttack,
     AttackMoveContact,
     PassiveContact,
     DefensiveHold,
@@ -988,3 +989,6 @@ public struct FormationBounds
             depth = 0f
         };
 }
+//--------------------------------------------------------
+// END OF Types.cs
+//--------------------------------------------------------

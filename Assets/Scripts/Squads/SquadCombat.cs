@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -235,13 +236,13 @@ public class SquadCombat : MonoBehaviour
 
     #region Orders / State Ticks
 
-    /// Receives an explicit attack order.
+    /// Receives a direct ordered attack against a specific squad.
     public void OrderAttack(SquadController target)
     {
-        OrderAttack(target, SquadEngagementReason.ExplicitAttack);
+        OrderAttack(target, SquadEngagementReason.OrderedAttack);
     }
 
-    /// Starts an attack-like engagement from either an explicit command or auto-scan.
+    /// Starts an attack-like engagement from either a direct ordered attack or auto-scan.
     void OrderAttack(
         SquadController target,
         SquadEngagementReason engagementType)
@@ -481,8 +482,27 @@ public class SquadCombat : MonoBehaviour
         // Update it before range/break checks so the correct combat mode owns them.
         UpdateFormationSquadCombatMode();
 
-        if (!CanAttack(targetSquad) || !IsWithinCombatBreakRange(targetSquad))
+        if (!CanAttack(targetSquad))
         {
+            if (!TrySwitchPrimaryCombatTarget())
+            {
+                EndCombatAndReform();
+                return;
+            }
+
+            UpdateFormationSquadCombatMode();
+        }
+        else if (!IsWithinCombatBreakRange(targetSquad))
+        {
+            // A direct ordered attack stays committed to its living target. The
+            // normal combat break range is only a leash for autonomous/passive
+            // engagements, not permission to abandon a player/AI ordered target.
+            if (currentEngagementType == SquadEngagementReason.OrderedAttack)
+            {
+                BeginApproachingCombat();
+                return;
+            }
+
             if (!TrySwitchPrimaryCombatTarget())
             {
                 EndCombatAndReform();
@@ -3834,3 +3854,5 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
+
+
