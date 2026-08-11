@@ -305,7 +305,11 @@ public class SquadController : MonoBehaviour,
 
         SelectionManager.Instance?.UnregisterSelectable(this);
         SquadManager.Instance?.UnregisterSquad(this);
+
+        Roster.DestroyAllSoldiers(); // Hotfix - squad destroy cleanup after game mode restart (was only destroying/unregistering squad GO, leaving the remaining solider GOs)
     }
+    
+    public void DestroySquad() => Destroy(gameObject);
 
     #endregion
 

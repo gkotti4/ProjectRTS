@@ -47,26 +47,11 @@ public class SquadRoster : MonoBehaviour
         if (soldierParent == null)
             soldierParent = GetOrCreateRuntimeSoldierParent(); // Big Play
 
-        ClearExistingRuntimeSoldiers();
+        DestroyAllSoldiers();
         SpawnStartingSoldiers();
 
         OnRosterChanged?.Invoke(this);
     }
-
-    // public void AddExistingSoldier(SoldierController soldier)
-    // {
-    //     if (soldier == null)
-    //         return;
-    //
-    //     if (soldiers.Contains(soldier))
-    //         return;
-    //
-    //     soldiers.Add(soldier);
-    //     soldier.SetSquad(squad, this);
-    //     soldier.SetSlotIndex(soldiers.Count - 1);
-    //
-    //     OnRosterChanged?.Invoke(this);
-    // }
     
     public void AddExistingSoldier(SoldierController soldier)
     {
@@ -237,7 +222,7 @@ public class SquadRoster : MonoBehaviour
         }
     }
 
-    void ClearExistingRuntimeSoldiers()
+    public void DestroyAllSoldiers()
     {
         for (int i = soldiers.Count - 1; i >= 0; i--)
         {
@@ -248,10 +233,10 @@ public class SquadRoster : MonoBehaviour
         soldiers.Clear();
     }
 
-    void HandleEmptySquad()
+    void HandleEmptySquad() // check?
     {
         // Final behavior can move to SquadController later.
-        Destroy(gameObject);
+        Destroy(gameObject); 
     }
     
     /// Runtime soldiers must not be parented under the squad root.
