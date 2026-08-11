@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -368,6 +369,15 @@ public class SelectionManager : MonoBehaviour
         Select(selectable);
     }
 
+    /// <summary>
+    /// UI/external selection entry point that uses the same toggle rules as
+    /// Shift-click world selection.
+    /// </summary>
+    public void ToggleSelectExternal(ISelectable selectable)
+    {
+        ToggleSelect(selectable);
+    }
+
     void ToggleSelect(ISelectable selectable)
     {
         if (selectable == null)
@@ -617,5 +627,7 @@ public class SelectionManager : MonoBehaviour
 
     #endregion
 }
+
+
 
 

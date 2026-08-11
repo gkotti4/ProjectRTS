@@ -3,22 +3,27 @@ using UnityEngine;
 
 
 /*
- * Start from bottom left to top right
+ * Start from gridStartPosition bottom left to top right
  */
 
 public class GridManager : MonoBehaviour // Used by all factions
 {
     public static GridManager Instance { get; private set; }
+
+    [Header("Grid Origin")]
+    [Tooltip("World-space X/Z position of the grid's bottom-left corner. Cell (0,0) begins here.")]
+    [SerializeField] private Vector2 gridStartPosition = Vector2.zero;
     
     [SerializeField] private int gridWidth = 250;
     [SerializeField] private int gridHeight = 250;
-    [SerializeField] private float cellSize = 2f; // int?
+    [SerializeField] private float cellSize = 2f; // integer?
 
     private bool[,] occupiedCells;
 
     public int GetGridWidth() => gridWidth;
     public int GetGridHeight() => gridHeight;
     public float GetCellSize() => cellSize;
+    public Vector2 GetGridStartPosition() => gridStartPosition;
 
     
     void Awake()
@@ -34,15 +39,18 @@ public class GridManager : MonoBehaviour // Used by all factions
 
     public Vector2Int WorldToCell(Vector3 worldPos) // Converts world position to grid cell position
     {
-        int x = Mathf.FloorToInt(worldPos.x / cellSize);
-        int y = Mathf.FloorToInt(worldPos.z / cellSize);
+        float localX = worldPos.x - gridStartPosition.x;
+        float localZ = worldPos.z - gridStartPosition.y;
+
+        int x = Mathf.FloorToInt(localX / cellSize);
+        int y = Mathf.FloorToInt(localZ / cellSize);
         return new Vector2Int(x, y);
     }
 
     public Vector3 CellToWorld(Vector2Int cell) // Converts grid cell coordinate to a world position
     {
-        float x = cell.x * cellSize + cellSize/2f; // cellSize/2f - normalizes
-        float z = cell.y * cellSize + cellSize/2f;
+        float x = gridStartPosition.x + cell.x * cellSize + cellSize / 2f;
+        float z = gridStartPosition.y + cell.y * cellSize + cellSize / 2f;
         
         // // Raycast down to find actual terrain height - FOR NON-FLAT TERRAIN
         // if (Physics.Raycast(new Vector3(x, 100f, z), Vector3.down, out RaycastHit hit, 200f))
