@@ -48,6 +48,10 @@ public class BattleGameModeController : MonoBehaviour
     [Header("Battle Map")]
     [SerializeField] private BattleMap battleMap;
 
+    [Header("DEBUG")] 
+    [SerializeField] private bool useHotkeyToTriggerBattleVictory = false;
+    [SerializeField] private KeyCode triggerBattleVictoryKey = KeyCode.BackQuote;
+
     private bool destroyPreviousArmiesOnRestart = true;
     
     public Vector3 PlayerStartPosition =>
@@ -88,9 +92,12 @@ public class BattleGameModeController : MonoBehaviour
             Destroy(gameObject);
             return;
         }
-
+        
         Instance = this;
         automaticStartTimer = automaticStartDelay;
+        
+        if (battleMap == null)
+            battleMap = BattleMap.Instance; // vs FindInstanceOfType ?
     }
 
     void Start()
@@ -120,6 +127,12 @@ public class BattleGameModeController : MonoBehaviour
 
         if (state != BattleGameState.Battle)
             return;
+        
+        // DEBUG 
+        if (useHotkeyToTriggerBattleVictory && Input.GetKeyDown(triggerBattleVictoryKey))
+        {
+            EndBattle(BattleGameState.Victory);
+        }
 
         battleElapsedTime += Time.deltaTime;
         battleEndCheckTimer -= Time.deltaTime;
@@ -424,7 +437,16 @@ public class BattleGameModeController : MonoBehaviour
 
         if (battleMap == null)
         {
-            Debug.LogWarning("BattleMap is not assigned."); // do we need this check?
+            battleMap = BattleMap.Instance;
+        }
+
+        if (battleMap == null)
+        {
+            Debug.LogError(
+                $"{name}: BattleMap is required.",
+                this);
+
+            isValid = false;
         }
 
         if (GameManager.Instance == null)

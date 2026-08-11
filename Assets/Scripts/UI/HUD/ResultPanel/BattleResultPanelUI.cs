@@ -3,16 +3,6 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Presentation-only result screen for Battle Test Mode.
-///
-/// BattleGameModeController owns battle state/resolution.
-/// This component listens for Victory/Defeat and presents the result,
-/// final battle time, and surviving player manpower.
-///
-/// Continue temporarily restarts the current battle. The upcoming upgrade/run
-/// flow can replace that one action without changing result presentation.
-/// </summary>
 [DisallowMultipleComponent]
 public class BattleResultPanelUI : MonoBehaviour
 {
@@ -20,6 +10,7 @@ public class BattleResultPanelUI : MonoBehaviour
 
     [Header("Battle")]
     [SerializeField] private BattleGameModeController battleGameModeController;
+    [SerializeField] private UpgradeSelectionPanelUI upgradeSelectionPanel;
 
     [Header("Panel")]
     [SerializeField] private CanvasGroup resultCanvasGroup;
@@ -280,8 +271,14 @@ public class BattleResultPanelUI : MonoBehaviour
 
         SetPanelVisible(false);
 
-        // Temporary v0.4 bridge. Replace this with Upgrade Selection once that
-        // screen is introduced.
+        if (upgradeSelectionPanel != null &&
+            upgradeSelectionPanel.ShowUpgradeChoices())
+        {
+            return;
+        }
+
+        // No valid reward choices are available. Keep the loop playable instead
+        // of trapping the player on an empty upgrade screen.
         battleGameModeController.RestartBattle();
     }
 
