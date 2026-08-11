@@ -29,6 +29,10 @@ public class CameraController : MonoBehaviour
     [SerializeField] private float minZoom = 5f;
     [SerializeField] private float maxZoom = 50f;
 
+    [Header(" - Game Mode Dependent -")]
+    [Header("Game Mode Controller")]
+    [SerializeField] private BattleGameModeController battleController;
+    
     [Header("Battle Map Bounds")]
     [SerializeField] private BattleMap battleMap;
 
@@ -42,7 +46,7 @@ public class CameraController : MonoBehaviour
     [SerializeField] private Vector3 startPosition = new Vector3(30f, 10f, 20f);
     [SerializeField] private float startPitch = 40f;
     [SerializeField] private float startYaw = 0f;//-45f;
-
+    
     #endregion
 
     #region Runtime
@@ -66,10 +70,17 @@ public class CameraController : MonoBehaviour
             Debug.LogError("No camera found!");
             return;
         }
-
+        
+        if (battleController == null)
+            battleController = BattleGameModeController.Instance;
+        
+        startPosition = battleController.PlayerStartPosition + new Vector3(0f, 45f); // NEW - defeats purpose of start pos atm
+        
         if (battleMap == null)
             battleMap = BattleMap.Instance;
 
+        
+        
         transform.position = startPosition;
 
         currentPitch = Mathf.Clamp(

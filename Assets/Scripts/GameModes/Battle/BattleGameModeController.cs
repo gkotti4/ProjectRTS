@@ -35,10 +35,6 @@ public class BattleGameModeController : MonoBehaviour
     [Header("Battle")]
     [SerializeField] private BattleDefinitionData battleDefinition;
 
-    [Header("Spawn Zones")]
-    [SerializeField] private BattleArmySpawnZone playerSpawnZone;
-    [SerializeField] private BattleArmySpawnZone enemySpawnZone;
-
     [Header("Startup")]
     [SerializeField] private bool startBattleAutomatically = true;
 
@@ -48,10 +44,17 @@ public class BattleGameModeController : MonoBehaviour
     [Header("Battle End")]
     [Min(0.05f)]
     [SerializeField] private float battleEndCheckInterval = 0.25f;
+    
+    [Header("Battle Map")]
+    [SerializeField] private BattleMap battleMap;
 
-    [Tooltip("Destroy the previous battle's squad roots before restarting.")]
-    [SerializeField] private bool destroyPreviousArmiesOnRestart = true;
-
+    private bool destroyPreviousArmiesOnRestart = true;
+    
+    public Vector3 PlayerStartPosition =>
+        battleMap != null
+            ? battleMap.GetDeploymentCenter(true)
+            : Vector3.zero;
+    
     #endregion
 
     #region Runtime
@@ -151,13 +154,13 @@ public class BattleGameModeController : MonoBehaviour
         SpawnArmy(
             battleDefinition.playerArmy,
             GameManager.Instance.PlayerFaction,
-            playerSpawnZone,
+            isPlayerArmy: true,
             playerSquads);
 
         SpawnArmy(
             battleDefinition.enemyArmy,
             GameManager.Instance.EnemyFaction,
-            enemySpawnZone,
+            isPlayerArmy: false,
             enemySquads);
 
         if (playerSquads.Count == 0 || enemySquads.Count == 0)
@@ -214,37 +217,56 @@ public class BattleGameModeController : MonoBehaviour
     void SpawnArmy(
         IReadOnlyList<BattleSquadEntry> entries,
         FactionInstance faction,
-        BattleArmySpawnZone spawnZone,
+        bool isPlayerArmy,
         List<SquadController> destination)
     {
         destination.Clear();
 
-        if (entries == null || faction == null || spawnZone == null)
+        if (entries == null ||
+            faction == null ||
+            battleMap == null)
+        {
             return;
+        }
 
-        int totalSquadCount = CountRequestedSquads(entries);
+        int totalSquadCount =
+            CountRequestedSquads(entries);
+
         int spawnedSquadIndex = 0;
 
-        for (int entryIndex = 0; entryIndex < entries.Count; entryIndex++)
+        Quaternion spawnRotation =
+            battleMap.GetDeploymentRotation(
+                isPlayerArmy);
+
+        for (int entryIndex = 0;
+             entryIndex < entries.Count;
+             entryIndex++)
         {
-            BattleSquadEntry entry = entries[entryIndex];
+            BattleSquadEntry entry =
+                entries[entryIndex];
 
             if (entry.squadData == null)
                 continue;
 
-            int squadCount = Mathf.Max(1, entry.squadCount);
+            int squadCount =
+                Mathf.Max(1, entry.squadCount);
 
-            for (int countIndex = 0; countIndex < squadCount; countIndex++)
+            for (int countIndex = 0;
+                 countIndex < squadCount;
+                 countIndex++)
             {
-                Vector3 spawnPosition = spawnZone.GetSquadPosition(
-                    spawnedSquadIndex,
-                    totalSquadCount);
+                Vector3 spawnPosition =
+                    battleMap.GetDeploymentPosition(
+                        isPlayerArmy,
+                        spawnedSquadIndex,
+                        totalSquadCount);
 
-                SquadController squad = SquadFactory.SpawnSquad(
-                    entry.squadData,
-                    spawnPosition,
-                    spawnZone.GetSquadRotation(),
-                    faction);
+                SquadController squad =
+                    SquadFactory.SpawnSquad(
+                        entry.squadData,
+                        spawnPosition,
+                        spawnRotation,
+                        faction);
 
                 spawnedSquadIndex++;
 
@@ -375,7 +397,7 @@ public class BattleGameModeController : MonoBehaviour
             SquadController squad = squads[index];
 
             if (squad != null)
-                Destroy(squad.gameObject);
+                squad.DestroySquad(); // Destroy(squad.gameObject) works fine as well
         }
     }
 
@@ -400,22 +422,9 @@ public class BattleGameModeController : MonoBehaviour
             isValid = false;
         }
 
-        if (playerSpawnZone == null)
+        if (battleMap == null)
         {
-            Debug.LogError(
-                $"{name}: Player spawn zone is not assigned.",
-                this);
-
-            isValid = false;
-        }
-
-        if (enemySpawnZone == null)
-        {
-            Debug.LogError(
-                $"{name}: Enemy spawn zone is not assigned.",
-                this);
-
-            isValid = false;
+            Debug.LogWarning("BattleMap is not assigned."); // do we need this check?
         }
 
         if (GameManager.Instance == null)

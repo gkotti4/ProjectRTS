@@ -27,6 +27,18 @@ public class BattleMap : MonoBehaviour
     [Tooltip("Depth of each army deployment zone measured inward from its battlefield edge.")]
     [Min(0.1f)]
     [SerializeField] private float deploymentZoneDepth = 35f;
+    
+    [Tooltip("Distance between squad centers within one deployment row.")]
+    [Min(0.1f)]
+    [SerializeField] private float deploymentSquadSpacing = 12f;
+
+    [Tooltip("Maximum squads placed in one deployment row before starting another row.")]
+    [Min(1)]
+    [SerializeField] private int deploymentSquadsPerRow = 4;
+
+    [Tooltip("Distance between deployment rows.")]
+    [Min(0.1f)]
+    [SerializeField] private float deploymentRowSpacing = 10f;
 
     [Tooltip("Extra gap kept between deployment zones and the battlefield center line.")]
     [Min(0f)]
@@ -80,6 +92,18 @@ public class BattleMap : MonoBehaviour
         mapEdgeInset = Mathf.Max(0f, mapEdgeInset);
         deploymentZoneDepth = Mathf.Max(0.1f, deploymentZoneDepth);
         deploymentCenterGap = Mathf.Max(0f, deploymentCenterGap);
+        
+        deploymentSquadSpacing = Mathf.Max(
+            0.1f,
+            deploymentSquadSpacing);
+
+        deploymentSquadsPerRow = Mathf.Max(
+            1,
+            deploymentSquadsPerRow);
+
+        deploymentRowSpacing = Mathf.Max(
+            0.1f,
+            deploymentRowSpacing);
 
         ResolveTerrain();
         RebuildBounds();
@@ -175,6 +199,114 @@ public class BattleMap : MonoBehaviour
 
     #endregion
 
+    #region Deployment API
+
+    public Vector3 GetDeploymentPosition(
+        bool playerSide,
+        int squadIndex,
+        int totalSquads)
+    {
+        Bounds deploymentBounds = playerSide
+            ? playerDeploymentBounds
+            : enemyDeploymentBounds;
+
+        Vector3 facing = playerSide
+            ? Vector3.forward
+            : Vector3.back;
+
+        Vector3 right = Vector3.Cross(
+            Vector3.up,
+            facing).normalized;
+
+        int resolvedPerRow = Mathf.Max(
+            1,
+            deploymentSquadsPerRow);
+
+        int row = squadIndex / resolvedPerRow;
+        int column = squadIndex % resolvedPerRow;
+
+        int squadsInRow = Mathf.Min(
+            resolvedPerRow,
+            totalSquads - row * resolvedPerRow);
+
+        float rowWidth =
+            Mathf.Max(0, squadsInRow - 1) *
+            deploymentSquadSpacing;
+
+        float lateralOffset =
+            column * deploymentSquadSpacing -
+            rowWidth * 0.5f;
+
+        // Start near the battlefield-facing edge of the deployment zone
+        // and place additional rows deeper into that army's side.
+        float frontEdgeZ = playerSide
+            ? deploymentBounds.max.z
+            : deploymentBounds.min.z;
+
+        float rowDirection = playerSide
+            ? -1f
+            : 1f;
+
+        Vector3 position = new Vector3(
+            deploymentBounds.center.x,
+            worldBounds.center.y,
+            frontEdgeZ);
+
+        position += right * lateralOffset;
+        position += Vector3.forward *
+                    rowDirection *
+                    row *
+                    deploymentRowSpacing;
+
+        position.x = Mathf.Clamp(
+            position.x,
+            deploymentBounds.min.x,
+            deploymentBounds.max.x);
+
+        position.z = Mathf.Clamp(
+            position.z,
+            deploymentBounds.min.z,
+            deploymentBounds.max.z);
+
+        if (battleTerrain != null)
+        {
+            position.y = battleTerrain.SampleHeight(position) +
+                         battleTerrain.transform.position.y;
+        }
+
+        return position;
+    }
+
+    public Quaternion GetDeploymentRotation(bool playerSide)
+    {
+        Vector3 facing = playerSide
+            ? Vector3.forward
+            : Vector3.back;
+
+        return Quaternion.LookRotation(
+            facing,
+            Vector3.up);
+    }
+
+    public Vector3 GetDeploymentCenter(bool playerSide)
+    {
+        Bounds deploymentBounds = playerSide
+            ? playerDeploymentBounds
+            : enemyDeploymentBounds;
+
+        Vector3 center = deploymentBounds.center;
+
+        if (battleTerrain != null)
+        {
+            center.y = battleTerrain.SampleHeight(center) +
+                       battleTerrain.transform.position.y;
+        }
+
+        return center;
+    }
+
+    #endregion
+    
     #region Public Mapping / Clamp API
 
     /// <summary>
