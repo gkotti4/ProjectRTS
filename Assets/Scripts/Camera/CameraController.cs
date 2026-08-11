@@ -2,9 +2,27 @@ using UnityEngine;
 
 public class CameraController : MonoBehaviour
 {
+    #region Tuning
+
     [Header("Movement")]
     [SerializeField] private float panSpeed = 20f;
     [SerializeField] private float dragSpeed = 15f;
+
+    [Header("Rotation")]
+    [Tooltip("Degrees of camera rotation applied per pixel of middle-mouse drag.")]
+    [Min(0.01f)]
+    [SerializeField] private float rotationMouseSensitivity = 0.20f;
+
+    [Tooltip("Lowest downward viewing angle allowed while rotating the camera.")]
+    [Range(5f, 89f)]
+    [SerializeField] private float rotationMinimumPitch = 20f;
+
+    [Tooltip("Steepest downward viewing angle allowed while rotating the camera.")]
+    [Range(5f, 89f)]
+    [SerializeField] private float rotationMaximumPitch = 75f;
+
+    [Tooltip("Invert vertical middle-mouse camera rotation.")]
+    [SerializeField] private bool rotationInvertVertical = false;
 
     [Header("Zoom")]
     [SerializeField] private float zoomSpeed = 30f;
@@ -20,12 +38,24 @@ public class CameraController : MonoBehaviour
 
     [SerializeField] private bool cameraClampToBattleMap = true;
 
-    // TODO - scale Speed's with current zoom
+    [Header("Starting View")]
+    [SerializeField] private Vector3 startPosition = new Vector3(30f, 10f, 20f);
+    [SerializeField] private float startPitch = 40f;
+    [SerializeField] private float startYaw = 0f;//-45f;
 
-    [SerializeField] private Vector3 startPosition = new Vector3(30, 10, 20);
+    #endregion
+
+    #region Runtime
 
     private Camera cam;
     private Vector3 lastMousePosition;
+
+    private float currentPitch;
+    private float currentYaw;
+
+    #endregion
+
+    #region Unity Lifecycle
 
     void Start()
     {
@@ -41,47 +71,181 @@ public class CameraController : MonoBehaviour
             battleMap = BattleMap.Instance;
 
         transform.position = startPosition;
-        // cam.transform.rotation = Quaternion.Euler(40, -45, 0);
+
+        currentPitch = Mathf.Clamp(
+            startPitch,
+            rotationMinimumPitch,
+            rotationMaximumPitch);
+
+        currentYaw = startYaw;
+        ApplyCameraRotation();
 
         ClampCameraToBattleMap();
+    }
+
+    void OnValidate()
+    {
+        panSpeed = Mathf.Max(0f, panSpeed);
+        dragSpeed = Mathf.Max(0f, dragSpeed);
+
+        rotationMouseSensitivity = Mathf.Max(0.01f, rotationMouseSensitivity);
+        rotationMinimumPitch = Mathf.Clamp(rotationMinimumPitch, 5f, 89f);
+        rotationMaximumPitch = Mathf.Clamp(rotationMaximumPitch, 5f, 89f);
+
+        if (rotationMaximumPitch < rotationMinimumPitch)
+            rotationMaximumPitch = rotationMinimumPitch;
+
+        zoomSpeed = Mathf.Max(0f, zoomSpeed);
+        minZoom = Mathf.Max(0.1f, minZoom);
+        maxZoom = Mathf.Max(minZoom, maxZoom);
+
+        startPitch = Mathf.Clamp(
+            startPitch,
+            rotationMinimumPitch,
+            rotationMaximumPitch);
     }
 
     void Update()
     {
         HandlePan();
         HandleZoom();
-        HandleMiddleMousePan();
+        HandleMiddleMouseInput();
 
         // One authoritative clamp after all camera movement for this frame.
         ClampCameraToBattleMap();
     }
 
-    void HandlePan() // Possibly move to PlayerInputHandler - not really needed atm
+    #endregion
+
+    #region Movement
+
+    void HandlePan()
     {
         if (cam == null)
             return;
 
-        // Only Arrow Keys
-        float x = 0f;
-        float z = 0f;
+        // Arrow-key movement remains camera-relative as the view rotates.
+        float horizontalInput = 0f;
+        float forwardInput = 0f;
 
-        if (Input.GetKey(KeyCode.RightArrow)) x = 1f;
-        else if (Input.GetKey(KeyCode.LeftArrow)) x = -1f;
+        if (Input.GetKey(KeyCode.RightArrow))
+            horizontalInput = 1f;
+        else if (Input.GetKey(KeyCode.LeftArrow))
+            horizontalInput = -1f;
 
-        if (Input.GetKey(KeyCode.UpArrow)) z = 1f;
-        else if (Input.GetKey(KeyCode.DownArrow)) z = -1f;
+        if (Input.GetKey(KeyCode.UpArrow))
+            forwardInput = 1f;
+        else if (Input.GetKey(KeyCode.DownArrow))
+            forwardInput = -1f;
 
-        // Get camera's flat forward and right, ignore Y tilt
-        Vector3 forward = cam.transform.forward;
-        Vector3 right = cam.transform.right;
-        forward.y = 0f;
-        right.y = 0f;
-        forward.Normalize();
-        right.Normalize();
+        Vector3 forward = GetFlatCameraForward();
+        Vector3 right = GetFlatCameraRight();
 
-        Vector3 move = (forward * z + right * x) * (panSpeed * Time.deltaTime);
+        Vector3 move =
+            (forward * forwardInput + right * horizontalInput) *
+            (panSpeed * Time.deltaTime);
+
         transform.position += move;
     }
+
+    void HandleMiddleMouseInput()
+    {
+        if (cam == null)
+            return;
+
+        if (Input.GetMouseButtonDown(2))
+            lastMousePosition = Input.mousePosition;
+
+        if (!Input.GetMouseButton(2))
+            return;
+
+        Vector3 mouseDelta = Input.mousePosition - lastMousePosition;
+        lastMousePosition = Input.mousePosition;
+
+        bool rotateModifierHeld =
+            Input.GetKey(KeyCode.LeftShift) ||
+            Input.GetKey(KeyCode.RightShift);
+
+        if (rotateModifierHeld)
+        {
+            HandleMiddleMouseRotation(mouseDelta);
+            return;
+        }
+        
+        HandleMiddleMousePan(mouseDelta);
+    }
+
+    void HandleMiddleMousePan(Vector3 mouseDelta)
+    {
+        Vector3 right = GetFlatCameraRight();
+        Vector3 forward = GetFlatCameraForward();
+
+        Vector3 move =
+            (-right * mouseDelta.x + -forward * mouseDelta.y) *
+            (dragSpeed * Time.deltaTime);
+
+        transform.position += move;
+    }
+
+    Vector3 GetFlatCameraForward()
+    {
+        Vector3 forward = cam.transform.forward;
+        forward.y = 0f;
+
+        if (forward.sqrMagnitude <= 0.0001f)
+            return Vector3.forward;
+
+        return forward.normalized;
+    }
+
+    Vector3 GetFlatCameraRight()
+    {
+        Vector3 right = cam.transform.right;
+        right.y = 0f;
+
+        if (right.sqrMagnitude <= 0.0001f)
+            return Vector3.right;
+
+        return right.normalized;
+    }
+
+    #endregion
+
+    #region Rotation
+
+    void HandleMiddleMouseRotation(Vector3 mouseDelta)
+    {
+        currentYaw += mouseDelta.x * rotationMouseSensitivity;
+
+        float verticalDirection = rotationInvertVertical ? 1f : -1f;
+
+        currentPitch +=
+            mouseDelta.y *
+            rotationMouseSensitivity *
+            verticalDirection;
+
+        currentPitch = Mathf.Clamp(
+            currentPitch,
+            rotationMinimumPitch,
+            rotationMaximumPitch);
+
+        ApplyCameraRotation();
+    }
+
+    void ApplyCameraRotation()
+    {
+        if (cam == null)
+            return;
+
+        cam.transform.rotation = Quaternion.Euler(
+            currentPitch,
+            currentYaw,
+            0f);
+    }
+
+    #endregion
+
+    #region Zoom
 
     void HandleZoom()
     {
@@ -103,8 +267,8 @@ public class CameraController : MonoBehaviour
 
         if (wouldExceedZoomLimits)
         {
-            // Reach the height boundary, but do not continue crawling
-            // forward/backward along the camera's angled forward direction.
+            // Reach the height boundary without continuing to crawl horizontally
+            // along the angled camera-forward vector.
             currentPosition.y = Mathf.Clamp(
                 proposedY,
                 minZoom,
@@ -117,32 +281,9 @@ public class CameraController : MonoBehaviour
         transform.position = currentPosition + zoomDelta;
     }
 
-    void HandleMiddleMousePan()
-    {
-        if (cam == null)
-            return;
+    #endregion
 
-        if (Input.GetMouseButtonDown(2))
-            lastMousePosition = Input.mousePosition;
-
-        if (Input.GetMouseButton(2))
-        {
-            Vector3 delta = Input.mousePosition - lastMousePosition;
-
-            // Convert screen delta to world movement
-            Vector3 right = cam.transform.right;
-            Vector3 up = cam.transform.forward;
-            right.y = 0f;
-            up.y = 0f;
-            right.Normalize();
-            up.Normalize();
-
-            Vector3 move = (-right * delta.x + -up * delta.y) * (dragSpeed * Time.deltaTime);
-
-            transform.position += move;
-            lastMousePosition = Input.mousePosition;
-        }
-    }
+    #region Battle Map Bounds
 
     void ClampCameraToBattleMap()
     {
@@ -159,4 +300,6 @@ public class CameraController : MonoBehaviour
             transform.position,
             cameraBoundsPadding);
     }
+
+    #endregion
 }
