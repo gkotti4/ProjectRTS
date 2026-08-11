@@ -271,15 +271,23 @@ public class BattleResultPanelUI : MonoBehaviour
 
         SetPanelVisible(false);
 
+        // Defeat is a retry of the current battle. Rewards and run progression are
+        // victory-only so a failed battle cannot advance the run.
+        if (battleGameModeController.State == BattleGameState.Defeat)
+        {
+            battleGameModeController.RestartBattle();
+            return;
+        }
+
         if (upgradeSelectionPanel != null &&
             upgradeSelectionPanel.ShowUpgradeChoices())
         {
             return;
         }
 
-        // No valid reward choices are available. Keep the loop playable instead
-        // of trapping the player on an empty upgrade screen.
-        battleGameModeController.RestartBattle();
+        // No valid reward choices are available. Advance directly rather than
+        // trapping the player on an empty upgrade screen.
+        battleGameModeController.AdvanceBattleRun();
     }
 
     #endregion

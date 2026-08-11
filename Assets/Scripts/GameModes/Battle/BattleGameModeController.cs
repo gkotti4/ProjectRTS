@@ -29,11 +29,19 @@ public class BattleGameModeController : MonoBehaviour
     public event Action<BattleGameState> OnBattleStateChanged;
     public event Action<IReadOnlyList<SquadController>, IReadOnlyList<SquadController>>
         OnArmiesSpawned;
+    public event Action<int, BattleDefinitionData> OnBattleRunAdvanced;
+    public event Action OnBattleRunCompleted;
 
     #region Setup
 
     [Header("Battle")]
+    [Tooltip("Fallback single battle when no Battle Run Sequence is authored.")]
     [SerializeField] private BattleDefinitionData battleDefinition;
+
+    [Header("Battle Run")]
+    [Tooltip("Ordered battle sequence for the current run. If empty, Battle Definition is used as a one-battle run.")]
+    [SerializeField] private List<BattleDefinitionData> battleRunSequence =
+        new List<BattleDefinitionData>();
 
     [Header("Startup")]
     [SerializeField] private bool startBattleAutomatically = true;
@@ -69,12 +77,16 @@ public class BattleGameModeController : MonoBehaviour
     private readonly List<SquadController> enemySquads =
         new List<SquadController>();
 
+    private readonly BattleRunState battleRunState = new BattleRunState();
+
     private BattleGameState state = BattleGameState.Setup;
     private float automaticStartTimer = 0f;
     private float battleEndCheckTimer = 0f;
     private float battleElapsedTime = 0f;
 
     public BattleDefinitionData BattleDefinition => battleDefinition;
+    public BattleRunState RunState => battleRunState;
+    public bool IsBattleRunComplete => battleRunState.IsComplete;
     public BattleGameState State => state;
     public IReadOnlyList<SquadController> PlayerSquads => playerSquads;
     public IReadOnlyList<SquadController> EnemySquads => enemySquads;
@@ -95,6 +107,8 @@ public class BattleGameModeController : MonoBehaviour
         
         Instance = this;
         automaticStartTimer = automaticStartDelay;
+
+        InitializeBattleRun();
         
         if (battleMap == null)
             battleMap = BattleMap.Instance; // vs FindInstanceOfType ?
@@ -195,6 +209,48 @@ public class BattleGameModeController : MonoBehaviour
     public void RestartBattle()
     {
         StartBattle();
+    }
+
+    /// <summary>
+    /// Advances the run after a successful battle/reward. RestartBattle remains the
+    /// explicit retry path for the current battle.
+    /// </summary>
+    public bool AdvanceBattleRun()
+    {
+        if (state == BattleGameState.Battle)
+            return false;
+
+        if (!battleRunState.TryAdvance())
+        {
+            if (battleRunState.IsComplete)
+            {
+                OnBattleRunCompleted?.Invoke();
+
+                Debug.Log(
+                    $"{name}: Battle run complete after {battleRunState.BattleCount} battle(s).",
+                    this);
+            }
+
+            return false;
+        }
+
+        battleDefinition = battleRunState.CurrentBattle;
+
+        OnBattleRunAdvanced?.Invoke(
+            battleRunState.CurrentBattleIndex,
+            battleDefinition);
+
+        StartBattle();
+        return true;
+    }
+
+    public void ResetBattleRun(bool startFirstBattle = true)
+    {
+        battleRunState.Reset();
+        battleDefinition = battleRunState.CurrentBattle;
+
+        if (startFirstBattle && battleDefinition != null)
+            StartBattle();
     }
 
     public void ForcePlayerVictory()
@@ -378,6 +434,30 @@ public class BattleGameModeController : MonoBehaviour
 
             squad.OrderStop();
         }
+    }
+
+    #endregion
+
+    #region Battle Run
+
+    void InitializeBattleRun()
+    {
+        if (battleRunSequence != null && battleRunSequence.Count > 0)
+        {
+            battleRunState.Initialize(battleRunSequence);
+        }
+        else if (battleDefinition != null)
+        {
+            battleRunState.Initialize(
+                new List<BattleDefinitionData> { battleDefinition });
+        }
+        else
+        {
+            battleRunState.Initialize(null);
+        }
+
+        if (battleRunState.CurrentBattle != null)
+            battleDefinition = battleRunState.CurrentBattle;
     }
 
     #endregion

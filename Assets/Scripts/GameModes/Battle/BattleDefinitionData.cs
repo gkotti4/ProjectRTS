@@ -28,7 +28,7 @@ public class BattleDefinitionData : ScriptableObject
     [Header("Identity")]
     public string battleName = "Battle";
     [TextArea] public string battleDescription;
-
+    
     [Header("Player Army")]
     public List<BattleSquadEntry> playerArmy =
         new List<BattleSquadEntry>();

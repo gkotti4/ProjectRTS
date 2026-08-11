@@ -9,7 +9,7 @@ using UnityEngine;
 /// - filters to faction upgrades the player can currently apply
 /// - presents a small random set of unique UpgradeData choices
 /// - applies exactly one chosen reward to the player faction
-/// - restarts the battle after a successful selection
+/// - advances the battle run after a successful selection
 ///
 /// The GridLayoutGroup / card arrangement stays authored entirely in the scene.
 /// </summary>
@@ -210,7 +210,7 @@ public class UpgradeSelectionPanelUI : MonoBehaviour
         HideUpgradeChoices();
 
         if (battleGameModeController != null)
-            battleGameModeController.RestartBattle();
+            battleGameModeController.AdvanceBattleRun();
     }
 
     void SetCardsInteractable(bool interactable)
