@@ -1,4 +1,34 @@
+using System.Collections.Generic;
 using UnityEngine;
+
+/// <summary>
+/// Circular battlefield escape area used by routing squads.
+/// The center normally sits on the army's starting battlefield edge, so only the
+/// inward half of the circle overlaps the playable map.
+/// </summary>
+public struct BattleRoutZone
+{
+    public Vector3 center;
+    public float radius;
+
+    public BattleRoutZone(Vector3 center, float radius)
+    {
+        this.center = center;
+        this.radius = Mathf.Max(0.1f, radius);
+    }
+
+    public bool ContainsFlat(Vector3 worldPosition)
+    {
+        Vector3 flatCenter = center;
+        Vector3 flatPosition = worldPosition;
+        flatCenter.y = 0f;
+        flatPosition.y = 0f;
+
+        float resolvedRadius = Mathf.Max(0.1f, radius);
+        return (flatPosition - flatCenter).sqrMagnitude <=
+               resolvedRadius * resolvedRadius;
+    }
+}
 
 /// <summary>
 /// Scene-level description of a Battle Mode battlefield.
@@ -43,6 +73,19 @@ public class BattleMap : MonoBehaviour
     [Tooltip("Extra gap kept between deployment zones and the battlefield center line.")]
     [Min(0f)]
     [SerializeField] private float deploymentCenterGap = 10f;
+
+    [Header("Routing")]
+    [Tooltip("Number of evenly spaced Rout Zones generated along each army's starting battlefield edge.")]
+    [Min(1)]
+    [SerializeField] private int routingZoneCount = 3;
+
+    [Tooltip("Keeps generated Rout Zone centers this far inside the left/right battlefield corners.")]
+    [Min(0f)]
+    [SerializeField] private float routingZoneSideInset = 8f;
+
+    [Tooltip("Radius of each circular Rout Zone. Zone centers sit directly on the battlefield edge, creating a usable half-circle inside the map.")]
+    [Min(0.1f)]
+    [SerializeField] private float routingZoneRadius = 8f;
 
     [Header("Debug")]
     [SerializeField] private bool mapDrawBoundsGizmos = true;
@@ -104,6 +147,10 @@ public class BattleMap : MonoBehaviour
         deploymentRowSpacing = Mathf.Max(
             0.1f,
             deploymentRowSpacing);
+
+        routingZoneCount = Mathf.Max(1, routingZoneCount);
+        routingZoneSideInset = Mathf.Max(0f, routingZoneSideInset);
+        routingZoneRadius = Mathf.Max(0.1f, routingZoneRadius);
 
         ResolveTerrain();
         RebuildBounds();
@@ -307,6 +354,86 @@ public class BattleMap : MonoBehaviour
 
     #endregion
     
+
+    #region Routing API
+
+    public BattleRoutZone GetBestRoutZone(bool playerSide, Vector3 squadPosition)
+    {
+        IReadOnlyList<BattleRoutZone> zones = GetRoutZones(playerSide);
+
+        if (zones.Count == 0)
+        {
+            return new BattleRoutZone(
+                GetDeploymentCenter(playerSide),
+                routingZoneRadius);
+        }
+
+        BattleRoutZone bestZone = zones[0];
+        float bestDistance = FlatSqrDistance(squadPosition, bestZone.center);
+
+        for (int index = 1; index < zones.Count; index++)
+        {
+            float distance = FlatSqrDistance(
+                squadPosition,
+                zones[index].center);
+
+            if (distance >= bestDistance)
+                continue;
+
+            bestDistance = distance;
+            bestZone = zones[index];
+        }
+
+        return bestZone;
+    }
+
+    public IReadOnlyList<BattleRoutZone> GetRoutZones(bool playerSide)
+    {
+        List<BattleRoutZone> zones = new List<BattleRoutZone>();
+
+        int count = Mathf.Max(1, routingZoneCount);
+        float maximumSideInset = Mathf.Max(0f, worldBounds.size.x * 0.5f - 0.1f);
+        float sideInset = Mathf.Min(routingZoneSideInset, maximumSideInset);
+        float minX = worldBounds.min.x + sideInset;
+        float maxX = worldBounds.max.x - sideInset;
+
+        // Zone centers deliberately sit on the starting battlefield edge. The
+        // circular radius therefore creates an inward-facing half-zone on the map.
+        float z = playerSide
+            ? worldBounds.min.z
+            : worldBounds.max.z;
+
+        for (int index = 0; index < count; index++)
+        {
+            float t = count == 1 ? 0.5f : index / (float)(count - 1);
+            Vector3 center = new Vector3(
+                Mathf.Lerp(minX, maxX, t),
+                worldBounds.center.y,
+                z);
+
+            if (battleTerrain != null)
+            {
+                center.y = battleTerrain.SampleHeight(center) +
+                           battleTerrain.transform.position.y;
+            }
+
+            zones.Add(new BattleRoutZone(
+                center,
+                routingZoneRadius));
+        }
+
+        return zones;
+    }
+
+    float FlatSqrDistance(Vector3 a, Vector3 b)
+    {
+        a.y = 0f;
+        b.y = 0f;
+        return (a - b).sqrMagnitude;
+    }
+
+    #endregion
+
     #region Public Mapping / Clamp API
 
     /// <summary>
@@ -392,6 +519,21 @@ public class BattleMap : MonoBehaviour
         DrawBounds(worldBounds, Color.white);
         DrawBounds(playerDeploymentBounds, Color.cyan);
         DrawBounds(enemyDeploymentBounds, Color.red);
+        DrawRoutZones(GetRoutZones(true), Color.cyan);
+        DrawRoutZones(GetRoutZones(false), Color.red);
+    }
+
+    void DrawRoutZones(IReadOnlyList<BattleRoutZone> zones, Color color)
+    {
+        Gizmos.color = color;
+
+        for (int index = 0; index < zones.Count; index++)
+        {
+            BattleRoutZone zone = zones[index];
+            Gizmos.DrawWireSphere(
+                zone.center + Vector3.up * 0.35f,
+                zone.radius);
+        }
     }
 
     void DrawBounds(Bounds bounds, Color color)

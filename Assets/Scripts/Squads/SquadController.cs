@@ -1,4 +1,5 @@
 
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -26,6 +27,7 @@ using UnityEngine;
 [RequireComponent(typeof(SquadMovement))]
 [RequireComponent(typeof(SquadSelection))]
 [RequireComponent(typeof(SquadCombat))]
+[RequireComponent(typeof(SquadMorale))]
 public class SquadController : MonoBehaviour,
     ISelectable,
     IHoverable,
@@ -76,6 +78,7 @@ public class SquadController : MonoBehaviour,
     public SquadMovement Movement { get; private set; }
     public SquadSelection Selection { get; private set; }
     public SquadCombat Combat { get; private set; }
+    public SquadMorale Morale { get; private set; }
 
     #endregion
 
@@ -199,6 +202,7 @@ public class SquadController : MonoBehaviour,
 
         Formation?.ApplyStats(Stats.formation);
         Movement?.RefreshRuntimeStats();
+        Morale?.RefreshRuntimeStats();
 
         if (Roster == null)
             return;
@@ -235,6 +239,7 @@ public class SquadController : MonoBehaviour,
         Movement = GetComponent<SquadMovement>();
         Selection = GetComponent<SquadSelection>();
         Combat = GetComponent<SquadCombat>();
+        Morale = GetComponent<SquadMorale>();
 
         // -------------------------------------------------------------------------
         // Validation
@@ -256,6 +261,9 @@ public class SquadController : MonoBehaviour,
 
         if (Combat == null)
             Debug.LogError($"{name}: SquadController missing SquadCombat.", this);
+
+        if (Morale == null)
+            Debug.LogError($"{name}: SquadController missing SquadMorale.", this);
     }
 
     void Start()
@@ -355,6 +363,7 @@ public class SquadController : MonoBehaviour,
         Formation.Initialize(this, Roster, squadData);
         Movement.Initialize(this, Roster, Formation, squadData);
         Combat.Initialize(this, Roster, Formation, Movement, squadData);
+        Morale.Initialize(this, Roster, Movement);
 
         // 3. Bind visuals last. Visuals can safely read Data/Faction/Health/Roster now.
         Selection.Initialize(this, Roster);
@@ -463,7 +472,8 @@ public class SquadController : MonoBehaviour,
                 break;
 
             case SquadState.Routing:
-                Movement.TickRouting();
+                if (Movement.TickRouting())
+                    Morale?.CompleteRouting();
                 break;
         }
     }
@@ -493,6 +503,9 @@ public class SquadController : MonoBehaviour,
         float requestedFormationWidth = -1f,
         bool queueCommand = false)
     {
+        if (Morale != null && Morale.IsRoutingOrRouted)
+            return;
+
         if (queueCommand && !isExecutingQueuedCommand)
         {
             queuedCommands.Enqueue(new QueuedSquadCommand
@@ -558,6 +571,9 @@ public class SquadController : MonoBehaviour,
         SquadController target,
         bool queueCommand = false)
     {
+        if (Morale != null && Morale.IsRoutingOrRouted)
+            return;
+
         if (target == null)
             return;
 
@@ -676,7 +692,6 @@ public class SquadController : MonoBehaviour,
     public void SetStance(SquadStance stance)
     {
         Stance = stance;
-        Debug.Log(name + "stance:  " + stance);
     }
 
     public void SetChargeEnabled(bool enabled)
@@ -760,5 +775,3 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
-
-

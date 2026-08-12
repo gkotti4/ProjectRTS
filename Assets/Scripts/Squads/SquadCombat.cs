@@ -1,5 +1,6 @@
 
 
+
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -3140,6 +3141,9 @@ public class SquadCombat : MonoBehaviour
         if (!target.IsInitialized)
             return false;
 
+        if (target.Morale != null && target.Morale.HasRoutedOffField)
+            return false;
+
         if (roster == null || !roster.HasLivingSoldiers)
             return false;
 
@@ -3154,6 +3158,9 @@ public class SquadCombat : MonoBehaviour
 
     bool CanRespondToEngagement(SquadController attacker)
     {
+        if (squad != null && squad.Morale != null && squad.Morale.IsRoutingOrRouted)
+            return false;
+
         return CanAttack(attacker);
     }
 
@@ -4043,8 +4050,3 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
-
-
-
-
-

@@ -65,6 +65,15 @@ public class SquadMovement : MonoBehaviour
     // -----------------------------------------------------------------------------
     private float reformTimer = 0f;
 
+    // Routing is intentionally loose: the squad shares one escape zone, but
+    // soldiers run with small stable offsets rather than preserving formation slots.
+    private BattleRoutZone routingZone;
+    private readonly Dictionary<SoldierController, Vector3> routingSoldierOffsets =
+        new Dictionary<SoldierController, Vector3>();
+
+    private const float routingSpeedMultiplier = 1.35f;
+    private const float routingSpreadRadius = 2.25f;
+
     // -----------------------------------------------------------------------------
     // Runtime Movement Values
     // -----------------------------------------------------------------------------
@@ -300,9 +309,69 @@ public class SquadMovement : MonoBehaviour
         TickReformingCore(allowStateChange: true);
     }
 
-    public void TickRouting()
+    public void BeginRouting(BattleRoutZone zone)
     {
-        // Later: morale routing.
+        pathCorners.Clear();
+        pathCornerIndex = 0;
+        moveMode = SquadMoveMode.LooseMove;
+        routingZone = zone;
+        routingSoldierOffsets.Clear();
+
+        SyncRootToLivingSoldierCenter();
+
+        if (roster == null)
+            return;
+
+        int livingIndex = 0;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            float angle = livingIndex * 137.5f * Mathf.Deg2Rad;
+            float radius = routingSpreadRadius * (0.35f + 0.65f * ((livingIndex % 3) / 2f));
+
+            routingSoldierOffsets[soldier] = new Vector3(
+                Mathf.Cos(angle) * radius,
+                0f,
+                Mathf.Sin(angle) * radius);
+
+            livingIndex++;
+        }
+    }
+
+    public bool TickRouting()
+    {
+        if (roster == null || !roster.HasLivingSoldiers)
+            return true;
+
+        SyncRootToLivingSoldierCenter();
+
+        // The squad routes off-field as soon as its living-body center enters the
+        // selected Rout Zone. The zone center itself sits on the map edge, so agents
+        // never need to reach an exact edge point that may be awkward for NavMesh.
+        if (routingZone.ContainsFlat(transform.position))
+        {
+            OrderStop();
+            return true;
+        }
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            if (!routingSoldierOffsets.TryGetValue(soldier, out Vector3 offset))
+                offset = Vector3.zero;
+
+            soldier.MoveToPoint(
+                routingZone.center + offset,
+                Mathf.Max(0.25f, routingZone.radius * 0.15f),
+                routingSpeedMultiplier);
+        }
+
+        return false;
     }
     
     /// Ticks movement without forcing normal move-order state transitions.

@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -395,7 +396,8 @@ public class BattleGameModeController : MonoBehaviour
 
             if (squad != null &&
                 squad.Roster != null &&
-                squad.Roster.HasLivingSoldiers)
+                squad.Roster.HasLivingSoldiers &&
+                (squad.Morale == null || !squad.Morale.HasRoutedOffField))
             {
                 return true;
             }
