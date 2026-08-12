@@ -1,4 +1,5 @@
 
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -504,6 +505,10 @@ public class PlayerInputHandler : MonoBehaviour
                     squad.SetStance(SquadStance.Hold);
                     break;
 
+                case CommandType.ChargeToggle:
+                    squad.ToggleCharge();
+                    break;
+
                 case CommandType.FormationLine:
                     squad.SetFormation(SquadFormation.Line);
                     break;
@@ -802,3 +807,5 @@ public class PlayerInputHandler : MonoBehaviour
     }
 
 }
+
+

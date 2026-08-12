@@ -1,3 +1,4 @@
+
 //-----------------------------------------------------------------------------------------
 using System;
 using System.Collections.Generic;
@@ -233,7 +234,7 @@ public enum CommandType
     FormationWedge=8,
 
     // Total War-style commands
-    // Charge,
+    ChargeToggle=9,
     // Withdraw,
     // Brace,
     // Merge,
@@ -992,3 +993,5 @@ public struct FormationBounds
 //--------------------------------------------------------
 // END OF Types.cs
 //--------------------------------------------------------
+
+

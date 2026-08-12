@@ -37,7 +37,7 @@ public class SoldierAnimator : MonoBehaviour
     [SerializeField] private float backwardsDotThreshold = -0.25f;
 
     [Tooltip("Set false if your Animator Controller does not have IsMovingBackwards yet.")]
-    [SerializeField] private bool useMovingBackwardsParameter = true;
+    [SerializeField] private bool useMovingBackwardsParameter = false;
 
     [Tooltip("During clean squad movement states, this can force IsMoving even if one frame of agent velocity is missing.")]
     [SerializeField] private bool trustSquadMovementState = true; // UNUSED

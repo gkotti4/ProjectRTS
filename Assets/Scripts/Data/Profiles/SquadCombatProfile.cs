@@ -1,3 +1,4 @@
+
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -206,7 +207,9 @@ public class SquadCombatProfile : ScriptableObject
     public float formationApproachSettleMinimumReadyRange = 2.75f; // Minimum ready-check radius so very small combat start ranges still count nearby soldiers.
 
     [Header("Charge")]
-    public bool formationChargeEnabled = true; // Enables the shared melee charge phase between approach and combat.
+    public bool formationChargeEnabled = true; // Master capability toggle for the ordered melee charge phase.
+
+    public bool formationChargeEnabledByDefault = true; // Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack and is suppressed by Hold stance.
 
     [Min(0f)]
     public float formationChargeStartDistance = 10.0f; // Closest living soldier distance that allows a melee squad to begin charging.
@@ -218,7 +221,13 @@ public class SquadCombatProfile : ScriptableObject
     public float formationChargeMaximumDuration = 3.0f; // Safety cap before the squad enters combat even if contact detection is imperfect.
 
     [Min(0f)]
-    public float formationChargeContactReadyRatio = 0.15f; // Fraction of living melee soldiers that must reach personal attack range to finish the charge.
+    public float formationChargeContactReadyRatio = 0.15f; // Fraction of living melee soldiers that must reach personal attack range before the charge enters follow-through.
+
+    [Min(0f)]
+    public float formationChargeFollowThroughDuration = 0.65f; // Time the formation keeps driving after first meaningful contact before normal melee takes ownership.
+
+    [Min(0f)]
+    public float formationChargeFollowThroughDistance = 1.75f; // Temporary distance beyond the enemy center used as the charge destination so attackers continue through initial contact.
 
     public bool formationChargeImpulseEnabled = true; // Enables the very light directional contact impulse during the infantry charge MVP.
 
@@ -369,6 +378,8 @@ public class SquadCombatProfile : ScriptableObject
         formationChargeSpeedMultiplier = Mathf.Max(0f, formationChargeSpeedMultiplier);
         formationChargeMaximumDuration = Mathf.Max(0f, formationChargeMaximumDuration);
         formationChargeContactReadyRatio = Mathf.Clamp01(formationChargeContactReadyRatio);
+        formationChargeFollowThroughDuration = Mathf.Max(0f, formationChargeFollowThroughDuration);
+        formationChargeFollowThroughDistance = Mathf.Max(0f, formationChargeFollowThroughDistance);
         formationChargeImpulseMagnitude = Mathf.Max(0f, formationChargeImpulseMagnitude);
         formationChargeImpulseDuration = Mathf.Max(0f, formationChargeImpulseDuration);
         formationChargeImpulseForwardDistance = Mathf.Max(0f, formationChargeImpulseForwardDistance);
@@ -401,4 +412,6 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
+
+
 

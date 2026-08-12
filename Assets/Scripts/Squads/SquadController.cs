@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -89,7 +90,7 @@ public class SquadController : MonoBehaviour,
         squadData != null ? squadData.category : SquadCategory.Infantry;
 
     public SquadState State { get; private set; } = SquadState.Idle;
-    public SquadStance Stance { get; private set; } = SquadStance.Engage;
+    public SquadStance Stance { get; private set; } = SquadStance.Hold;
 
     public FactionInstance Faction { get; private set; }
 
@@ -675,6 +676,17 @@ public class SquadController : MonoBehaviour,
     public void SetStance(SquadStance stance)
     {
         Stance = stance;
+        Debug.Log(name + "stance:  " + stance);
+    }
+
+    public void SetChargeEnabled(bool enabled)
+    {
+        Combat?.SetFormationChargeEnabled(enabled);
+    }
+
+    public void ToggleCharge()
+    {
+        Combat?.ToggleFormationCharge();
     }
 
     #endregion
@@ -748,3 +760,5 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
+
+

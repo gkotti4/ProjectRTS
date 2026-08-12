@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -74,7 +75,10 @@ public class SquadCombat : MonoBehaviour
     // -----------------------------------------------------------------------------
     // Formation Combat Runtime State
     // -----------------------------------------------------------------------------
+    private bool formationChargeEnabled = true;
+    private bool formationChargeContactReached = false;
     private float formationChargeTimer = 0f;
+    private float formationChargeFollowThroughTimer = 0f;
 
     private readonly HashSet<SoldierController> formationChargeImpactedTargets =
         new HashSet<SoldierController>();
@@ -148,6 +152,7 @@ public class SquadCombat : MonoBehaviour
     public SquadEngagementReason CurrentEngagementType => currentEngagementType;
     public bool RangedVolleyEnabled => rangedVolleyEnabled;
     public bool RangedAvoidanceEnabled => rangedAvoidanceEnabled;
+    public bool FormationChargeEnabled => formationChargeEnabled;
 
     public int CurrentRangedAmmunition => currentRangedAmmunition;
     public int MaximumRangedAmmunition => maximumRangedAmmunition;
@@ -189,6 +194,10 @@ public class SquadCombat : MonoBehaviour
             squadCombatProfile != null &&
             squadCombatProfile.rangedAvoidanceEnabledByDefault;
 
+        formationChargeEnabled =
+            squadCombatProfile != null &&
+            squadCombatProfile.formationChargeEnabledByDefault;
+
         rangedAmmunitionStartingSoldierCount = CountLivingRangedSoldiers();
         InitializeRangedAmmunition();
 
@@ -215,6 +224,25 @@ public class SquadCombat : MonoBehaviour
     public void ToggleRangedAvoidance()
     {
         rangedAvoidanceEnabled = !rangedAvoidanceEnabled;
+    }
+
+    public void SetFormationChargeEnabled(bool enabled)
+    {
+        formationChargeEnabled = enabled;
+
+        // Turning charge off during the charge phase immediately returns the squad
+        // to its normal ordered-attack approach rather than leaving stale charge state.
+        if (!formationChargeEnabled &&
+            squad != null &&
+            squad.State == SquadState.Charging)
+        {
+            BeginApproachingCombat();
+        }
+    }
+
+    public void ToggleFormationCharge()
+    {
+        SetFormationChargeEnabled(!formationChargeEnabled);
     }
 
     bool HasCombatProfile()
@@ -314,7 +342,9 @@ public class SquadCombat : MonoBehaviour
         formationRangedInitialFireSettleTimer = 0f;
         formationRangedSetupRequired = false;
         formationRangedSetupInitialized = false;
+        formationChargeContactReached = false;
         formationChargeTimer = 0f;
+        formationChargeFollowThroughTimer = 0f;
         formationChargeImpactedTargets.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
@@ -387,10 +417,13 @@ public class SquadCombat : MonoBehaviour
         TickCombatApproachRefresh();
     }
 
-    /// Ticks the shared melee charge phase. The full formation surges forward while
-    /// individual front soldiers naturally become the first contacts. Charge ends
-    /// when a meaningful fraction reaches personal melee range or the safety timer
-    /// expires.
+    /// Ticks the ordered melee charge phase.
+    ///
+    /// Charge is intentionally different from normal approach:
+    /// - only an OrderedAttack may enter this state
+    /// - reaching first contact does not immediately stop the formation
+    /// - after contact, the formation keeps driving through the target for a short
+    ///   authored follow-through window before normal melee takes ownership
     public void TickCharging()
     {
         if (!HasCombatProfile())
@@ -419,8 +452,37 @@ public class SquadCombat : MonoBehaviour
 
         TickFormationChargeImpulseEmitters();
 
-        if (HasFormationChargeReachedContactRatio(targetSquad) ||
-            formationChargeTimer <= 0f)
+        if (!formationChargeContactReached &&
+            HasFormationChargeReachedContactRatio(targetSquad))
+        {
+            formationChargeContactReached = true;
+            formationChargeFollowThroughTimer = Mathf.Max(
+                0f,
+                squadCombatProfile.formationChargeFollowThroughDuration);
+
+            // Refresh immediately so the charge destination moves through the enemy
+            // formation instead of retaining the old normal approach stop point.
+            approachRefreshTimer = 0f;
+            MoveTowardCombatTarget(chargeThroughTarget: true);
+        }
+
+        if (formationChargeContactReached)
+        {
+            formationChargeFollowThroughTimer -= Time.deltaTime;
+
+            if (formationChargeFollowThroughTimer <= 0f)
+            {
+                BeginEngagement(notifyTarget: true);
+                return;
+            }
+
+            TickCombatApproachRefresh();
+            return;
+        }
+
+        // Safety cap for a charge that never achieves valid contact. Once contact
+        // has happened, follow-through owns the transition into normal melee.
+        if (formationChargeTimer <= 0f)
         {
             BeginEngagement(notifyTarget: true);
             return;
@@ -440,7 +502,8 @@ public class SquadCombat : MonoBehaviour
             0.01f,
             squadCombatProfile.combatApproachRefreshInterval);
 
-        MoveTowardCombatTarget();
+        MoveTowardCombatTarget(
+            chargeThroughTarget: squad != null && squad.State == SquadState.Charging);
     }
 
     /// Ticks active squad combat.
@@ -983,7 +1046,9 @@ public class SquadCombat : MonoBehaviour
         currentEngagementType = SquadEngagementReason.None;
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
+        formationChargeContactReached = false;
         formationChargeTimer = 0f;
+        formationChargeFollowThroughTimer = 0f;
 
         ClearFormationRuntimeState(
             clearAttackTimers: false,
@@ -2580,6 +2645,10 @@ public class SquadCombat : MonoBehaviour
     bool ShouldUseFormationCharge()
     {
         return squadCombatProfile.formationChargeEnabled &&
+               formationChargeEnabled &&
+               currentEngagementType == SquadEngagementReason.OrderedAttack &&
+               squad != null &&
+               squad.Stance != SquadStance.Hold &&
                !IsRangedCombatStyle();
     }
 
@@ -2618,6 +2687,8 @@ public class SquadCombat : MonoBehaviour
         formationChargeImpactedTargets.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
+        formationChargeContactReached = false;
+        formationChargeFollowThroughTimer = 0f;
         formationChargeTimer = Mathf.Max(
             0.01f,
             squadCombatProfile.formationChargeMaximumDuration);
@@ -2625,7 +2696,7 @@ public class SquadCombat : MonoBehaviour
         if (squad != null)
             squad.SetState(SquadState.Charging);
 
-        MoveTowardCombatTarget();
+        MoveTowardCombatTarget(chargeThroughTarget: true);
     }
 
     void RefreshFormationChargeLeadSoldiers()
@@ -2845,7 +2916,7 @@ public class SquadCombat : MonoBehaviour
             targetSquad.Combat.ReceiveEngagementRequest(squad);
     }
 
-    void MoveTowardCombatTarget()
+    void MoveTowardCombatTarget(bool chargeThroughTarget = false)
     {
         if (targetSquad == null || movement == null)
             return;
@@ -2871,15 +2942,32 @@ public class SquadCombat : MonoBehaviour
 
         fromTargetToMe.Normalize();
 
-        // Ranged approach has no preferred-distance repositioning. The formation
-        // simply advances toward the enemy; TickApproachingCombat enters combat as
-        // soon as the ranged combat-start range is satisfied. If already in range,
-        // ranged squads never back away unless Ranged Avoidance explicitly does it.
-        Vector3 approachPoint = IsRangedCombatStyle()
-            ? targetCenter
-            : targetCenter + fromTargetToMe * GetEffectiveApproachStopDistance();
-
         Vector3 facing = -fromTargetToMe;
+
+        // Normal melee approach deliberately stops outside the enemy center. A
+        // charge does the opposite: its temporary formation destination is placed
+        // beyond the target center so body contact does not immediately erase the
+        // squad's forward movement intent.
+        Vector3 approachPoint;
+
+        if (chargeThroughTarget && !IsRangedCombatStyle())
+        {
+            approachPoint =
+                targetCenter +
+                facing * Mathf.Max(
+                    0f,
+                    squadCombatProfile.formationChargeFollowThroughDistance);
+        }
+        else
+        {
+            // Ranged approach has no preferred-distance repositioning. The formation
+            // simply advances toward the enemy; TickApproachingCombat enters combat as
+            // soon as the ranged combat-start range is satisfied. If already in range,
+            // ranged squads never back away unless Ranged Avoidance explicitly does it.
+            approachPoint = IsRangedCombatStyle()
+                ? targetCenter
+                : targetCenter + fromTargetToMe * GetEffectiveApproachStopDistance();
+        }
 
         movement.OrderMove(
             approachPoint,
@@ -3853,4 +3941,6 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
+
+
 
