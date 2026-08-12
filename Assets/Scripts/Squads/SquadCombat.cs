@@ -1,6 +1,3 @@
-
-
-
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -469,6 +466,16 @@ public class SquadCombat : MonoBehaviour
             formationChargeFollowThroughTimer = Mathf.Max(
                 0f,
                 squadCombatProfile.formationChargeFollowThroughDuration);
+
+            // Charge shock is a one-time morale event at meaningful formation contact.
+            // The target's SquadMorale owns routing/shattered consequences.
+            if (targetSquad != null &&
+                targetSquad.Morale != null &&
+                squadCombatProfile.formationChargeMoraleShock > 0f)
+            {
+                targetSquad.Morale.ApplyMoraleLoss(
+                    squadCombatProfile.formationChargeMoraleShock);
+            }
 
             // Refresh immediately so the charge destination moves through the enemy
             // formation instead of retaining the old normal approach stop point.

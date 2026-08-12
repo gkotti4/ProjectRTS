@@ -594,7 +594,7 @@ public struct MoraleStats
     {
         maxMorale = 100f,
         leadership = 50f,
-        moraleRecoveryRate = 0f,
+        moraleRecoveryRate = 5f,
         casualtyMoraleResistance = 0f,
         flankMoraleResistance = 0f,
         terrorResistance = 0f,

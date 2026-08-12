@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -229,6 +228,9 @@ public class SquadCombatProfile : ScriptableObject
     [Min(0f)]
     public float formationChargeFollowThroughDistance = 1.75f; // Temporary distance beyond the enemy center used as the charge destination so attackers continue through initial contact.
 
+    [Min(0f)]
+    public float formationChargeMoraleShock = 8.0f; // One-time morale loss applied to the ordered target squad when meaningful charge contact is first reached.
+
     public bool formationChargeImpulseEnabled = true; // Enables the very light directional contact impulse during the infantry charge MVP.
 
     [Min(0f)]
@@ -380,6 +382,7 @@ public class SquadCombatProfile : ScriptableObject
         formationChargeContactReadyRatio = Mathf.Clamp01(formationChargeContactReadyRatio);
         formationChargeFollowThroughDuration = Mathf.Max(0f, formationChargeFollowThroughDuration);
         formationChargeFollowThroughDistance = Mathf.Max(0f, formationChargeFollowThroughDistance);
+        formationChargeMoraleShock = Mathf.Max(0f, formationChargeMoraleShock);
         formationChargeImpulseMagnitude = Mathf.Max(0f, formationChargeImpulseMagnitude);
         formationChargeImpulseDuration = Mathf.Max(0f, formationChargeImpulseDuration);
         formationChargeImpulseForwardDistance = Mathf.Max(0f, formationChargeImpulseForwardDistance);
@@ -412,6 +415,3 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
-
-
-
