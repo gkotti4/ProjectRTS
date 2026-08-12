@@ -1,3 +1,4 @@
+
 using UnityEngine;
 
 /// -----------------------------------------------------------------------------
@@ -41,7 +42,7 @@ public class SoldierAnimator : MonoBehaviour
     [Tooltip("MoveSpeed value used for normal forward movement in the Locomotion 1D blend tree.")]
     [SerializeField] private float locomotionWalkBlendValue = 0.5f;
 
-    [Tooltip("MoveSpeed value used while the squad is Running for the locomotion blend space.")]
+    [Tooltip("MoveSpeed value used while the squad is Charging or Routing.")]
     [SerializeField] private float locomotionRunBlendValue = 1.0f;
 
     [Tooltip("When enabled, clearly backwards movement uses the negative walk blend value instead of requiring a separate Animator bool.")]
@@ -95,6 +96,7 @@ public class SoldierAnimator : MonoBehaviour
     private static readonly int InCombat = Animator.StringToHash("InCombat");
     private static readonly int IsUsingRangedWeapon = Animator.StringToHash("IsUsingRangedWeapon");
     private static readonly int Attack = Animator.StringToHash("Attack");
+    private static readonly int ChargeAttack = Animator.StringToHash("ChargeAttack");
     private static readonly int AttackVariant = Animator.StringToHash("AttackVariant");
     private static readonly int HitReact = Animator.StringToHash("HitReact");
     private static readonly int Death = Animator.StringToHash("Death");
@@ -534,12 +536,15 @@ public class SoldierAnimator : MonoBehaviour
 
     #region Action Playback
 
-    public void PlayAction(SoldierActionState actionState)
+    public void PlayAction(
+        SoldierActionState actionState,
+        bool preserveLocomotion = false)
     {
         if (animator == null)
             return;
 
-        ForceMovementParametersOff();
+        if (!preserveLocomotion)
+            ForceMovementParametersOff();
 
         switch (actionState)
         {
@@ -555,18 +560,21 @@ public class SoldierAnimator : MonoBehaviour
                 }
 
                 animator.ResetTrigger(HitReact);
-                animator.SetTrigger(Attack);
+                animator.ResetTrigger(preserveLocomotion ? Attack : ChargeAttack);
+                animator.SetTrigger(preserveLocomotion ? ChargeAttack : Attack);
                 break;
 
             case SoldierActionState.HitReact:
                 DisableUpperBodyLayer();
                 animator.ResetTrigger(Attack);
+                animator.ResetTrigger(ChargeAttack);
                 animator.SetTrigger(HitReact);
                 break;
 
             case SoldierActionState.Death:
                 DisableUpperBodyLayer();
                 animator.ResetTrigger(Attack);
+                animator.ResetTrigger(ChargeAttack);
                 animator.ResetTrigger(HitReact);
                 animator.SetTrigger(Death);
                 break;
@@ -601,6 +609,7 @@ public class SoldierAnimator : MonoBehaviour
         {
             case SoldierActionState.Attack:
                 animator.ResetTrigger(Attack);
+                animator.ResetTrigger(ChargeAttack);
 
                 if (attackUsesFullBody)
                     EnableUpperBodyLayer();
@@ -731,3 +740,5 @@ public class SoldierAnimator : MonoBehaviour
     
     #endregion
 }
+
+

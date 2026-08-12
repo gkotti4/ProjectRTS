@@ -1,4 +1,5 @@
 
+
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -84,6 +85,12 @@ public class SquadCombat : MonoBehaviour
         new HashSet<SoldierController>();
 
     private readonly HashSet<SoldierController> formationChargeLeadSoldiers =
+        new HashSet<SoldierController>();
+
+    // Each soldier may perform at most one moving melee strike during one charge.
+    // The strike reuses the normal AttackImpact/AttackEnd pipeline; only movement
+    // locking differs while the charge is active.
+    private readonly HashSet<SoldierController> formationChargeAttackStartedSoldiers =
         new HashSet<SoldierController>();
 
     private readonly List<SoldierController> formationChargeLeadCandidates =
@@ -348,6 +355,7 @@ public class SquadCombat : MonoBehaviour
         formationChargeImpactedTargets.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
+        formationChargeAttackStartedSoldiers.Clear();
 
         ClearFormationRuntimeState(clearAttackTimers: true);
         ClearSoldierCombatStates();
@@ -444,6 +452,7 @@ public class SquadCombat : MonoBehaviour
         formationChargeTimer -= Time.deltaTime;
 
         RefreshFormationChargeLeadSoldiers();
+        TickFormationChargeAttacks();
 
         movement.TickFormationFollow(
             squadCombatProfile.formationChargeSpeedMultiplier,
@@ -2687,6 +2696,7 @@ public class SquadCombat : MonoBehaviour
         formationChargeImpactedTargets.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
+        formationChargeAttackStartedSoldiers.Clear();
         formationChargeContactReached = false;
         formationChargeFollowThroughTimer = 0f;
         formationChargeTimer = Mathf.Max(
@@ -2777,6 +2787,98 @@ public class SquadCombat : MonoBehaviour
         }
 
         return closestDistanceSqr;
+    }
+
+    void TickFormationChargeAttacks()
+    {
+        if (roster == null || targetSquad == null || targetSquad.Roster == null)
+            return;
+
+        foreach (SoldierController attacker in roster.Soldiers)
+        {
+            if (attacker == null ||
+                !attacker.IsAlive ||
+                attacker.IsActionLocked ||
+                formationChargeAttackStartedSoldiers.Contains(attacker))
+            {
+                continue;
+            }
+
+            WeaponProfile weaponProfile = GetWeaponProfile(attacker);
+
+            if (IsRangedWeapon(weaponProfile))
+                continue;
+
+            GetFormationAttackValues(
+                attacker,
+                weaponProfile,
+                false,
+                out MeleeCombatStats meleeStats,
+                out _,
+                out float attackRange,
+                out float attackInterval,
+                out _);
+
+            SoldierController target = FindClosestChargeTargetWithinRange(
+                attacker,
+                targetSquad.Roster,
+                attackRange);
+
+            if (target == null)
+                continue;
+
+            bool beganAttack = attacker.TryBeginAction(
+                SoldierActionState.Attack,
+                allowMovementDuringAttack: true);
+
+            if (!beganAttack)
+                continue;
+
+            formationChargeAttackStartedSoldiers.Add(attacker);
+            formationPendingMeleeTargets[attacker] = target;
+
+            // Preserve normal melee cadence after the opening charge strike so the
+            // soldier does not immediately chain a second normal attack on settle.
+            float randomInterval = Random.Range(
+                squadCombatProfile.formationAttackIntervalRandomMin,
+                squadCombatProfile.formationAttackIntervalRandomMax);
+
+            formationAttackTimers[attacker] = Mathf.Max(
+                0.05f,
+                attackInterval + randomInterval);
+        }
+    }
+
+    SoldierController FindClosestChargeTargetWithinRange(
+        SoldierController attacker,
+        SquadRoster enemyRoster,
+        float attackRange)
+    {
+        if (attacker == null || enemyRoster == null)
+            return null;
+
+        float bestDistanceSqr = Mathf.Max(0.1f, attackRange);
+        bestDistanceSqr *= bestDistanceSqr;
+
+        SoldierController bestTarget = null;
+        Vector3 attackerPosition = Flatten(attacker.transform.position);
+
+        foreach (SoldierController enemy in enemyRoster.Soldiers)
+        {
+            if (!IsValidFormationTarget(enemy))
+                continue;
+
+            float distanceSqr = Vector3.SqrMagnitude(
+                Flatten(enemy.transform.position) - attackerPosition);
+
+            if (distanceSqr > bestDistanceSqr)
+                continue;
+
+            bestDistanceSqr = distanceSqr;
+            bestTarget = enemy;
+        }
+
+        return bestTarget;
     }
 
     void TickFormationChargeImpulseEmitters()
@@ -3941,6 +4043,8 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
+
+
 
 
 

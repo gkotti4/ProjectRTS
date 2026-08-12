@@ -1,3 +1,4 @@
+
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -113,8 +114,10 @@ public class SoldierController : MonoBehaviour
     public bool IsActionLocked =>
         ActionState != SoldierActionState.None;
 
+    private bool currentAttackAllowsMovement = false;
+
     public bool IsMovementLocked =>
-        ActionState == SoldierActionState.Attack ||
+        (ActionState == SoldierActionState.Attack && !currentAttackAllowsMovement) ||
         ActionState == SoldierActionState.HitReact ||
         ActionState == SoldierActionState.Death;
 
@@ -580,10 +583,16 @@ public class SoldierController : MonoBehaviour
     
     #region Action State
 
-    public bool TryBeginAction(SoldierActionState newAction)
+    public bool TryBeginAction(
+        SoldierActionState newAction,
+        bool allowMovementDuringAttack = false)
     {
         if (!CanBeginAction(newAction))
             return false;
+
+        currentAttackAllowsMovement =
+            newAction == SoldierActionState.Attack &&
+            allowMovementDuringAttack;
 
         SoldierActionState previousAction = ActionState;
 
@@ -609,9 +618,12 @@ public class SoldierController : MonoBehaviour
             hitReactLockTimer = 0f;
         }
 
-        Stop();
+        if (!currentAttackAllowsMovement)
+            Stop();
 
-        SoldierAnimator?.PlayAction(newAction);
+        SoldierAnimator?.PlayAction(
+            newAction,
+            currentAttackAllowsMovement);
 
         return true;
     }
@@ -624,6 +636,7 @@ public class SoldierController : MonoBehaviour
         ActionState = SoldierActionState.None;
         currentActionStartedAt = 0f;
         hitReactLockTimer = 0f;
+        currentAttackAllowsMovement = false;
         hasLoggedActionStuckWarning = false;
 
         SoldierAnimator?.HandleActionCompleted(completedAction);
@@ -643,6 +656,7 @@ public class SoldierController : MonoBehaviour
         ActionState = SoldierActionState.None;
         currentActionStartedAt = 0f;
         hitReactLockTimer = 0f;
+        currentAttackAllowsMovement = false;
         hasLoggedActionStuckWarning = false;
 
         SoldierAnimator?.HandleActionCancelled(cancelledAction);
@@ -803,3 +817,5 @@ public class SoldierController : MonoBehaviour
     #endregion
 
 }
+
+
