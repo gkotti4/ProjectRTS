@@ -25,25 +25,33 @@ public class SoldierAnimator : MonoBehaviour
 
     #endregion
 
-    #region Movement Parameters
+    #region Locomotion Parameters
 
-    [Header("Movement Parameters")]
-    [SerializeField] private float movementVelocityDeadZone = 0.025f;
+    [Header("Locomotion Parameters")]
+    [Tooltip("Velocity threshold used only to decide whether the soldier is moving. The Animator blend value itself is authored below rather than derived from physical speed.")]
+    [SerializeField] private float locomotionVelocityDeadZone = 0.025f;
 
-    [Tooltip("How long movement animation stays on after movement briefly stops. Helps prevent combat micro-movement flicker.")]
-    [SerializeField] private float movementReleaseDelay = 0.04f;
+    [Tooltip("How long locomotion remains active after movement briefly stops. Helps prevent combat micro-movement flicker.")]
+    [SerializeField] private float locomotionReleaseDelay = 0.04f;
 
-    [Tooltip("If velocity points this far opposite the soldier's forward direction, IsMovingBackwards becomes true.")]
-    [SerializeField] private float backwardsDotThreshold = -0.25f;
+    [Tooltip("Seconds used by Animator.SetFloat damping when blending between idle, walk, backwards walk, and run. This smooths visual locomotion changes without deriving animation speed from physical velocity.")]
+    [SerializeField] private float locomotionBlendDampTime = 0.12f;
 
-    [Tooltip("Set false if your Animator Controller does not have IsMovingBackwards yet.")]
-    [SerializeField] private bool useMovingBackwardsParameter = false;
+    [Header("Locomotion Blend Values")]
+    [Tooltip("MoveSpeed value used for normal forward movement in the Locomotion 1D blend tree.")]
+    [SerializeField] private float locomotionWalkBlendValue = 0.5f;
 
-    [Tooltip("During clean squad movement states, this can force IsMoving even if one frame of agent velocity is missing.")]
-    [SerializeField] private bool trustSquadMovementState = true; // UNUSED
+    [Tooltip("MoveSpeed value used while the squad is Running for the locomotion blend space.")]
+    [SerializeField] private float locomotionRunBlendValue = 1.0f;
 
-    private bool isMovingVisual = false;
-    private float movementReleaseTimer = 0f;
+    [Tooltip("When enabled, clearly backwards movement uses the negative walk blend value instead of requiring a separate Animator bool.")]
+    [SerializeField] private bool locomotionBackwardsWalkEnabled = true;
+
+    [Tooltip("If movement points this far opposite the soldier's facing, locomotion uses the backwards walk blend value.")]
+    [SerializeField] private float locomotionBackwardsDotThreshold = -0.25f;
+
+    private bool locomotionMovingVisual = false;
+    private float locomotionReleaseTimer = 0f;
 
     private Vector3 lastWorldPosition = Vector3.zero;
     private Vector3 measuredWorldVelocity = Vector3.zero;
@@ -83,7 +91,7 @@ public class SoldierAnimator : MonoBehaviour
     #region Animator Hashes
 
     private static readonly int IsMoving = Animator.StringToHash("IsMoving");
-    private static readonly int IsMovingBackwards = Animator.StringToHash("IsMovingBackwards");
+    private static readonly int MoveSpeed = Animator.StringToHash("MoveSpeed");
     private static readonly int InCombat = Animator.StringToHash("InCombat");
     private static readonly int IsUsingRangedWeapon = Animator.StringToHash("IsUsingRangedWeapon");
     private static readonly int Attack = Animator.StringToHash("Attack");
@@ -111,9 +119,12 @@ public class SoldierAnimator : MonoBehaviour
 
     void OnValidate()
     {
-        movementVelocityDeadZone = Mathf.Max(0f, movementVelocityDeadZone);
-        movementReleaseDelay = Mathf.Max(0f, movementReleaseDelay);
-        backwardsDotThreshold = Mathf.Clamp(backwardsDotThreshold, -1f, 0f);
+        locomotionVelocityDeadZone = Mathf.Max(0f, locomotionVelocityDeadZone);
+        locomotionReleaseDelay = Mathf.Max(0f, locomotionReleaseDelay);
+        locomotionBlendDampTime = Mathf.Max(0f, locomotionBlendDampTime);
+        locomotionWalkBlendValue = Mathf.Max(0f, locomotionWalkBlendValue);
+        locomotionRunBlendValue = Mathf.Max(locomotionWalkBlendValue, locomotionRunBlendValue);
+        locomotionBackwardsDotThreshold = Mathf.Clamp(locomotionBackwardsDotThreshold, -1f, 0f);
 
         upperBodyLayerDefaultWeight = Mathf.Clamp01(upperBodyLayerDefaultWeight);
         upperBodyLayerDisabledWeight = Mathf.Clamp01(upperBodyLayerDisabledWeight);
@@ -303,48 +314,80 @@ public class SoldierAnimator : MonoBehaviour
         if (animator == null)
             return;
 
-        bool shouldMoveNow = ShouldUseMovingState(); // PERFORMANCE
+        bool shouldMoveNow = ShouldUseLocomotion();
 
         if (shouldMoveNow)
         {
-            isMovingVisual = true;
-            movementReleaseTimer = movementReleaseDelay;
+            locomotionMovingVisual = true;
+            locomotionReleaseTimer = locomotionReleaseDelay;
         }
-        else if (movementReleaseTimer > 0f)
+        else if (locomotionReleaseTimer > 0f)
         {
-            movementReleaseTimer -= Time.deltaTime;
-            isMovingVisual = true;
+            locomotionReleaseTimer -= Time.deltaTime;
+            locomotionMovingVisual = true;
         }
         else
         {
-            isMovingVisual = false;
+            locomotionMovingVisual = false;
         }
 
-        bool isMovingBackwards =
-            isMovingVisual &&
-            IsClearlyMovingBackwards(); // PERFORMANCE
+        animator.SetBool(IsMoving, locomotionMovingVisual);
 
-        animator.SetBool(IsMoving, isMovingVisual);
-
-        if (useMovingBackwardsParameter)
-            animator.SetBool(IsMovingBackwards, isMovingBackwards);
+        animator.SetFloat(
+            MoveSpeed,
+            ResolveLocomotionBlendValue(),
+            locomotionBlendDampTime,
+            Time.deltaTime);
     }
-    
-    
-    bool ShouldUseMovingState()
+
+    float ResolveLocomotionBlendValue()
+    {
+        if (!locomotionMovingVisual)
+            return 0f;
+
+        // Direction still comes from actual movement so a soldier being displaced
+        // backwards does not play a forward run just because its squad is charging.
+        if (locomotionBackwardsWalkEnabled && IsClearlyMovingBackwards())
+            return -locomotionWalkBlendValue;
+
+        // Run is gameplay-authored rather than inferred from custom motor speed.
+        // Charging uses it now; Routing can reuse the same locomotion clip later.
+        if (ShouldUseRunLocomotion())
+            return locomotionRunBlendValue;
+
+        return locomotionWalkBlendValue;
+    }
+
+    bool ShouldUseRunLocomotion()
+    {
+        if (soldierController == null || soldierController.Squad == null)
+            return false;
+
+        switch (soldierController.Squad.State)
+        {
+            case SquadState.Charging:
+            case SquadState.Routing:
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    bool ShouldUseLocomotion()
     {
         if (soldierController == null)
             return false;
 
-        if (!soldierController.IsAlive) // ~PERFORMANCE
+        if (!soldierController.IsAlive)
             return false;
 
         if (soldierController.IsMovementLocked)
             return false;
 
-        return HasMotorMovement(); // PERFORMANCE
+        return HasMotorMovement();
     }
-    
+
     bool HasMotorMovement()
     {
         if (soldierMotor == null)
@@ -354,14 +397,14 @@ public class SoldierAnimator : MonoBehaviour
         velocity.y = 0f;
 
         if (velocity.sqrMagnitude >
-            movementVelocityDeadZone * movementVelocityDeadZone)
+            locomotionVelocityDeadZone * locomotionVelocityDeadZone)
         {
             return true;
         }
 
         return HasMeaningfulAgentPath();
     }
-    
+
     bool HasMeaningfulAgentPath()
     {
         if (soldierMotor == null || soldierMotor.Agent == null)
@@ -389,38 +432,14 @@ public class SoldierAnimator : MonoBehaviour
 
         return remainingDistance > stopDistance + 0.05f;
     }
-    
-    
-    bool HasAnyMovement()
-    {
-        float deadZoneSqr =
-            movementVelocityDeadZone *
-            movementVelocityDeadZone;
-
-        if (soldierMotor != null)
-        {
-            Vector3 motorVelocity = soldierMotor.Velocity;
-            motorVelocity.y = 0f;
-
-            if (motorVelocity.sqrMagnitude > deadZoneSqr)
-                return true;
-
-            if (HasMeaningfulAgentPath())
-                return true;
-        }
-
-        return measuredWorldVelocity.sqrMagnitude > deadZoneSqr;
-    }
-    
 
     bool IsClearlyMovingBackwards()
     {
         Vector3 movementVelocity = GetBestMovementVelocity();
-
         movementVelocity.y = 0f;
 
         if (movementVelocity.sqrMagnitude <=
-            movementVelocityDeadZone * movementVelocityDeadZone)
+            locomotionVelocityDeadZone * locomotionVelocityDeadZone)
         {
             return false;
         }
@@ -435,14 +454,14 @@ public class SoldierAnimator : MonoBehaviour
             forward.normalized,
             movementVelocity.normalized);
 
-        return dot <= backwardsDotThreshold;
+        return dot <= locomotionBackwardsDotThreshold;
     }
 
     Vector3 GetBestMovementVelocity()
     {
         float deadZoneSqr =
-            movementVelocityDeadZone *
-            movementVelocityDeadZone;
+            locomotionVelocityDeadZone *
+            locomotionVelocityDeadZone;
 
         if (soldierMotor != null)
         {
@@ -600,16 +619,14 @@ public class SoldierAnimator : MonoBehaviour
 
     void ForceMovementParametersOff()
     {
-        isMovingVisual = false;
-        movementReleaseTimer = 0f;
+        locomotionMovingVisual = false;
+        locomotionReleaseTimer = 0f;
 
         if (animator == null)
             return;
 
         animator.SetBool(IsMoving, false);
-
-        if (useMovingBackwardsParameter)
-            animator.SetBool(IsMovingBackwards, false);
+        animator.SetFloat(MoveSpeed, 0f);
     }
 
     #endregion
