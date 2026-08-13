@@ -21,6 +21,8 @@ using UnityEngine.Serialization;
 public class SquadData : ScriptableObject
 {
     [Header("Identity")]
+    [Tooltip("Stable save/catalog key. Do not change after this squad type ships in persistent save data.")]
+    public string squadId;
     public string squadName = "Squad";
     public Sprite squadIcon;
 
