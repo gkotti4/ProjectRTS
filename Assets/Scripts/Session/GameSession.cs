@@ -26,9 +26,12 @@ public class GameSession : MonoBehaviour
 
     private SaveManager saveManager;
     private GameRuntimeSnapshot lastRuntimeSnapshot;
+    private GameRuntimeSetup pendingRuntimeSetup;
 
     public SaveManager Saves => saveManager;
     public GameRuntimeSnapshot LastRuntimeSnapshot => lastRuntimeSnapshot;
+    public GameRuntimeSetup PendingRuntimeSetup => pendingRuntimeSetup;
+    public bool HasPendingRuntimeSetup => pendingRuntimeSetup != null;
 
     void Awake()
     {
@@ -77,4 +80,49 @@ public class GameSession : MonoBehaviour
     {
         lastRuntimeSnapshot = null;
     }
+
+    #region Runtime Setup Handoff
+
+    /// <summary>
+    /// Stores the setup that the next instantiated GameManager should consume.
+    /// This is an in-memory scene/runtime handoff, not permanent save data.
+    /// </summary>
+    public bool SetPendingRuntimeSetup(GameRuntimeSetup runtimeSetup)
+    {
+        if (runtimeSetup == null || !runtimeSetup.IsValid)
+        {
+            Debug.LogError(
+                "GameSession.SetPendingRuntimeSetup failed: runtime setup is null or invalid.",
+                this);
+            return false;
+        }
+
+        pendingRuntimeSetup = runtimeSetup;
+        return true;
+    }
+
+    /// <summary>
+    /// Returns and clears the pending setup so one scene transition cannot
+    /// accidentally initialize later gameplay scenes from stale runtime data.
+    /// </summary>
+    public bool TryConsumePendingRuntimeSetup(
+        out GameRuntimeSetup runtimeSetup)
+    {
+        runtimeSetup = pendingRuntimeSetup;
+
+        if (runtimeSetup == null)
+            return false;
+
+        pendingRuntimeSetup = null;
+        return true;
+    }
+
+    public void ClearPendingRuntimeSetup()
+    {
+        pendingRuntimeSetup = null;
+    }
+
+    #endregion
 }
+
+

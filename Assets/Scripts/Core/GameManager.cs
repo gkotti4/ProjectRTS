@@ -34,27 +34,102 @@ public class GameManager : MonoBehaviour
 
         Instance = this;
 
-        PlayerFaction = new FactionInstance(
-            playerFactionData,
-            teamId: 1,
-            isPlayerControlled: true,
-            populationCap: startingPopulationCap,
-            startingResources: startingResources);
+        if (GameSession.Instance != null &&
+            GameSession.Instance.TryConsumePendingRuntimeSetup(
+                out GameRuntimeSetup pendingRuntimeSetup))
+        {
+            InitializeRuntime(pendingRuntimeSetup);
+            return;
+        }
 
-        EnemyFaction = new FactionInstance(
-            enemyFactionData,
-            teamId: 2,
-            isPlayerControlled: false,
-            populationCap: startingPopulationCap,
-            startingResources: startingResources);
+        InitializeRuntime(BuildInspectorFallbackRuntimeSetup());
+    }
+
+
+    #region Runtime Initialization
+
+    /// <summary>
+    /// Creates the shared live-game faction runtime from an in-memory setup supplied
+    /// by GameSession/game-mode code. GameManager owns the resulting FactionInstances;
+    /// it does not own the progression/save state that produced this setup.
+    /// </summary>
+    public bool InitializeRuntime(GameRuntimeSetup runtimeSetup)
+    {
+        if (runtimeSetup == null || !runtimeSetup.IsValid)
+        {
+            Debug.LogError(
+                "GameManager.InitializeRuntime failed: runtime setup is null or invalid.",
+                this);
+            return false;
+        }
+
+        PlayerFaction = CreateFactionInstance(runtimeSetup.playerFaction);
+        EnemyFaction = CreateFactionInstance(runtimeSetup.enemyFaction);
+
+        if (PlayerFaction == null || EnemyFaction == null)
+        {
+            Debug.LogError(
+                "GameManager.InitializeRuntime failed to create required factions.",
+                this);
+            return false;
+        }
 
         allFactions.Clear();
         allFactions.Add(PlayerFaction);
         allFactions.Add(EnemyFaction);
 
-        ApplyStartingUpgrades(PlayerFaction, playerStartingUpgrades);
-        ApplyStartingUpgrades(EnemyFaction, enemyStartingUpgrades);
+        ApplyStartingUpgrades(
+            PlayerFaction,
+            runtimeSetup.playerFaction.startingUpgrades);
+
+        ApplyStartingUpgrades(
+            EnemyFaction,
+            runtimeSetup.enemyFaction.startingUpgrades);
+
+        return true;
     }
+
+    FactionInstance CreateFactionInstance(FactionRuntimeSetup factionSetup)
+    {
+        if (factionSetup == null || factionSetup.factionData == null)
+            return null;
+
+        return new FactionInstance(
+            factionSetup.factionData,
+            factionSetup.teamId,
+            factionSetup.isPlayerControlled,
+            Mathf.Max(0, factionSetup.startingPopulationCap),
+            Mathf.Max(0, factionSetup.startingResources));
+    }
+
+    /// <summary>
+    /// Keeps direct scene play and Battle Sandbox testing working without requiring
+    /// a persistent GameSession to prepare a runtime setup first.
+    /// </summary>
+    GameRuntimeSetup BuildInspectorFallbackRuntimeSetup()
+    {
+        GameRuntimeSetup runtimeSetup = new GameRuntimeSetup();
+
+        runtimeSetup.playerFaction.factionData = playerFactionData;
+        runtimeSetup.playerFaction.teamId = 1;
+        runtimeSetup.playerFaction.isPlayerControlled = true;
+        runtimeSetup.playerFaction.startingResources = startingResources;
+        runtimeSetup.playerFaction.startingPopulationCap = startingPopulationCap;
+        runtimeSetup.playerFaction.startingUpgrades =
+            new List<UpgradeData>(playerStartingUpgrades);
+
+        runtimeSetup.enemyFaction.factionData = enemyFactionData;
+        runtimeSetup.enemyFaction.teamId = 2;
+        runtimeSetup.enemyFaction.isPlayerControlled = false;
+        runtimeSetup.enemyFaction.startingResources = startingResources;
+        runtimeSetup.enemyFaction.startingPopulationCap = startingPopulationCap;
+        runtimeSetup.enemyFaction.startingUpgrades =
+            new List<UpgradeData>(enemyStartingUpgrades);
+
+        return runtimeSetup;
+    }
+
+    #endregion
 
     void OnDestroy()
     {
