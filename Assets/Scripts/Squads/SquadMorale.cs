@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public enum SquadMoraleState
@@ -27,6 +28,8 @@ public enum SquadMoraleState
 [DisallowMultipleComponent]
 public class SquadMorale : MonoBehaviour
 {
+    public event Action<SquadMorale, int> OnRoutedOffField;
+
     #region Tuning
 
     [Header("Morale - Casualties")]
@@ -420,12 +423,17 @@ public class SquadMorale : MonoBehaviour
         hasRoutedOffField = true;
         squad?.Combat?.ClearTargets();
         movement?.OrderStop();
-        
-        // todo: save living soldiers for next battle
-        // possibly leave unit selection card in HUD but grey it out or mark it as a 'routed' squad.
-        
-        // Rout off the map
-        squad.DestroySquad();
+
+        // Capture survivors before the squad is destroyed. BattleController consumes
+        // this generic event so successful routers remain valid battle survivors.
+        int survivingSoldierCount = roster != null
+            ? Mathf.Max(0, roster.LivingCount)
+            : 0;
+
+        OnRoutedOffField?.Invoke(this, survivingSoldierCount);
+
+        // Routed squads are physically gone from the battlefield after escape.
+        squad?.DestroySquad();
     }
 
     #endregion

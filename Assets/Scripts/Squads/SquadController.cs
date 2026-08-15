@@ -1,5 +1,3 @@
-
-
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -324,7 +322,10 @@ public class SquadController : MonoBehaviour,
 
     #region Initialization
 
-    public void Initialize(SquadData data, FactionInstance faction)
+    public void Initialize(
+        SquadData data,
+        FactionInstance faction,
+        int startingSoldierCountOverride = -1)
     {
         if (isInitialized)
         {
@@ -356,7 +357,11 @@ public class SquadController : MonoBehaviour,
             appliedUpgradeStacks);
 
         // 1. Build physical/gameplay body.
-        Roster.Initialize(this, squadData, Faction);
+        Roster.Initialize(
+            this,
+            squadData,
+            Faction,
+            startingSoldierCountOverride);
 
         // 2. Bind squad-level state systems that depend on roster/soldiers.
         Health.Initialize(Roster);

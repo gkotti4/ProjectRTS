@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -32,6 +31,7 @@ public class BattleGameModeController : MonoBehaviour
         OnArmiesSpawned;
     public event Action<int, BattleDefinitionData> OnBattleRunAdvanced;
     public event Action OnBattleRunCompleted;
+    public event Action<BattleResult> OnBattleResolved;
 
     #region Setup
 
@@ -78,6 +78,31 @@ public class BattleGameModeController : MonoBehaviour
     private readonly List<SquadController> enemySquads =
         new List<SquadController>();
 
+    private readonly List<BattleSquadDeployment> playerArmyDeploymentOverride =
+        new List<BattleSquadDeployment>();
+
+    private sealed class BattleParticipation
+    {
+        public string externalSquadId;
+        public SquadData squadData;
+        public SquadController squad;
+        public SquadRoster roster;
+        public SquadMorale morale;
+        public int startingSoldierCount;
+        public int lastKnownLivingSoldierCount;
+        public bool routedOffField;
+        public bool isPlayerArmy;
+    }
+
+    private readonly List<BattleParticipation> battleParticipations =
+        new List<BattleParticipation>();
+
+    private readonly Dictionary<SquadRoster, BattleParticipation> participationByRoster =
+        new Dictionary<SquadRoster, BattleParticipation>();
+
+    private readonly Dictionary<SquadMorale, BattleParticipation> participationByMorale =
+        new Dictionary<SquadMorale, BattleParticipation>();
+
     private readonly BattleRunState battleRunState = new BattleRunState();
 
     private BattleGameState state = BattleGameState.Setup;
@@ -93,6 +118,7 @@ public class BattleGameModeController : MonoBehaviour
     public IReadOnlyList<SquadController> EnemySquads => enemySquads;
     public bool IsBattleActive => state == BattleGameState.Battle;
     public float BattleElapsedTime => battleElapsedTime;
+    public BattleResult LastBattleResult { get; private set; }
 
     #endregion
 
@@ -161,6 +187,8 @@ public class BattleGameModeController : MonoBehaviour
 
     void OnDestroy()
     {
+        ClearBattleParticipationTracking();
+
         if (Instance == this)
             Instance = null;
     }
@@ -179,11 +207,25 @@ public class BattleGameModeController : MonoBehaviour
         battleElapsedTime = 0f;
         SetState(BattleGameState.Setup);
 
-        SpawnArmy(
-            battleDefinition.playerArmy,
-            GameManager.Instance.PlayerFaction,
-            isPlayerArmy: true,
-            playerSquads);
+        LastBattleResult = null;
+        ClearBattleParticipationTracking();
+
+        if (playerArmyDeploymentOverride.Count > 0)
+        {
+            SpawnDeploymentArmy(
+                playerArmyDeploymentOverride,
+                GameManager.Instance.PlayerFaction,
+                isPlayerArmy: true,
+                playerSquads);
+        }
+        else
+        {
+            SpawnArmy(
+                battleDefinition.playerArmy,
+                GameManager.Instance.PlayerFaction,
+                isPlayerArmy: true,
+                playerSquads);
+        }
 
         SpawnArmy(
             battleDefinition.enemyArmy,
@@ -280,6 +322,57 @@ public class BattleGameModeController : MonoBehaviour
         battleDefinition = definition;
     }
 
+    /// <summary>
+    /// Overrides only the player army for subsequent StartBattle calls. This is an
+    /// in-memory deployment handoff used by higher-level modes such as Contract
+    /// Mercenary. The authored BattleDefinition player army remains the sandbox
+    /// fallback when no override is present.
+    /// </summary>
+    public void SetPlayerArmyDeployments(
+        IReadOnlyList<BattleSquadDeployment> deployments)
+    {
+        if (state == BattleGameState.Battle)
+        {
+            Debug.LogWarning(
+                $"{name}: Cannot replace player army deployments during an active battle.",
+                this);
+            return;
+        }
+
+        playerArmyDeploymentOverride.Clear();
+
+        if (deployments == null)
+            return;
+
+        for (int index = 0; index < deployments.Count; index++)
+        {
+            BattleSquadDeployment deployment = deployments[index];
+
+            if (deployment == null ||
+                deployment.squadData == null ||
+                deployment.soldierCount <= 0)
+            {
+                continue;
+            }
+
+            playerArmyDeploymentOverride.Add(
+                new BattleSquadDeployment
+                {
+                    externalSquadId = deployment.externalSquadId,
+                    squadData = deployment.squadData,
+                    soldierCount = Mathf.Max(1, deployment.soldierCount)
+                });
+        }
+    }
+
+    public void ClearPlayerArmyDeployments()
+    {
+        if (state == BattleGameState.Battle)
+            return;
+
+        playerArmyDeploymentOverride.Clear();
+    }
+
     #endregion
 
     #region Spawning
@@ -341,8 +434,92 @@ public class BattleGameModeController : MonoBehaviour
                 spawnedSquadIndex++;
 
                 if (squad != null)
+                {
                     destination.Add(squad);
+                    RegisterBattleParticipation(
+                        squad,
+                        externalSquadId: null,
+                        startingSoldierCount: squad.Roster != null
+                            ? squad.Roster.LivingCount
+                            : entry.squadData.ResolvedStartingSoldierCount,
+                        isPlayerArmy);
+                }
             }
+        }
+    }
+
+    void SpawnDeploymentArmy(
+        IReadOnlyList<BattleSquadDeployment> deployments,
+        FactionInstance faction,
+        bool isPlayerArmy,
+        List<SquadController> destination)
+    {
+        destination.Clear();
+
+        if (deployments == null ||
+            faction == null ||
+            battleMap == null)
+        {
+            return;
+        }
+
+        int totalSquadCount = 0;
+
+        for (int index = 0; index < deployments.Count; index++)
+        {
+            BattleSquadDeployment deployment = deployments[index];
+
+            if (deployment != null &&
+                deployment.squadData != null &&
+                deployment.soldierCount > 0)
+            {
+                totalSquadCount++;
+            }
+        }
+
+        Quaternion spawnRotation =
+            battleMap.GetDeploymentRotation(isPlayerArmy);
+
+        int spawnedSquadIndex = 0;
+
+        for (int index = 0; index < deployments.Count; index++)
+        {
+            BattleSquadDeployment deployment = deployments[index];
+
+            if (deployment == null ||
+                deployment.squadData == null ||
+                deployment.soldierCount <= 0)
+            {
+                continue;
+            }
+
+            Vector3 spawnPosition =
+                battleMap.GetDeploymentPosition(
+                    isPlayerArmy,
+                    spawnedSquadIndex,
+                    totalSquadCount);
+
+            SquadController squad =
+                SquadFactory.SpawnSquad(
+                    deployment.squadData,
+                    spawnPosition,
+                    spawnRotation,
+                    faction,
+                    deployment.soldierCount);
+
+            spawnedSquadIndex++;
+
+            if (squad == null)
+                continue;
+
+            destination.Add(squad);
+            RegisterBattleParticipation(
+                squad,
+                deployment.externalSquadId,
+                squad.Roster != null
+                    ? squad.Roster.LivingCount
+                    : deployment.soldierCount,
+                isPlayerArmy);
         }
     }
 
@@ -408,8 +585,12 @@ public class BattleGameModeController : MonoBehaviour
 
     void EndBattle(BattleGameState resultState)
     {
+        LastBattleResult = BuildBattleResult(resultState);
+
         StopAllSurvivingSquads();
         SetState(resultState);
+
+        OnBattleResolved?.Invoke(LastBattleResult);
     }
 
     void StopAllSurvivingSquads()
@@ -436,6 +617,150 @@ public class BattleGameModeController : MonoBehaviour
 
             squad.OrderStop();
         }
+    }
+
+    #endregion
+
+    #region Battle Participation / Results
+
+    void RegisterBattleParticipation(
+        SquadController squad,
+        string externalSquadId,
+        int startingSoldierCount,
+        bool isPlayerArmy)
+    {
+        if (squad == null)
+            return;
+
+        BattleParticipation participation =
+            new BattleParticipation
+            {
+                externalSquadId = externalSquadId,
+                squadData = squad.Data,
+                squad = squad,
+                roster = squad.Roster,
+                morale = squad.Morale,
+                startingSoldierCount = Mathf.Max(0, startingSoldierCount),
+                lastKnownLivingSoldierCount = squad.Roster != null
+                    ? Mathf.Max(0, squad.Roster.LivingCount)
+                    : Mathf.Max(0, startingSoldierCount),
+                routedOffField = false,
+                isPlayerArmy = isPlayerArmy
+            };
+
+        battleParticipations.Add(participation);
+
+        if (participation.roster != null)
+        {
+            participationByRoster[participation.roster] = participation;
+            participation.roster.OnRosterChanged += HandleParticipantRosterChanged;
+        }
+
+        if (participation.morale != null)
+        {
+            participationByMorale[participation.morale] = participation;
+            participation.morale.OnRoutedOffField += HandleParticipantRoutedOffField;
+        }
+    }
+
+    void HandleParticipantRosterChanged(SquadRoster roster)
+    {
+        if (roster == null ||
+            !participationByRoster.TryGetValue(
+                roster,
+                out BattleParticipation participation))
+        {
+            return;
+        }
+
+        participation.lastKnownLivingSoldierCount =
+            Mathf.Max(0, roster.LivingCount);
+    }
+
+    void HandleParticipantRoutedOffField(
+        SquadMorale morale,
+        int survivingSoldierCount)
+    {
+        if (morale == null ||
+            !participationByMorale.TryGetValue(
+                morale,
+                out BattleParticipation participation))
+        {
+            return;
+        }
+
+        participation.routedOffField = true;
+        participation.lastKnownLivingSoldierCount =
+            Mathf.Max(0, survivingSoldierCount);
+    }
+
+    BattleResult BuildBattleResult(BattleGameState resultState)
+    {
+        BattleResult result = new BattleResult
+        {
+            battleDefinition = battleDefinition,
+            resultState = resultState,
+            battleDuration = battleElapsedTime
+        };
+
+        for (int index = 0; index < battleParticipations.Count; index++)
+        {
+            BattleParticipation participation = battleParticipations[index];
+
+            if (participation == null)
+                continue;
+
+            int survivingSoldierCount =
+                participation.routedOffField
+                    ? participation.lastKnownLivingSoldierCount
+                    : participation.roster != null
+                        ? Mathf.Max(0, participation.roster.LivingCount)
+                        : Mathf.Max(0, participation.lastKnownLivingSoldierCount);
+
+            survivingSoldierCount = Mathf.Clamp(
+                survivingSoldierCount,
+                0,
+                Mathf.Max(0, participation.startingSoldierCount));
+
+            BattleSquadResult squadResult =
+                new BattleSquadResult
+                {
+                    externalSquadId = participation.externalSquadId,
+                    squadData = participation.squadData,
+                    startingSoldierCount = participation.startingSoldierCount,
+                    survivingSoldierCount = survivingSoldierCount,
+                    casualtyCount = Mathf.Max(
+                        0,
+                        participation.startingSoldierCount - survivingSoldierCount),
+                    routedOffField = participation.routedOffField
+                };
+
+            if (participation.isPlayerArmy)
+                result.playerSquads.Add(squadResult);
+            else
+                result.enemySquads.Add(squadResult);
+        }
+
+        return result;
+    }
+
+    void ClearBattleParticipationTracking()
+    {
+        foreach (KeyValuePair<SquadRoster, BattleParticipation> pair in participationByRoster)
+        {
+            if (pair.Key != null)
+                pair.Key.OnRosterChanged -= HandleParticipantRosterChanged;
+        }
+
+        foreach (KeyValuePair<SquadMorale, BattleParticipation> pair in participationByMorale)
+        {
+            if (pair.Key != null)
+                pair.Key.OnRoutedOffField -= HandleParticipantRoutedOffField;
+        }
+
+        participationByRoster.Clear();
+        participationByMorale.Clear();
+        battleParticipations.Clear();
     }
 
     #endregion
@@ -468,6 +793,8 @@ public class BattleGameModeController : MonoBehaviour
 
     void ClearPreviousArmies()
     {
+        ClearBattleParticipationTracking();
+
         if (!destroyPreviousArmiesOnRestart)
         {
             playerSquads.Clear();

@@ -27,11 +27,14 @@ public class GameSession : MonoBehaviour
     private SaveManager saveManager;
     private GameRuntimeSnapshot lastRuntimeSnapshot;
     private GameRuntimeSetup pendingRuntimeSetup;
+    private ContractMercenaryRunState contractMercenaryRunState;
 
     public SaveManager Saves => saveManager;
     public GameRuntimeSnapshot LastRuntimeSnapshot => lastRuntimeSnapshot;
     public GameRuntimeSetup PendingRuntimeSetup => pendingRuntimeSetup;
     public bool HasPendingRuntimeSetup => pendingRuntimeSetup != null;
+    public ContractMercenaryRunState ContractMercenaryRunState => contractMercenaryRunState;
+    public bool HasContractMercenaryRun => contractMercenaryRunState != null;
 
     void Awake()
     {
@@ -123,6 +126,24 @@ public class GameSession : MonoBehaviour
     }
 
     #endregion
+    #region Contract Mercenary Run
+
+    /// <summary>
+    /// Stores the active Contract Mercenary run above scene lifetime.
+    /// The game-mode controller owns the rules for creating/updating this state;
+    /// GameSession only owns its cross-scene lifetime.
+    /// </summary>
+    public void SetContractMercenaryRunState(
+        ContractMercenaryRunState runState)
+    {
+        contractMercenaryRunState = runState;
+    }
+
+    public void ClearContractMercenaryRunState()
+    {
+        contractMercenaryRunState = null;
+    }
+
+    #endregion
+
 }
-
-

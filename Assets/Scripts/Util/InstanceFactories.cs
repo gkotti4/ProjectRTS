@@ -41,7 +41,8 @@ public static class SquadFactory
         SquadData squadData,
         Vector3 position,
         Quaternion rotation,
-        FactionInstance factionInstance)
+        FactionInstance factionInstance,
+        int startingSoldierCountOverride = -1)
     {
         if (squadData == null)
         {
@@ -78,7 +79,10 @@ public static class SquadFactory
 
         factionOwner.Initialize(factionInstance);
 
-        squad.Initialize(squadData, factionInstance);
+        squad.Initialize(
+            squadData,
+            factionInstance,
+            startingSoldierCountOverride);
 
         return squad;
     }

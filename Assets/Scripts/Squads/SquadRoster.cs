@@ -38,7 +38,8 @@ public class SquadRoster : MonoBehaviour
     public void Initialize(
         SquadController owner,
         SquadData data,
-        FactionInstance ownerFactionInstance)
+        FactionInstance ownerFactionInstance,
+        int startingSoldierCountOverride = -1)
     {
         squad = owner;
         squadData = data;
@@ -48,7 +49,7 @@ public class SquadRoster : MonoBehaviour
             soldierParent = GetOrCreateRuntimeSoldierParent(); // Big Play
 
         DestroyAllSoldiers();
-        SpawnStartingSoldiers();
+        SpawnStartingSoldiers(startingSoldierCountOverride);
 
         OnRosterChanged?.Invoke(this);
     }
@@ -117,7 +118,7 @@ public class SquadRoster : MonoBehaviour
             HandleEmptySquad();
     }
 
-    void SpawnStartingSoldiers()
+    void SpawnStartingSoldiers(int startingSoldierCountOverride = -1)
     {
         if (squadData == null)
         {
@@ -139,9 +140,17 @@ public class SquadRoster : MonoBehaviour
             return;
         }
 
-        int count = squad != null && squad.Stats != null
+        int authoredStartingCount = squad != null && squad.Stats != null
             ? Mathf.Max(1, squad.Stats.capacity.startingSoldierCount)
             : Mathf.Max(1, squadData.ResolvedStartingSoldierCount);
+
+        int maximumCount = squad != null && squad.Stats != null
+            ? Mathf.Max(1, squad.Stats.capacity.maximumSoldierCount)
+            : Mathf.Max(1, squadData.maxSoldierCount);
+
+        int count = startingSoldierCountOverride >= 0
+            ? Mathf.Clamp(startingSoldierCountOverride, 1, maximumCount)
+            : Mathf.Clamp(authoredStartingCount, 1, maximumCount);
 
         for (int i = 0; i < count; i++)
         {
