@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -355,13 +356,34 @@ public class BattleGameModeController : MonoBehaviour
                 continue;
             }
 
-            playerArmyDeploymentOverride.Add(
+            BattleSquadDeployment copiedDeployment =
                 new BattleSquadDeployment
                 {
                     externalSquadId = deployment.externalSquadId,
                     squadData = deployment.squadData,
                     soldierCount = Mathf.Max(1, deployment.soldierCount)
-                });
+                };
+
+            if (deployment.appliedUpgrades != null)
+            {
+                for (int upgradeIndex = 0; upgradeIndex < deployment.appliedUpgrades.Count; upgradeIndex++)
+                {
+                    RuntimeUpgradeStackSnapshot stack = deployment.appliedUpgrades[upgradeIndex];
+
+                    if (stack == null || stack.upgradeData == null || stack.stackCount <= 0)
+                        continue;
+
+                    copiedDeployment.appliedUpgrades.Add(
+                        new RuntimeUpgradeStackSnapshot
+                        {
+                            upgradeData = stack.upgradeData,
+                            upgradeId = stack.upgradeId,
+                            stackCount = stack.stackCount
+                        });
+                }
+            }
+
+            playerArmyDeploymentOverride.Add(copiedDeployment);
         }
     }
 
@@ -512,6 +534,8 @@ public class BattleGameModeController : MonoBehaviour
             if (squad == null)
                 continue;
 
+            ApplyDeploymentUpgrades(squad, deployment);
+
             destination.Add(squad);
             RegisterBattleParticipation(
                 squad,
@@ -520,6 +544,34 @@ public class BattleGameModeController : MonoBehaviour
                     ? squad.Roster.LivingCount
                     : deployment.soldierCount,
                 isPlayerArmy);
+        }
+    }
+
+    void ApplyDeploymentUpgrades(
+        SquadController squad,
+        BattleSquadDeployment deployment)
+    {
+        if (squad == null || deployment == null || deployment.appliedUpgrades == null)
+            return;
+
+        for (int index = 0; index < deployment.appliedUpgrades.Count; index++)
+        {
+            RuntimeUpgradeStackSnapshot stack = deployment.appliedUpgrades[index];
+
+            if (stack == null || stack.upgradeData == null || stack.stackCount <= 0)
+                continue;
+
+            int desiredStacks = Mathf.Max(0, stack.stackCount);
+
+            for (int stackIndex = 0; stackIndex < desiredStacks; stackIndex++)
+            {
+                if (!squad.TryApplyUpgrade(
+                        stack.upgradeData,
+                        UpgradeGrantSource.CampaignProgression))
+                {
+                    break;
+                }
+            }
         }
     }
 
@@ -885,3 +937,5 @@ public class BattleGameModeController : MonoBehaviour
 
     #endregion
 }
+
+

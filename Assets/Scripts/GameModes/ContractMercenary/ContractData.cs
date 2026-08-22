@@ -33,6 +33,13 @@ public class ContractData : ScriptableObject
     [Min(0)]
     public int prestigeReward = 1;
 
+    [Tooltip("Minimum company Prestige required before this contract may be accepted.")]
+    [Min(0)]
+    public int minimumPrestige = 0;
+
+    [Tooltip("Optional contracts that must already be completed before this contract unlocks.")]
+    public List<ContractData> requiredContracts = new List<ContractData>();
+
     [Tooltip("If disabled, completing this contract once prevents selecting it again during the same run.")]
     public bool repeatable = false;
 

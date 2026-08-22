@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -44,8 +43,11 @@ public class SelectionManager : MonoBehaviour
     private ISelectable lastClicked = null;
 
     private bool isPlacingBuilding = false;
+    private bool tacticalInputEnabled = true;
 
     private IHoverable hoveredObject = null;
+
+    public bool TacticalInputEnabled => tacticalInputEnabled;
 
     #endregion
 
@@ -81,8 +83,36 @@ public class SelectionManager : MonoBehaviour
 
     void Update()
     {
+        if (!tacticalInputEnabled)
+        {
+            ClearNormalHover();
+            ClearDragHover();
+            return;
+        }
+
         HandleSelectionInput();
         HandleHover();
+    }
+
+    #endregion
+
+    #region Tactical Input
+
+    public void SetTacticalInputEnabled(bool enabled)
+    {
+        if (tacticalInputEnabled == enabled)
+            return;
+
+        tacticalInputEnabled = enabled;
+
+        if (tacticalInputEnabled)
+            return;
+
+        isDragging = false;
+        dragStart = Input.mousePosition;
+        ClearNormalHover();
+        ClearDragHover();
+        DeselectAll();
     }
 
     #endregion
@@ -627,7 +657,3 @@ public class SelectionManager : MonoBehaviour
 
     #endregion
 }
-
-
-
-

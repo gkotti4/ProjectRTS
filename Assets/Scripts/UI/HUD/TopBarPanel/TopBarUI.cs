@@ -39,6 +39,9 @@ public class TopBarUI : MonoBehaviour
     [Header("Menu")]
     [SerializeField] private GameObject menuPanel; // Menu, Options, Settings button
     [SerializeField] private bool menuPauseGameWhenOpened = true;
+    
+    [Header("Settings")]
+    [SerializeField] private bool disableEconomySection = true;
 
     #endregion
 
@@ -57,12 +60,16 @@ public class TopBarUI : MonoBehaviour
 
     void Start()
     {
-        GameEvents.OnResourcesChanged += HandleResourcesChanged;
+        if (!disableEconomySection)
+            GameEvents.OnResourcesChanged += HandleResourcesChanged;
 
         ResolveGameTimeController();
         BindBattleController();
 
-        RefreshEconomyDisplay();
+        if (disableEconomySection)
+            SetEconomySectionVisible(false);
+        else
+            RefreshEconomyDisplay();
         RefreshBattleDisplay();
         RefreshGameSpeedDisplay();
 

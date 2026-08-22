@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -47,6 +48,41 @@ public sealed class ContractMercenaryRecruitOption
 
     [Min(0)]
     public int ironCost = 0;
+
+    [Tooltip("Minimum company Prestige required before this recruit becomes available.")]
+    [Min(0)]
+    public int minimumPrestige = 0;
+}
+
+[Serializable]
+public sealed class ContractMercenaryUpgradeStack
+{
+    public UpgradeData upgradeData;
+    [Min(1)] public int stackCount = 1;
+}
+
+[Serializable]
+public sealed class ContractMercenaryUpgradeShopOption
+{
+    public UpgradeData upgradeData;
+
+    [Min(0)] public int goldCost = 0;
+    [Min(0)] public int ironCost = 10;
+    [Min(0)] public int minimumPrestige = 0;
+
+    [Tooltip("If populated, only these squad types may buy this upgrade. Empty means any squad may buy it.")]
+    public List<SquadData> allowedSquadTypes = new List<SquadData>();
+
+    public bool AllowsSquad(SquadData squadData)
+    {
+        if (squadData == null)
+            return false;
+
+        if (allowedSquadTypes == null || allowedSquadTypes.Count == 0)
+            return true;
+
+        return allowedSquadTypes.Contains(squadData);
+    }
 }
 
 /// <summary>
@@ -62,6 +98,9 @@ public sealed class ContractMercenarySquadState
 
     [Min(0)]
     public int currentSoldierCount = 0;
+
+    public List<ContractMercenaryUpgradeStack> appliedUpgrades =
+        new List<ContractMercenaryUpgradeStack>();
 
     public int MaximumSoldierCount =>
         squadData != null
@@ -118,6 +157,7 @@ public sealed class ContractMercenaryRunState
     private ContractData currentContract;
     private int prestige = 0;
     private int completedContractCount = 0;
+    private ContractMercenaryContractResult lastContractResult;
 
     public IReadOnlyList<ContractMercenaryResourceAmount> Resources => resources;
     public IReadOnlyList<ContractMercenarySquadState> Army => army;
@@ -127,6 +167,7 @@ public sealed class ContractMercenaryRunState
     public int Prestige => prestige;
     public int CompletedContractCount => completedContractCount;
     public bool HasActiveContract => currentContract != null;
+    public ContractMercenaryContractResult LastContractResult => lastContractResult;
 
     public void Initialize(
         IReadOnlyList<ContractMercenaryResourceAmount> startingResources,
@@ -140,6 +181,7 @@ public sealed class ContractMercenaryRunState
         currentContract = null;
         prestige = Mathf.Max(0, startingPrestige);
         completedContractCount = 0;
+        lastContractResult = null;
 
         if (startingResources != null)
         {
@@ -305,6 +347,110 @@ public sealed class ContractMercenaryRunState
         squadState.currentSoldierCount = squadState.MaximumSoldierCount;
         return missingCount;
     }
+    public int GetSquadUpgradeStackCount(
+        ContractMercenarySquadState squadState,
+        UpgradeData upgradeData)
+    {
+        if (squadState == null || upgradeData == null || squadState.appliedUpgrades == null)
+            return 0;
+
+        for (int index = 0; index < squadState.appliedUpgrades.Count; index++)
+        {
+            ContractMercenaryUpgradeStack stack = squadState.appliedUpgrades[index];
+
+            if (stack != null && stack.upgradeData == upgradeData)
+                return Mathf.Max(0, stack.stackCount);
+        }
+
+        return 0;
+    }
+
+    public bool IsSquadUpgradeApplied(
+        ContractMercenarySquadState squadState,
+        UpgradeData upgradeData)
+    {
+        return GetSquadUpgradeStackCount(squadState, upgradeData) > 0;
+    }
+
+    public bool CanApplySquadUpgrade(
+        ContractMercenarySquadState squadState,
+        UpgradeData upgradeData)
+    {
+        if (squadState == null || squadState.squadData == null || upgradeData == null)
+            return false;
+
+        if (upgradeData.scope != UpgradeScope.Squad)
+            return false;
+
+        int maximumStacks = upgradeData.repeatable
+            ? Mathf.Max(1, upgradeData.maximumStacks)
+            : 1;
+
+        if (GetSquadUpgradeStackCount(squadState, upgradeData) >= maximumStacks)
+            return false;
+
+        if (upgradeData.requiredUpgrades != null)
+        {
+            for (int index = 0; index < upgradeData.requiredUpgrades.Count; index++)
+            {
+                UpgradeData required = upgradeData.requiredUpgrades[index];
+                if (required == null) continue;
+
+                // Company forge currently persists squad-local upgrades only.
+                if (required.scope != UpgradeScope.Squad ||
+                    !IsSquadUpgradeApplied(squadState, required))
+                {
+                    return false;
+                }
+            }
+        }
+
+        if (upgradeData.blockedByUpgrades != null)
+        {
+            for (int index = 0; index < upgradeData.blockedByUpgrades.Count; index++)
+            {
+                UpgradeData blocked = upgradeData.blockedByUpgrades[index];
+                if (blocked == null || blocked.scope != UpgradeScope.Squad) continue;
+
+                if (IsSquadUpgradeApplied(squadState, blocked))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    public bool ApplySquadUpgrade(
+        ContractMercenarySquadState squadState,
+        UpgradeData upgradeData)
+    {
+        if (!CanApplySquadUpgrade(squadState, upgradeData))
+            return false;
+
+        if (squadState.appliedUpgrades == null)
+            squadState.appliedUpgrades = new List<ContractMercenaryUpgradeStack>();
+
+        for (int index = 0; index < squadState.appliedUpgrades.Count; index++)
+        {
+            ContractMercenaryUpgradeStack stack = squadState.appliedUpgrades[index];
+
+            if (stack == null || stack.upgradeData != upgradeData)
+                continue;
+
+            stack.stackCount = Mathf.Max(0, stack.stackCount) + 1;
+            return true;
+        }
+
+        squadState.appliedUpgrades.Add(
+            new ContractMercenaryUpgradeStack
+            {
+                upgradeData = upgradeData,
+                stackCount = 1
+            });
+
+        return true;
+    }
+
     public bool RemoveSquad(string companySquadId)
     {
         if (string.IsNullOrWhiteSpace(companySquadId))
@@ -395,6 +541,28 @@ public sealed class ContractMercenaryRunState
 
     #region Contracts / Progression
 
+    public bool MeetsContractProgressionRequirements(ContractData contract)
+    {
+        if (contract == null)
+            return false;
+
+        if (Prestige < Mathf.Max(0, contract.minimumPrestige))
+            return false;
+
+        if (contract.requiredContracts != null)
+        {
+            for (int index = 0; index < contract.requiredContracts.Count; index++)
+            {
+                ContractData requiredContract = contract.requiredContracts[index];
+
+                if (requiredContract != null && !IsContractCompleted(requiredContract))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
     public bool BeginContract(ContractData contract)
     {
         if (contract == null || currentContract != null)
@@ -404,7 +572,20 @@ public sealed class ContractMercenaryRunState
             return false;
 
         currentContract = contract;
+        lastContractResult = null;
         return true;
+    }
+
+
+    public void SetLastContractResult(
+        ContractMercenaryContractResult contractResult)
+    {
+        lastContractResult = contractResult;
+    }
+
+    public void ClearLastContractResult()
+    {
+        lastContractResult = null;
     }
 
     public bool CompleteCurrentContractVictory()
@@ -456,3 +637,5 @@ public sealed class ContractMercenaryRunState
 
     #endregion
 }
+
+

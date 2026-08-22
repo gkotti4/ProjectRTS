@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -30,6 +31,7 @@ public class ContractMercenaryController : MonoBehaviour
     public event Action<ContractData> OnContractStarted;
     public event Action<ContractData, bool> OnContractResolved;
     public event Action<ContractMercenaryRunState> OnRunStateChanged;
+    public event Action<ContractMercenaryContractResult> OnContractResultReady;
 
     #region New Run Setup
 
@@ -54,9 +56,14 @@ public class ContractMercenaryController : MonoBehaviour
     [Min(0)]
     [SerializeField] private int companyReplenishmentGoldCostPerSoldier = 20;
 
-    [Header("Company Phase - Recruitment")]
+    [Header("Company Phase - Shop / Recruitment")]
     [SerializeField] private List<ContractMercenaryRecruitOption> recruitmentOptions =
         new List<ContractMercenaryRecruitOption>();
+
+    [FormerlySerializedAs("forgeOptions")]
+    [Header("Company Phase - Shop / Squad Upgrades")]
+    [SerializeField] private List<ContractMercenaryUpgradeShopOption> upgradeShopOptions =
+        new List<ContractMercenaryUpgradeShopOption>();
 
     #endregion
 
@@ -81,6 +88,7 @@ public class ContractMercenaryController : MonoBehaviour
 
     public IReadOnlyList<ContractData> AvailableContracts => availableContracts;
     public IReadOnlyList<ContractMercenaryRecruitOption> RecruitmentOptions => recruitmentOptions;
+    public IReadOnlyList<ContractMercenaryUpgradeShopOption> UpgradeShopOptions => upgradeShopOptions;
     public bool HasRun => RunState != null;
 
     #endregion
@@ -265,6 +273,9 @@ public class ContractMercenaryController : MonoBehaviour
             return false;
         }
 
+        if (runState.Prestige < Mathf.Max(0, recruitOption.minimumPrestige))
+            return false;
+
         return runState.CanAfford(
                    ContractMercenaryResourceType.Gold,
                    recruitOption.goldCost) &&
@@ -317,6 +328,65 @@ public class ContractMercenaryController : MonoBehaviour
         return true;
     }
 
+    public bool CanPurchaseSquadUpgrade(
+        ContractMercenarySquadState squadState,
+        ContractMercenaryUpgradeShopOption shopOption)
+    {
+        ContractMercenaryRunState runState = RunState;
+
+        if (runState == null ||
+            runState.HasActiveContract ||
+            squadState == null ||
+            squadState.squadData == null ||
+            shopOption == null ||
+            shopOption.upgradeData == null ||
+            shopOption.upgradeData.scope != UpgradeScope.Squad)
+        {
+            return false;
+        }
+
+        if (runState.Prestige < Mathf.Max(0, shopOption.minimumPrestige))
+            return false;
+
+        if (!shopOption.AllowsSquad(squadState.squadData))
+            return false;
+
+        if (!runState.CanApplySquadUpgrade(squadState, shopOption.upgradeData))
+            return false;
+
+        return runState.CanAfford(ContractMercenaryResourceType.Gold, shopOption.goldCost) &&
+               runState.CanAfford(ContractMercenaryResourceType.Iron, shopOption.ironCost);
+    }
+
+    public bool PurchaseSquadUpgrade(
+        ContractMercenarySquadState squadState,
+        ContractMercenaryUpgradeShopOption shopOption)
+    {
+        if (!CanPurchaseSquadUpgrade(squadState, shopOption))
+            return false;
+
+        ContractMercenaryRunState runState = RunState;
+
+        if (!runState.TrySpendResource(ContractMercenaryResourceType.Gold, shopOption.goldCost))
+            return false;
+
+        if (!runState.TrySpendResource(ContractMercenaryResourceType.Iron, shopOption.ironCost))
+        {
+            runState.AddResource(ContractMercenaryResourceType.Gold, shopOption.goldCost);
+            return false;
+        }
+
+        if (!runState.ApplySquadUpgrade(squadState, shopOption.upgradeData))
+        {
+            runState.AddResource(ContractMercenaryResourceType.Gold, shopOption.goldCost);
+            runState.AddResource(ContractMercenaryResourceType.Iron, shopOption.ironCost);
+            return false;
+        }
+
+        OnRunStateChanged?.Invoke(runState);
+        return true;
+    }
+
     #endregion
 
     #region Contract Selection / Battle
@@ -335,6 +405,9 @@ public class ContractMercenaryController : MonoBehaviour
             return false;
 
         if (!contract.repeatable && runState.IsContractCompleted(contract))
+            return false;
+
+        if (!runState.MeetsContractProgressionRequirements(contract))
             return false;
 
         ResolveBattleController();
@@ -467,13 +540,33 @@ public class ContractMercenaryController : MonoBehaviour
                 continue;
             }
 
-            deployments.Add(
-                new BattleSquadDeployment
+            BattleSquadDeployment deployment = new BattleSquadDeployment
+            {
+                externalSquadId = squadState.companySquadId,
+                squadData = squadState.squadData,
+                soldierCount = squadState.currentSoldierCount
+            };
+
+            if (squadState.appliedUpgrades != null)
+            {
+                for (int upgradeIndex = 0; upgradeIndex < squadState.appliedUpgrades.Count; upgradeIndex++)
                 {
-                    externalSquadId = squadState.companySquadId,
-                    squadData = squadState.squadData,
-                    soldierCount = squadState.currentSoldierCount
-                });
+                    ContractMercenaryUpgradeStack stack = squadState.appliedUpgrades[upgradeIndex];
+
+                    if (stack == null || stack.upgradeData == null || stack.stackCount <= 0)
+                        continue;
+
+                    deployment.appliedUpgrades.Add(
+                        new RuntimeUpgradeStackSnapshot
+                        {
+                            upgradeData = stack.upgradeData,
+                            upgradeId = stack.upgradeData.upgradeId,
+                            stackCount = stack.stackCount
+                        });
+                }
+            }
+
+            deployments.Add(deployment);
         }
 
         return deployments;
@@ -534,9 +627,19 @@ public class ContractMercenaryController : MonoBehaviour
             return;
         }
 
-        // MVP defeat policy: do not commit casualties. Retrying starts again from
-        // the pre-battle company manpower.
+        // MVP defeat policy: record what happened for presentation, but do not
+        // commit casualties. Retrying starts again from pre-battle company manpower.
         currentContractVictoryCommitted = false;
+
+        ContractMercenaryContractResult defeatResult =
+            ContractMercenaryContractResult.Create(
+                runState.CurrentContract,
+                battleResult,
+                companyChangesCommitted: false);
+
+        runState.SetLastContractResult(defeatResult);
+
+        OnContractResultReady?.Invoke(defeatResult);
         OnContractResolved?.Invoke(runState.CurrentContract, false);
         OnRunStateChanged?.Invoke(runState);
     }
@@ -554,14 +657,23 @@ public class ContractMercenaryController : MonoBehaviour
 
         ContractData completedContract = runState.CurrentContract;
 
+        ContractMercenaryContractResult victoryResult =
+            ContractMercenaryContractResult.Create(
+                completedContract,
+                battleResult,
+                companyChangesCommitted: true);
+
         runState.ApplyBattleResult(battleResult);
 
         if (!runState.CompleteCurrentContractVictory())
             return;
 
+        runState.SetLastContractResult(victoryResult);
+
         currentContractVictoryCommitted = true;
         battleController?.ClearPlayerArmyDeployments();
 
+        OnContractResultReady?.Invoke(victoryResult);
         OnContractResolved?.Invoke(completedContract, true);
         OnRunStateChanged?.Invoke(runState);
 
@@ -575,3 +687,5 @@ public class ContractMercenaryController : MonoBehaviour
 
     #endregion
 }
+
+

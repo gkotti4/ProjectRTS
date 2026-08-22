@@ -1,5 +1,3 @@
-
-
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -26,6 +24,9 @@ public class PlayerInputHandler : MonoBehaviour
     private Vector3 rightClickStart;
     private bool isDragOrdering = false;
     private bool isPlacingBuilding = false;
+    private bool tacticalInputEnabled = true;
+
+    public bool TacticalInputEnabled => tacticalInputEnabled;
 
     private readonly Dictionary<HotkeySlot, KeyCode> slotToKey = new Dictionary<HotkeySlot, KeyCode>()
     {
@@ -88,6 +89,9 @@ public class PlayerInputHandler : MonoBehaviour
 
     void Update()
     {
+        if (!tacticalInputEnabled)
+            return;
+
         HandleEscape();
         HandleControlGroupHotkeys();
 
@@ -98,6 +102,21 @@ public class PlayerInputHandler : MonoBehaviour
         HandleRightClick();
         
         HandleDefaultHotkeys();
+    }
+
+    public void SetTacticalInputEnabled(bool enabled)
+    {
+        if (tacticalInputEnabled == enabled)
+            return;
+
+        tacticalInputEnabled = enabled;
+
+        if (tacticalInputEnabled)
+            return;
+
+        isDragOrdering = false;
+        rightClickStart = Input.mousePosition;
+        FormationVisualizer.Instance?.HideAll();
     }
 
     void HandleSelectionChanged()
@@ -505,10 +524,6 @@ public class PlayerInputHandler : MonoBehaviour
                     squad.SetStance(SquadStance.Hold);
                     break;
 
-                case CommandType.ChargeToggle:
-                    squad.ToggleCharge();
-                    break;
-
                 case CommandType.FormationLine:
                     squad.SetFormation(SquadFormation.Line);
                     break;
@@ -539,7 +554,7 @@ public class PlayerInputHandler : MonoBehaviour
             WorkerController worker = GetFirstSelectedWorker();
 
             if (worker != null)
-                UIManager.Instance.ShowActionPanelBuildSubmenu(worker);
+                BattleHUDUI.Instance?.ShowActionPanelBuildSubmenu(worker);
 
             return;
         }

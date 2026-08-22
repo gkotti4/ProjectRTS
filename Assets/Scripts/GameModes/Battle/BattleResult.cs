@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -16,6 +17,9 @@ public sealed class BattleSquadDeployment
 
     [Min(1)]
     public int soldierCount = 1;
+
+    public List<RuntimeUpgradeStackSnapshot> appliedUpgrades =
+        new List<RuntimeUpgradeStackSnapshot>();
 }
 
 /// -----------------------------------------------------------------------------
@@ -54,3 +58,5 @@ public sealed class BattleResult
 
     public bool PlayerWon => resultState == BattleGameState.Victory;
 }
+
+

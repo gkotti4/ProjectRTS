@@ -36,7 +36,7 @@ public class UpgradeData : ScriptableObject
     public Sprite icon;
 
     [Header("Research")]
-    public ResourceCost cost;
+    // public ResourceCost cost;
     [Min(0f)]
     public float researchTime = 1f;
 
