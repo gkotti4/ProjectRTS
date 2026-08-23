@@ -104,6 +104,17 @@ public class ContractMercenaryController : MonoBehaviour
         }
     }
 
+    public IReadOnlyList<ContractMercenaryEquipmentOption> EquipmentOptions
+    {
+        get
+        {
+            if (contractMercenaryData == null || contractMercenaryData.equipmentOptions == null)
+                return Array.Empty<ContractMercenaryEquipmentOption>();
+
+            return contractMercenaryData.equipmentOptions;
+        }
+    }
+
     public bool HasRun => RunState != null;
 
     #endregion
@@ -435,6 +446,87 @@ public class ContractMercenaryController : MonoBehaviour
         return true;
     }
 
+
+    public bool CanPurchaseEquipment(
+        ContractMercenarySquadState squadState,
+        ContractMercenaryEquipmentOption equipmentOption)
+    {
+        ContractMercenaryRunState runState = RunState;
+
+        if (runState == null ||
+            runState.HasActiveContract ||
+            !runState.OwnsSquad(squadState) ||
+            squadState.squadData == null ||
+            equipmentOption == null ||
+            equipmentOption.equipmentData == null)
+        {
+            return false;
+        }
+
+        EquipmentData equipmentData = equipmentOption.equipmentData;
+
+        if (!equipmentData.CanEquipTo(squadState.squadData))
+            return false;
+
+        if (squadState.GetEquippedEquipment(equipmentData.slot) == equipmentData)
+            return false;
+
+        if (runState.Prestige < Mathf.Max(0, equipmentOption.minimumPrestige))
+            return false;
+
+        return runState.CanAfford(
+                   ContractMercenaryResourceType.Gold,
+                   Mathf.Max(0, equipmentOption.goldCost)) &&
+               runState.CanAfford(
+                   ContractMercenaryResourceType.Iron,
+                   Mathf.Max(0, equipmentOption.ironCost));
+    }
+
+    public bool PurchaseEquipment(
+        ContractMercenarySquadState squadState,
+        ContractMercenaryEquipmentOption equipmentOption)
+    {
+        if (!CanPurchaseEquipment(squadState, equipmentOption))
+            return false;
+
+        ContractMercenaryRunState runState = RunState;
+        int goldCost = Mathf.Max(0, equipmentOption.goldCost);
+        int ironCost = Mathf.Max(0, equipmentOption.ironCost);
+
+        if (!runState.TrySpendResource(
+                ContractMercenaryResourceType.Gold,
+                goldCost))
+        {
+            return false;
+        }
+
+        if (!runState.TrySpendResource(
+                ContractMercenaryResourceType.Iron,
+                ironCost))
+        {
+            runState.AddResource(
+                ContractMercenaryResourceType.Gold,
+                goldCost);
+            return false;
+        }
+
+        if (!runState.EquipSquadEquipment(
+                squadState,
+                equipmentOption.equipmentData))
+        {
+            runState.AddResource(
+                ContractMercenaryResourceType.Gold,
+                goldCost);
+            runState.AddResource(
+                ContractMercenaryResourceType.Iron,
+                ironCost);
+            return false;
+        }
+
+        OnRunStateChanged?.Invoke(runState);
+        return true;
+    }
+
     #endregion
 
     #region Contract Selection / Battle
@@ -604,9 +696,10 @@ public class ContractMercenaryController : MonoBehaviour
                 soldierCount = squadState.currentSoldierCount
             };
 
-            // Preserve the separate squad-specific modifier channel for future
-            // Equipment/Veterancy work. Broad CM Upgrade Cards are NOT copied here;
-            // they are synchronized to the player FactionInstance instead.
+            // Preserve the separate squad-specific UpgradeData channel for future
+            // authored squad progression. Equipment has its own persistent loadout
+            // and is bound to the runtime squad at battle start. Broad CM Upgrade
+            // Cards are synchronized to the player FactionInstance instead.
             if (squadState.appliedUpgrades != null)
             {
                 for (int upgradeIndex = 0;
@@ -728,6 +821,8 @@ public class ContractMercenaryController : MonoBehaviour
 
         battleController.OnBattleResolved +=
             HandleBattleResolved;
+        battleController.OnArmiesSpawned +=
+            HandleArmiesSpawned;
 
         isSubscribedToBattleController = true;
     }
@@ -742,8 +837,63 @@ public class ContractMercenaryController : MonoBehaviour
 
         battleController.OnBattleResolved -=
             HandleBattleResolved;
+        battleController.OnArmiesSpawned -=
+            HandleArmiesSpawned;
 
         isSubscribedToBattleController = false;
+    }
+
+    void HandleArmiesSpawned(
+        IReadOnlyList<SquadController> playerArmy,
+        IReadOnlyList<SquadController> enemyArmy)
+    {
+        ContractMercenaryRunState runState = RunState;
+
+        if (runState == null ||
+            !runState.HasActiveContract ||
+            playerArmy == null)
+        {
+            return;
+        }
+
+        // CM owns persistent loadouts; BattleGameModeController stays unaware of
+        // campaign progression. Deployment order matches the persistent deployable
+        // army order, so bind each spawned runtime squad to that squad's copied
+        // EquipmentLoadout immediately at battle start, before combat can tick.
+        int persistentArmyIndex = 0;
+
+        for (int runtimeIndex = 0; runtimeIndex < playerArmy.Count; runtimeIndex++)
+        {
+            SquadController runtimeSquad = playerArmy[runtimeIndex];
+
+            while (persistentArmyIndex < runState.Army.Count)
+            {
+                ContractMercenarySquadState persistentSquad =
+                    runState.Army[persistentArmyIndex++];
+
+                if (persistentSquad == null ||
+                    persistentSquad.squadData == null ||
+                    persistentSquad.currentSoldierCount <= 0)
+                {
+                    continue;
+                }
+
+                if (runtimeSquad == null)
+                    break;
+
+                if (runtimeSquad.Data != persistentSquad.squadData)
+                {
+                    Debug.LogWarning(
+                        $"{name}: CM equipment binding order mismatch. " +
+                        $"Runtime squad '{runtimeSquad.Data?.name ?? "null"}' did not match " +
+                        $"persistent squad '{persistentSquad.squadData.name}'.",
+                        this);
+                }
+
+                runtimeSquad.SetEquipmentLoadout(persistentSquad.Equipment);
+                break;
+            }
+        }
     }
 
     void HandleBattleResolved(BattleResult battleResult)

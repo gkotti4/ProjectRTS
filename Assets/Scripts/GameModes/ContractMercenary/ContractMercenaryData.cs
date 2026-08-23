@@ -44,6 +44,10 @@ public class ContractMercenaryData : ScriptableObject
     public List<ContractMercenaryUpgradeShopOption> upgradeOptions =
         new List<ContractMercenaryUpgradeShopOption>();
 
+    [Header("Equipment Catalog")]
+    public List<ContractMercenaryEquipmentOption> equipmentOptions =
+        new List<ContractMercenaryEquipmentOption>();
+
     [Header("Contracts")]
     public List<ContractData> contracts =
         new List<ContractData>();
@@ -59,6 +63,7 @@ public class ContractMercenaryData : ScriptableObject
         ValidateStartingArmy();
         ValidateRecruitmentOptions();
         ValidateUpgradeOptions();
+        ValidateEquipmentOptions();
         ValidateContracts();
     }
 
@@ -153,6 +158,51 @@ public class ContractMercenaryData : ScriptableObject
                 Debug.LogWarning(
                     $"{name}: Upgrade option '{option.upgradeData.upgradeName}' uses " +
                     $"{option.upgradeData.scope} scope. Normal CM Upgrade Cards must use Faction scope.",
+                    this);
+            }
+        }
+    }
+
+    void ValidateEquipmentOptions()
+    {
+        if (equipmentOptions == null)
+            return;
+
+        HashSet<string> usedEquipmentIds = new HashSet<string>();
+
+        for (int index = 0; index < equipmentOptions.Count; index++)
+        {
+            ContractMercenaryEquipmentOption option = equipmentOptions[index];
+
+            if (option == null)
+                continue;
+
+            option.goldCost = Mathf.Max(0, option.goldCost);
+            option.ironCost = Mathf.Max(0, option.ironCost);
+            option.minimumPrestige = Mathf.Max(0, option.minimumPrestige);
+
+            EquipmentData equipmentData = option.equipmentData;
+
+            if (equipmentData == null)
+            {
+                Debug.LogWarning(
+                    $"{name}: Equipment option {index} has no EquipmentData assigned.",
+                    this);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(equipmentData.equipmentId))
+            {
+                Debug.LogWarning(
+                    $"{name}: Equipment '{equipmentData.DisplayName}' has no stable equipmentId.",
+                    this);
+                continue;
+            }
+
+            if (!usedEquipmentIds.Add(equipmentData.equipmentId))
+            {
+                Debug.LogWarning(
+                    $"{name}: Duplicate equipmentId '{equipmentData.equipmentId}' in the Equipment Catalog.",
                     this);
             }
         }

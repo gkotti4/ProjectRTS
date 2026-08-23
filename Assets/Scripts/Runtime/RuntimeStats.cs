@@ -27,12 +27,14 @@ public static class RuntimeStatResolver
     public static SquadRuntimeStats ResolveSquad(
         SquadData data,
         FactionInstance faction,
-        IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null)
+        IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null,
+        EquipmentLoadout equipmentLoadout = null)
     {
         SquadRuntimeStats result = BuildBaseSquadStats(data);
 
         ApplySquadUpgradeCollection(result, data, faction?.AppliedUpgradeStacks);
         ApplySquadUpgradeCollection(result, data, squadUpgradeStacks);
+        ApplySquadEquipmentLoadout(result, data, equipmentLoadout);
 
         ClampSquad(result);
         return result;
@@ -42,11 +44,14 @@ public static class RuntimeStatResolver
         SoldierData data,
         SquadData squadData,
         FactionInstance faction,
-        IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null)
+        IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null,
+        EquipmentLoadout equipmentLoadout = null)
     {
         SoldierRuntimeStats result = BuildBaseSoldierStats(data);
 
-        // Equipment is resolved before equipment-provided stats and normal stat modifiers.
+        // Authored weapon/armor profile replacements remain part of the UpgradeData
+        // pipeline. Contract Mercenary Equipment V1 is stat-only and is applied
+        // later as another modifier source without changing weapon identity.
         ApplyEquipmentReplacementCollection(result, squadData, faction?.AppliedUpgradeStacks);
         ApplyEquipmentReplacementCollection(result, squadData, squadUpgradeStacks);
 
@@ -57,6 +62,7 @@ public static class RuntimeStatResolver
 
         ApplySoldierUpgradeCollection(result, squadData, faction?.AppliedUpgradeStacks);
         ApplySoldierUpgradeCollection(result, squadData, squadUpgradeStacks);
+        ApplySoldierEquipmentLoadout(result, squadData, equipmentLoadout);
 
         ClampSoldier(result);
         return result;
@@ -353,6 +359,55 @@ public static class RuntimeStatResolver
         }
     }
 
+
+    static void ApplySoldierEquipmentLoadout(
+        SoldierRuntimeStats result,
+        SquadData squadData,
+        EquipmentLoadout equipmentLoadout)
+    {
+        if (result == null || squadData == null || equipmentLoadout == null)
+            return;
+
+        ApplySoldierEquipment(result, squadData, equipmentLoadout.weapon);
+        ApplySoldierEquipment(result, squadData, equipmentLoadout.armor);
+        ApplySoldierEquipment(result, squadData, equipmentLoadout.kit);
+    }
+
+    static void ApplySoldierEquipment(
+        SoldierRuntimeStats result,
+        SquadData squadData,
+        EquipmentData equipmentData)
+    {
+        if (equipmentData == null || !equipmentData.CanEquipTo(squadData))
+            return;
+
+        ApplySoldierModifier(result, equipmentData.soldierModifiers);
+    }
+
+    static void ApplySquadEquipmentLoadout(
+        SquadRuntimeStats result,
+        SquadData squadData,
+        EquipmentLoadout equipmentLoadout)
+    {
+        if (result == null || squadData == null || equipmentLoadout == null)
+            return;
+
+        ApplySquadEquipment(result, squadData, equipmentLoadout.weapon);
+        ApplySquadEquipment(result, squadData, equipmentLoadout.armor);
+        ApplySquadEquipment(result, squadData, equipmentLoadout.kit);
+    }
+
+    static void ApplySquadEquipment(
+        SquadRuntimeStats result,
+        SquadData squadData,
+        EquipmentData equipmentData)
+    {
+        if (equipmentData == null || !equipmentData.CanEquipTo(squadData))
+            return;
+
+        ApplySquadModifier(result, equipmentData.squadModifiers);
+    }
+
     static void ApplyArmor(SoldierRuntimeStats s, ArmorStats a)
     {
         s.defense.armor += a.armor;
@@ -400,3 +455,5 @@ public static class RuntimeStatResolver
         s.morale.maxMorale = Mathf.Max(0f, s.morale.maxMorale); s.morale.leadership = Mathf.Max(0f, s.morale.leadership); s.morale.moraleRecoveryRate = Mathf.Max(0f, s.morale.moraleRecoveryRate); s.morale.casualtyMoraleResistance = Mathf.Clamp01(s.morale.casualtyMoraleResistance); s.morale.flankMoraleResistance = Mathf.Clamp01(s.morale.flankMoraleResistance); s.morale.terrorResistance = Mathf.Clamp01(s.morale.terrorResistance);
     }
 }
+
+

@@ -73,6 +73,21 @@ public sealed class ContractMercenaryUpgradeShopOption
 }
 
 /// <summary>
+/// Authored CM acquisition wrapper for one EquipmentData item.
+/// EquipmentData owns the mechanical loadout/stat definition; this wrapper owns
+/// only Contract Mercenary currency and Prestige requirements.
+/// </summary>
+[Serializable]
+public sealed class ContractMercenaryEquipmentOption
+{
+    public EquipmentData equipmentData;
+
+    [Min(0)] public int goldCost = 0;
+    [Min(0)] public int ironCost = 0;
+    [Min(0)] public int minimumPrestige = 0;
+}
+
+/// <summary>
 /// Persistent-within-session record for one owned mercenary squad.
 /// companySquadId identifies this specific squad even when the company owns
 /// multiple squads using the same SquadData asset.
@@ -86,9 +101,39 @@ public sealed class ContractMercenarySquadState
     [Min(0)]
     public int currentSoldierCount = 0;
 
-    // Reserved for squad-specific progression such as Equipment later.
+    [Header("Equipment")]
+    public EquipmentLoadout equipment = new EquipmentLoadout();
+
+    // Separate squad-specific UpgradeData channel retained for future authored
+    // squad progression. Equipment is a first-class loadout source and does not
+    // masquerade as an UpgradeData stack.
     public List<ContractMercenaryUpgradeStack> appliedUpgrades =
         new List<ContractMercenaryUpgradeStack>();
+
+    public EquipmentLoadout Equipment
+    {
+        get
+        {
+            equipment ??= new EquipmentLoadout();
+            return equipment;
+        }
+    }
+
+    public EquipmentData GetEquippedEquipment(EquipmentSlot slot)
+    {
+        return Equipment.Get(slot);
+    }
+
+    public bool EquipEquipment(EquipmentData equipmentData)
+    {
+        if (equipmentData == null || squadData == null)
+            return false;
+
+        if (!equipmentData.CanEquipTo(squadData))
+            return false;
+
+        return Equipment.Set(equipmentData);
+    }
 
     public int MaximumSoldierCount =>
         squadData != null
@@ -125,7 +170,8 @@ public sealed class ContractMercenarySquadState
 /// - company resources
 /// - owned army and current manpower
 /// - persistent broad company upgrade stacks
-/// - squad-specific persistent upgrade stacks
+/// - persistent per-squad Equipment loadouts
+/// - separate squad-specific persistent upgrade stacks for future authored systems
 /// - prestige / completed contracts
 /// - currently accepted contract
 ///
@@ -341,6 +387,30 @@ public sealed class ContractMercenaryRunState
 
         squadState.currentSoldierCount = squadState.MaximumSoldierCount;
         return missingCount;
+    }
+
+    public bool OwnsSquad(ContractMercenarySquadState squadState)
+    {
+        if (squadState == null)
+            return false;
+
+        for (int index = 0; index < army.Count; index++)
+        {
+            if (army[index] == squadState)
+                return true;
+        }
+
+        return false;
+    }
+
+    public bool EquipSquadEquipment(
+        ContractMercenarySquadState squadState,
+        EquipmentData equipmentData)
+    {
+        if (!OwnsSquad(squadState) || equipmentData == null)
+            return false;
+
+        return squadState.EquipEquipment(equipmentData);
     }
 
     #endregion

@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -267,7 +266,8 @@ public class SoldierController : MonoBehaviour
             Data,
             Squad != null ? Squad.Data : null,
             Faction,
-            Squad != null ? Squad.AppliedUpgradeStacks : null);
+            Squad != null ? Squad.AppliedUpgradeStacks : null,
+            Squad != null ? Squad.EquipmentLoadout : null);
 
         if (Stats == null)
             return;
@@ -817,5 +817,7 @@ public class SoldierController : MonoBehaviour
     #endregion
 
 }
+
+
 
 

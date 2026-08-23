@@ -46,6 +46,8 @@ public class SquadController : MonoBehaviour,
     private readonly Dictionary<UpgradeData, int> appliedUpgradeStacks =
         new Dictionary<UpgradeData, int>();
 
+    private EquipmentLoadout equipmentLoadout = new EquipmentLoadout();
+
     private enum QueuedSquadCommandType
     {
         Move,
@@ -86,6 +88,7 @@ public class SquadController : MonoBehaviour,
     public SquadRuntimeStats Stats { get; private set; }
     public IReadOnlyDictionary<UpgradeData, int> AppliedUpgradeStacks =>
         appliedUpgradeStacks;
+    public EquipmentLoadout EquipmentLoadout => equipmentLoadout;
 
     public SquadCategory Category =>
         squadData != null ? squadData.category : SquadCategory.Infantry;
@@ -196,7 +199,8 @@ public class SquadController : MonoBehaviour,
         Stats = RuntimeStatResolver.ResolveSquad(
             squadData,
             Faction,
-            appliedUpgradeStacks);
+            appliedUpgradeStacks,
+            equipmentLoadout);
 
         Formation?.ApplyStats(Stats.formation);
         Movement?.RefreshRuntimeStats();
@@ -213,6 +217,24 @@ public class SquadController : MonoBehaviour,
         Combat?.RefreshRangedAmmunitionCapacity(refill: false);
 
         Health?.RefreshMaximumHealthFromRoster();
+    }
+
+    /// <summary>
+    /// Replaces this runtime squad's equipment loadout. Contract Mercenary uses
+    /// this immediately after battle spawn; future systems may also use it for
+    /// explicit mid-match loadout changes. The loadout is copied so runtime state
+    /// never mutates the persistent company object by reference.
+    /// </summary>
+    public void SetEquipmentLoadout(
+        EquipmentLoadout loadout,
+        bool refreshRuntimeStats = true)
+    {
+        equipmentLoadout = loadout != null
+            ? loadout.Clone()
+            : new EquipmentLoadout();
+
+        if (refreshRuntimeStats && isInitialized)
+            RefreshRuntimeStats();
     }
 
     void HandleFactionUpgradeApplied(
@@ -354,7 +376,8 @@ public class SquadController : MonoBehaviour,
         Stats = RuntimeStatResolver.ResolveSquad(
             squadData,
             Faction,
-            appliedUpgradeStacks);
+            appliedUpgradeStacks,
+            equipmentLoadout);
 
         // 1. Build physical/gameplay body.
         Roster.Initialize(
@@ -780,3 +803,5 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
+
+
