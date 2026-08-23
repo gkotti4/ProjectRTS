@@ -5,14 +5,14 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Army content page. Owns persistent squad inspection and squad-specific actions:
+/// Army content page. Owns persistent squad overview and maintenance:
 /// - squad roster/manpower inspection
+/// - resolved stat inspection
+/// - current per-squad upgrade/equipment overview
 /// - replenishment
-/// - Equipment V1 loadout inspection and purchase/equip flow
 ///
-/// Equipment is selected in the context of the already-selected persistent squad.
-/// There is no inventory and no target-squad dropdown: purchasing an item immediately
-/// replaces the item currently equipped in that item's Weapon / Armor / Kit slot.
+/// Equipment acquisition/equipping is intentionally owned by
+/// ContractMercenaryEquipmentPageUI. Army is not a storefront.
 /// </summary>
 [DisallowMultipleComponent]
 public class ContractMercenaryArmyPageUI : MonoBehaviour
@@ -30,25 +30,10 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI statsText;
     [SerializeField] private TextMeshProUGUI upgradesText;
 
-    [Header("Selected Squad - Equipment")]
+    [Header("Selected Squad - Equipment Overview")]
     [SerializeField] private TextMeshProUGUI weaponEquipmentText;
     [SerializeField] private TextMeshProUGUI armorEquipmentText;
     [SerializeField] private TextMeshProUGUI kitEquipmentText;
-    [SerializeField] private Button weaponEquipmentButton;
-    [SerializeField] private Button armorEquipmentButton;
-    [SerializeField] private Button kitEquipmentButton;
-
-    [Header("Equipment Catalog")]
-    [SerializeField] private GameObject equipmentCatalogRoot;
-    [SerializeField] private TextMeshProUGUI equipmentCatalogTitleText;
-    [SerializeField] private Transform equipmentCatalogContainer;
-    [SerializeField] private TextMeshProUGUI equipmentNameText;
-    [SerializeField] private TextMeshProUGUI equipmentDescriptionText;
-    [SerializeField] private TextMeshProUGUI equipmentEffectsText;
-    [SerializeField] private TextMeshProUGUI equipmentCostText;
-    [SerializeField] private TextMeshProUGUI equipmentRequirementsText;
-    [SerializeField] private Button purchaseEquipmentButton;
-    [SerializeField] private Button closeEquipmentButton;
 
     [Header("Selected Squad - Replenishment")]
     [SerializeField] private TextMeshProUGUI replenishCostText;
@@ -57,33 +42,16 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
     private readonly List<ContractMercenaryMenuButtonUI> spawnedSquadButtons =
         new List<ContractMercenaryMenuButtonUI>();
 
-    private readonly List<ContractMercenaryMenuButtonUI> spawnedEquipmentButtons =
-        new List<ContractMercenaryMenuButtonUI>();
-
     private ContractMercenarySquadState selectedSquad;
-    private ContractMercenaryEquipmentOption selectedEquipmentOption;
-    private EquipmentSlot activeEquipmentSlot = EquipmentSlot.Weapon;
 
     void Awake()
     {
         replenishButton?.onClick.AddListener(HandleReplenishClicked);
-        weaponEquipmentButton?.onClick.AddListener(HandleWeaponEquipmentClicked);
-        armorEquipmentButton?.onClick.AddListener(HandleArmorEquipmentClicked);
-        kitEquipmentButton?.onClick.AddListener(HandleKitEquipmentClicked);
-        purchaseEquipmentButton?.onClick.AddListener(HandlePurchaseEquipmentClicked);
-        closeEquipmentButton?.onClick.AddListener(CloseEquipmentCatalog);
-
-        SetEquipmentCatalogVisible(false);
     }
 
     void OnDestroy()
     {
         replenishButton?.onClick.RemoveListener(HandleReplenishClicked);
-        weaponEquipmentButton?.onClick.RemoveListener(HandleWeaponEquipmentClicked);
-        armorEquipmentButton?.onClick.RemoveListener(HandleArmorEquipmentClicked);
-        kitEquipmentButton?.onClick.RemoveListener(HandleKitEquipmentClicked);
-        purchaseEquipmentButton?.onClick.RemoveListener(HandlePurchaseEquipmentClicked);
-        closeEquipmentButton?.onClick.RemoveListener(CloseEquipmentCatalog);
     }
 
     public void RefreshPage()
@@ -91,19 +59,12 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
         ResolveSelection();
         RebuildSquadList();
         RefreshSelectedSquad();
-
-        if (IsEquipmentCatalogVisible())
-            RebuildEquipmentCatalog();
     }
 
     public void SelectSquad(ContractMercenarySquadState squadState)
     {
         selectedSquad = squadState;
-        selectedEquipmentOption = null;
         RefreshSelectedSquad();
-
-        if (IsEquipmentCatalogVisible())
-            RebuildEquipmentCatalog();
     }
 
     /// <summary>
@@ -127,8 +88,6 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
         if (runState == null || runState.Army.Count == 0)
         {
             selectedSquad = null;
-            selectedEquipmentOption = null;
-            SetEquipmentCatalogVisible(false);
             return;
         }
 
@@ -136,7 +95,6 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
             return;
 
         selectedSquad = FirstValidSquad(runState.Army);
-        selectedEquipmentOption = null;
     }
 
     void RebuildSquadList()
@@ -186,12 +144,7 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
             SetText(weaponEquipmentText, "Weapon: Standard Issue");
             SetText(armorEquipmentText, "Armor: Standard Issue");
             SetText(kitEquipmentText, "Kit: None");
-
             SetButtonInteractable(replenishButton, false);
-            SetButtonInteractable(weaponEquipmentButton, false);
-            SetButtonInteractable(armorEquipmentButton, false);
-            SetButtonInteractable(kitEquipmentButton, false);
-            SetEquipmentCatalogVisible(false);
             return;
         }
 
@@ -206,7 +159,8 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
         SetText(upgradesText, BuildUpgradeSummary(selectedSquad));
         RefreshEquipmentLoadoutSummary();
 
-        int missing = contractController.RunState.GetMissingSoldierCount(selectedSquad);
+        ContractMercenaryRunState runState = contractController.RunState;
+        int missing = runState.GetMissingSoldierCount(selectedSquad);
         int cost = contractController.GetReplenishmentGoldCost(selectedSquad);
 
         SetText(
@@ -218,20 +172,6 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
         SetButtonInteractable(
             replenishButton,
             contractController.CanReplenishSquad(selectedSquad));
-
-        bool canManageEquipment =
-            contractController.RunState != null &&
-            !contractController.RunState.HasActiveContract;
-
-        SetButtonInteractable(
-            weaponEquipmentButton,
-            canManageEquipment && HasEquipmentOptionsForSlot(EquipmentSlot.Weapon));
-        SetButtonInteractable(
-            armorEquipmentButton,
-            canManageEquipment && HasEquipmentOptionsForSlot(EquipmentSlot.Armor));
-        SetButtonInteractable(
-            kitEquipmentButton,
-            canManageEquipment && HasEquipmentOptionsForSlot(EquipmentSlot.Kit));
     }
 
     void RefreshEquipmentLoadoutSummary()
@@ -264,258 +204,6 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
 
         if (contractController.ReplenishSquadToFull(selectedSquad))
             RefreshPage();
-    }
-
-    #endregion
-
-    #region Equipment Catalog
-
-    void HandleWeaponEquipmentClicked() => OpenEquipmentCatalog(EquipmentSlot.Weapon);
-    void HandleArmorEquipmentClicked() => OpenEquipmentCatalog(EquipmentSlot.Armor);
-    void HandleKitEquipmentClicked() => OpenEquipmentCatalog(EquipmentSlot.Kit);
-
-    void OpenEquipmentCatalog(EquipmentSlot slot)
-    {
-        if (contractController == null || selectedSquad == null)
-            return;
-
-        activeEquipmentSlot = slot;
-        selectedEquipmentOption = null;
-        SetEquipmentCatalogVisible(true);
-        RebuildEquipmentCatalog();
-    }
-
-    public void CloseEquipmentCatalog()
-    {
-        selectedEquipmentOption = null;
-        ClearButtons(spawnedEquipmentButtons);
-        ClearSelectedEquipmentDetails();
-        SetEquipmentCatalogVisible(false);
-    }
-
-    void RebuildEquipmentCatalog()
-    {
-        ClearButtons(spawnedEquipmentButtons);
-        SetText(equipmentCatalogTitleText, $"{activeEquipmentSlot} Equipment");
-
-        if (contractController == null ||
-            selectedSquad == null ||
-            selectedSquad.squadData == null ||
-            equipmentCatalogContainer == null ||
-            menuButtonPrefab == null)
-        {
-            selectedEquipmentOption = null;
-            ClearSelectedEquipmentDetails();
-            return;
-        }
-
-        IReadOnlyList<ContractMercenaryEquipmentOption> options =
-            contractController.EquipmentOptions;
-
-        bool selectedOptionStillValid = false;
-
-        for (int index = 0; index < options.Count; index++)
-        {
-            ContractMercenaryEquipmentOption option = options[index];
-
-            if (!IsEquipmentOptionVisible(option, activeEquipmentSlot))
-                continue;
-
-            ContractMercenaryEquipmentOption capturedOption = option;
-            EquipmentData equipmentData = option.equipmentData;
-            bool isEquipped =
-                selectedSquad.GetEquippedEquipment(activeEquipmentSlot) == equipmentData;
-
-            string label = BuildEquipmentCatalogLabel(option, isEquipped);
-
-            ContractMercenaryMenuButtonUI button = Instantiate(
-                menuButtonPrefab,
-                equipmentCatalogContainer);
-
-            button.Initialize(
-                label,
-                () => SelectEquipmentOption(capturedOption),
-                true);
-
-            spawnedEquipmentButtons.Add(button);
-
-            if (selectedEquipmentOption == option)
-                selectedOptionStillValid = true;
-        }
-
-        if (!selectedOptionStillValid)
-            selectedEquipmentOption = FirstVisibleEquipmentOption(activeEquipmentSlot);
-
-        RefreshSelectedEquipmentDetails();
-    }
-
-    bool IsEquipmentOptionVisible(
-        ContractMercenaryEquipmentOption option,
-        EquipmentSlot slot)
-    {
-        return option != null &&
-               option.equipmentData != null &&
-               option.equipmentData.slot == slot &&
-               selectedSquad != null &&
-               selectedSquad.squadData != null &&
-               option.equipmentData.CanEquipTo(selectedSquad.squadData);
-    }
-
-    ContractMercenaryEquipmentOption FirstVisibleEquipmentOption(
-        EquipmentSlot slot)
-    {
-        if (contractController == null)
-            return null;
-
-        IReadOnlyList<ContractMercenaryEquipmentOption> options =
-            contractController.EquipmentOptions;
-
-        for (int index = 0; index < options.Count; index++)
-        {
-            if (IsEquipmentOptionVisible(options[index], slot))
-                return options[index];
-        }
-
-        return null;
-    }
-
-    bool HasEquipmentOptionsForSlot(EquipmentSlot slot)
-    {
-        return FirstVisibleEquipmentOption(slot) != null;
-    }
-
-    void SelectEquipmentOption(ContractMercenaryEquipmentOption option)
-    {
-        selectedEquipmentOption = option;
-        RefreshSelectedEquipmentDetails();
-    }
-
-    void RefreshSelectedEquipmentDetails()
-    {
-        if (selectedEquipmentOption == null ||
-            selectedEquipmentOption.equipmentData == null ||
-            selectedSquad == null)
-        {
-            ClearSelectedEquipmentDetails();
-            return;
-        }
-
-        EquipmentData equipmentData = selectedEquipmentOption.equipmentData;
-        bool isEquipped =
-            selectedSquad.GetEquippedEquipment(equipmentData.slot) == equipmentData;
-
-        SetText(equipmentNameText, equipmentData.DisplayName);
-        SetText(equipmentDescriptionText, equipmentData.description);
-        SetText(
-            equipmentEffectsText,
-            string.IsNullOrWhiteSpace(equipmentData.effectSummary)
-                ? "Stat modifiers authored on EquipmentData."
-                : equipmentData.effectSummary);
-        SetText(
-            equipmentCostText,
-            BuildEquipmentCostText(selectedEquipmentOption));
-
-        if (isEquipped)
-        {
-            SetText(equipmentRequirementsText, "Currently Equipped");
-        }
-        else if (contractController.RunState != null &&
-                 contractController.RunState.Prestige <
-                 Mathf.Max(0, selectedEquipmentOption.minimumPrestige))
-        {
-            SetText(
-                equipmentRequirementsText,
-                $"Requires Prestige {Mathf.Max(0, selectedEquipmentOption.minimumPrestige)}");
-        }
-        else
-        {
-            SetText(equipmentRequirementsText, "Available");
-        }
-
-        SetButtonInteractable(
-            purchaseEquipmentButton,
-            contractController.CanPurchaseEquipment(
-                selectedSquad,
-                selectedEquipmentOption));
-    }
-
-    void HandlePurchaseEquipmentClicked()
-    {
-        if (contractController == null ||
-            selectedSquad == null ||
-            selectedEquipmentOption == null)
-        {
-            return;
-        }
-
-        if (!contractController.PurchaseEquipment(
-                selectedSquad,
-                selectedEquipmentOption))
-        {
-            RefreshSelectedEquipmentDetails();
-            return;
-        }
-
-        // Purchase immediately replaces the previous item in this slot. Keep the
-        // catalog open so the player can compare/replace again if desired.
-        RefreshSelectedSquad();
-        RebuildEquipmentCatalog();
-    }
-
-    static string BuildEquipmentCatalogLabel(
-        ContractMercenaryEquipmentOption option,
-        bool isEquipped)
-    {
-        string name = option?.equipmentData != null
-            ? option.equipmentData.DisplayName
-            : "Equipment";
-
-        string suffix = isEquipped
-            ? "  (Equipped)"
-            : string.Empty;
-
-        return $"{name}{suffix}";
-    }
-
-    static string BuildEquipmentCostText(
-        ContractMercenaryEquipmentOption option)
-    {
-        if (option == null)
-            return string.Empty;
-
-        int gold = Mathf.Max(0, option.goldCost);
-        int iron = Mathf.Max(0, option.ironCost);
-
-        if (gold <= 0 && iron <= 0)
-            return "Cost: Free";
-
-        if (gold > 0 && iron > 0)
-            return $"Cost: {gold} Gold / {iron} Iron";
-
-        return gold > 0
-            ? $"Cost: {gold} Gold"
-            : $"Cost: {iron} Iron";
-    }
-
-    void ClearSelectedEquipmentDetails()
-    {
-        SetText(equipmentNameText, "No Equipment Selected");
-        SetText(equipmentDescriptionText, string.Empty);
-        SetText(equipmentEffectsText, string.Empty);
-        SetText(equipmentCostText, string.Empty);
-        SetText(equipmentRequirementsText, string.Empty);
-        SetButtonInteractable(purchaseEquipmentButton, false);
-    }
-
-    bool IsEquipmentCatalogVisible()
-    {
-        return equipmentCatalogRoot != null && equipmentCatalogRoot.activeSelf;
-    }
-
-    void SetEquipmentCatalogVisible(bool visible)
-    {
-        if (equipmentCatalogRoot != null)
-            equipmentCatalogRoot.SetActive(visible);
     }
 
     #endregion

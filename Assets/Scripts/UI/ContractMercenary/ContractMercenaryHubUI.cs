@@ -2,13 +2,15 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
+// Explicit values preserve existing serialized page selections after adding Equipment.
 public enum ContractMercenaryHubPage
 {
-    Contracts,
-    Army,
-    Recruitment,
-    Upgrades,
-    Company
+    Contracts = 0,
+    Army = 1,
+    Recruitment = 2,
+    Equipment = 5,
+    Upgrades = 3,
+    Company = 4
 }
 
 /// -----------------------------------------------------------------------------
@@ -47,6 +49,7 @@ public class ContractMercenaryHubUI : MonoBehaviour
     [SerializeField] private Button contractsPageButton;
     [SerializeField] private Button armyPageButton;
     [SerializeField] private Button recruitmentPageButton;
+    [SerializeField] private Button equipmentPageButton;
     [SerializeField] private Button upgradesPageButton;
     [SerializeField] private Button companyPageButton;
 
@@ -54,6 +57,7 @@ public class ContractMercenaryHubUI : MonoBehaviour
     [SerializeField] private ContractMercenaryContractsPageUI contractsPage;
     [SerializeField] private ContractMercenaryArmyPageUI armyPage;
     [SerializeField] private ContractMercenaryRecruitmentPageUI recruitmentPage;
+    [SerializeField] private ContractMercenaryEquipmentPageUI equipmentPage;
     [SerializeField] private ContractMercenaryUpgradesPageUI upgradesPage;
     [SerializeField] private ContractMercenaryCompanyPageUI companyPage;
 
@@ -96,6 +100,7 @@ public class ContractMercenaryHubUI : MonoBehaviour
         contractsPageButton?.onClick.AddListener(ShowContractsPage);
         armyPageButton?.onClick.AddListener(ShowArmyPage);
         recruitmentPageButton?.onClick.AddListener(ShowRecruitmentPage);
+        equipmentPageButton?.onClick.AddListener(ShowEquipmentPage);
         upgradesPageButton?.onClick.AddListener(ShowUpgradesPage);
         companyPageButton?.onClick.AddListener(ShowCompanyPage);
     }
@@ -134,6 +139,7 @@ public class ContractMercenaryHubUI : MonoBehaviour
         contractsPageButton?.onClick.RemoveListener(ShowContractsPage);
         armyPageButton?.onClick.RemoveListener(ShowArmyPage);
         recruitmentPageButton?.onClick.RemoveListener(ShowRecruitmentPage);
+        equipmentPageButton?.onClick.RemoveListener(ShowEquipmentPage);
         upgradesPageButton?.onClick.RemoveListener(ShowUpgradesPage);
         companyPageButton?.onClick.RemoveListener(ShowCompanyPage);
     }
@@ -167,6 +173,7 @@ public class ContractMercenaryHubUI : MonoBehaviour
         contractsPage?.Initialize(contractController);
         armyPage?.Initialize(contractController);
         recruitmentPage?.Initialize(contractController);
+        equipmentPage?.Initialize(contractController);
         upgradesPage?.Initialize(contractController);
         companyPage?.Initialize(contractController);
     }
@@ -255,6 +262,7 @@ public class ContractMercenaryHubUI : MonoBehaviour
     public void ShowContractsPage() => ShowPage(ContractMercenaryHubPage.Contracts);
     public void ShowArmyPage() => ShowPage(ContractMercenaryHubPage.Army);
     public void ShowRecruitmentPage() => ShowPage(ContractMercenaryHubPage.Recruitment);
+    public void ShowEquipmentPage() => ShowPage(ContractMercenaryHubPage.Equipment);
     public void ShowUpgradesPage() => ShowPage(ContractMercenaryHubPage.Upgrades);
     public void ShowCompanyPage() => ShowPage(ContractMercenaryHubPage.Company);
 
@@ -266,6 +274,7 @@ public class ContractMercenaryHubUI : MonoBehaviour
         SetPageActive(contractsPage, page == ContractMercenaryHubPage.Contracts);
         SetPageActive(armyPage, page == ContractMercenaryHubPage.Army);
         SetPageActive(recruitmentPage, page == ContractMercenaryHubPage.Recruitment);
+        SetPageActive(equipmentPage, page == ContractMercenaryHubPage.Equipment);
         SetPageActive(upgradesPage, page == ContractMercenaryHubPage.Upgrades);
         SetPageActive(companyPage, page == ContractMercenaryHubPage.Company);
 
@@ -289,6 +298,10 @@ public class ContractMercenaryHubUI : MonoBehaviour
 
             case ContractMercenaryHubPage.Recruitment:
                 recruitmentPage?.RefreshPage();
+                break;
+
+            case ContractMercenaryHubPage.Equipment:
+                equipmentPage?.RefreshPage();
                 break;
 
             case ContractMercenaryHubPage.Upgrades:
