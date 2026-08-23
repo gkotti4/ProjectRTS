@@ -33,7 +33,11 @@ public class ContractMercenaryCompanyPageUI : MonoBehaviour
                 ? contractController.RunState
                 : null;
 
-        SetText(companyNameText, defaultCompanyName);
+        SetText(
+            companyNameText,
+            contractController != null
+                ? contractController.CompanyName
+                : defaultCompanyName);
 
         if (runState == null)
         {

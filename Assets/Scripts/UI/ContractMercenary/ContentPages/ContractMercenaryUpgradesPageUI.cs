@@ -14,9 +14,9 @@ using UnityEngine.UI;
 /// UpgradeData targeting decides which squad categories are affected; the player
 /// does not select one owned squad from this page.
 ///
-/// Broad Contract Mercenary upgrade purchasing is intentionally not wired to the
-/// old squad-specific purchase API. The Purchase button remains present for the
-/// upcoming persistent company-upgrade backend pass.
+/// Purchases are persisted as company-wide/faction-wide stacks in
+/// ContractMercenaryRunState. UpgradeData targeting decides which matching squads
+/// receive the effect once those stacks are mirrored into the live battle faction.
 /// -----------------------------------------------------------------------------
 [DisallowMultipleComponent]
 public class ContractMercenaryUpgradesPageUI : MonoBehaviour
@@ -51,11 +51,12 @@ public class ContractMercenaryUpgradesPageUI : MonoBehaviour
 
     void Awake()
     {
-        // Broad CM upgrade purchasing is not yet persisted in ContractMercenaryRunState.
-        // Keep the control disabled until that backend replaces the old squad-specific
-        // PurchaseSquadUpgrade path.
-        if (purchaseUpgradeButton != null)
-            purchaseUpgradeButton.interactable = false;
+        purchaseUpgradeButton?.onClick.AddListener(HandlePurchaseUpgradeClicked);
+    }
+
+    void OnDestroy()
+    {
+        purchaseUpgradeButton?.onClick.RemoveListener(HandlePurchaseUpgradeClicked);
     }
 
     #endregion
@@ -185,11 +186,21 @@ public class ContractMercenaryUpgradesPageUI : MonoBehaviour
             upgradeRequirementsText,
             BuildUpgradeRequirementsText(selectedUpgradeOption));
 
-        // The old PurchaseSquadUpgrade API requires a specific squad target.
-        // This page no longer exposes or silently chooses one. Broad company/army
-        // purchasing will be connected here once it exists in the CM run state.
         if (purchaseUpgradeButton != null)
-            purchaseUpgradeButton.interactable = false;
+        {
+            purchaseUpgradeButton.interactable =
+                contractController != null &&
+                contractController.CanPurchaseUpgrade(selectedUpgradeOption);
+        }
+    }
+
+    void HandlePurchaseUpgradeClicked()
+    {
+        if (contractController == null || selectedUpgradeOption == null)
+            return;
+
+        if (contractController.PurchaseUpgrade(selectedUpgradeOption))
+            RefreshPage();
     }
 
     #endregion
@@ -218,21 +229,28 @@ public class ContractMercenaryUpgradesPageUI : MonoBehaviour
         return value;
     }
 
-    static string BuildUpgradeRequirementsText(
+    string BuildUpgradeRequirementsText(
         ContractMercenaryUpgradeShopOption option)
     {
         if (option == null || option.upgradeData == null)
             return string.Empty;
 
         StringBuilder builder = new StringBuilder();
+        UpgradeData upgrade = option.upgradeData;
+
+        int currentStacks =
+            contractController != null && contractController.RunState != null
+                ? contractController.RunState.GetCompanyUpgradeStackCount(upgrade)
+                : 0;
+
+        int maximumStacks = upgrade.repeatable
+            ? Mathf.Max(1, upgrade.maximumStacks)
+            : 1;
+
+        builder.AppendLine($"Owned: {currentStacks}/{maximumStacks}");
 
         if (option.minimumPrestige > 0)
             builder.AppendLine($"Prestige: {option.minimumPrestige}");
-
-        UpgradeData upgrade = option.upgradeData;
-
-        if (upgrade.repeatable)
-            builder.AppendLine($"Maximum Stacks: {Mathf.Max(1, upgrade.maximumStacks)}");
 
         if (upgrade.requiredUpgrades != null &&
             upgrade.requiredUpgrades.Count > 0)
@@ -242,8 +260,13 @@ public class ContractMercenaryUpgradesPageUI : MonoBehaviour
             builder.AppendLine();
         }
 
-        if (builder.Length == 0)
-            return "Requirements: None";
+        if (upgrade.blockedByUpgrades != null &&
+            upgrade.blockedByUpgrades.Count > 0)
+        {
+            builder.Append("Blocked By: ");
+            AppendUpgradeNames(builder, upgrade.blockedByUpgrades);
+            builder.AppendLine();
+        }
 
         return builder.ToString().TrimEnd();
     }
