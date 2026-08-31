@@ -294,9 +294,12 @@ public class ProjectileController : MonoBehaviour
             plannedDamageResult.normalDamage,
             plannedDamageResult.armorPiercingDamage);
 
-        target.Health.TakeDamage(
+        int appliedDamage = target.Health.TakeDamage(
             plannedDamageResult.normalDamage,
             plannedDamageResult.armorPiercingDamage);
+
+        if (appliedDamage > 0)
+            GameEvents.CombatDamageDealt(attacker, target, appliedDamage);
 
         // if (target != null &&
         //     target.IsAlive &&

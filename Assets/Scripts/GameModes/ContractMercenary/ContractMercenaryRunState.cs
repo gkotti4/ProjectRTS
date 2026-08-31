@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -154,6 +155,19 @@ public sealed class ContractMercenarySquadState
         veterancyRank = veterancyData.GetRankForExperience(veterancyExperience);
 
         return Mathf.Max(0, veterancyRank - previousRank);
+    }
+
+    public int AddVeterancyExperienceFromDamage(int damageDealt)
+    {
+        VeterancyData veterancyData = VeterancyData;
+
+        if (veterancyData == null || damageDealt <= 0)
+            return 0;
+
+        int experienceAmount =
+            veterancyData.GetExperienceForDamageDealt(damageDealt);
+
+        return AddVeterancyExperience(experienceAmount);
     }
 
     public void RefreshVeterancyRank()
@@ -656,25 +670,14 @@ public sealed class ContractMercenaryRunState
     }
 
     /// <summary>
-    /// Awards committed battle XP to surviving participating squads. Defeat/retry
-    /// intentionally does not call this in V1, preventing retry-based XP farming.
+    /// Forwards committed battle contribution to each surviving persistent squad.
+    /// VeterancyData owns the damage-to-XP conversion; Contract Mercenary only
+    /// decides when the battle contribution is committed. Defeat/retry does not
+    /// call this method, so failed attempts cannot farm veterancy.
     /// </summary>
-    public void AwardBattleVeterancyExperience(
-        BattleResult battleResult,
-        int participationExperience,
-        int victoryBonusExperience)
+    public void AwardBattleVeterancyExperience(BattleResult battleResult)
     {
-        if (battleResult == null ||
-            battleResult.playerSquads == null)
-        {
-            return;
-        }
-
-        int experienceAward =
-            Mathf.Max(0, participationExperience) +
-            Mathf.Max(0, victoryBonusExperience);
-
-        if (experienceAward <= 0)
+        if (battleResult == null || battleResult.playerSquads == null)
             return;
 
         for (int resultIndex = 0;
@@ -685,6 +688,7 @@ public sealed class ContractMercenaryRunState
 
             if (squadResult == null ||
                 squadResult.survivingSoldierCount <= 0 ||
+                squadResult.damageDealt <= 0 ||
                 string.IsNullOrWhiteSpace(squadResult.externalSquadId))
             {
                 continue;
@@ -693,7 +697,8 @@ public sealed class ContractMercenaryRunState
             ContractMercenarySquadState squadState =
                 FindSquad(squadResult.externalSquadId);
 
-            squadState?.AddVeterancyExperience(experienceAward);
+            squadState?.AddVeterancyExperienceFromDamage(
+                squadResult.damageDealt);
         }
     }
 

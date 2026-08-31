@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -137,10 +138,26 @@ public class VeterancyData : ScriptableObject
             }
         };
 
+    // Shared V1 combat-contribution conversion for every squad using Veterancy.
+    // Game modes report contribution; Veterancy owns how that contribution becomes XP.
+    private const int veterancyDamagePerExperience = 10;
+
     public int MaximumRank =>
         ranks != null && ranks.Count > 0
             ? ranks.Count - 1
             : 0;
+
+    public int GetExperienceForDamageDealt(int damageDealt)
+    {
+        damageDealt = Mathf.Max(0, damageDealt);
+
+        if (damageDealt <= 0)
+            return 0;
+
+        return Mathf.Max(
+            1,
+            damageDealt / veterancyDamagePerExperience);
+    }
 
     public int GetRankForExperience(int totalExperience)
     {
@@ -250,3 +267,5 @@ public class VeterancyData : ScriptableObject
                modifiers.specialistSlots != 0;
     }
 }
+
+

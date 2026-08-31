@@ -18,6 +18,7 @@ public static class GameEvents
     public static event Action<FactionInstance, UpgradeData, UpgradeGrantSource, int> OnFactionUpgradeApplied;
 
     // Combat / Death
+    public static event Action<SoldierController, SoldierController, int> OnCombatDamageDealt;
     public static event Action<GameObject> OnEntityDied;
 
     // Game State
@@ -34,6 +35,12 @@ public static class GameEvents
     public static void Deselected() => OnDeselected?.Invoke();
     public static void PlacementModeChanged(bool b) => OnPlacementModeChanged?.Invoke(b);
     public static void ProductionQueueChanged(BuildingController b) => OnProductionQueueChanged?.Invoke(b);
+    public static void CombatDamageDealt(
+        SoldierController attacker,
+        SoldierController target,
+        int appliedDamage) =>
+        OnCombatDamageDealt?.Invoke(attacker, target, Mathf.Max(0, appliedDamage));
+
     public static void EntityDied(GameObject go) => OnEntityDied?.Invoke(go);
     public static void PlayerWin() => OnPlayerWin?.Invoke();
     public static void PlayerLose() => OnPlayerLose?.Invoke();

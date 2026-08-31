@@ -2244,9 +2244,12 @@ public class SquadCombat : MonoBehaviour
         if (!damageResult.didHit)
             return;
 
-        target.Health.TakeDamage(
+        int appliedDamage = target.Health.TakeDamage(
             damageResult.normalDamage,
             damageResult.armorPiercingDamage);
+
+        if (appliedDamage > 0)
+            GameEvents.CombatDamageDealt(attacker, target, appliedDamage);
 
         ApplyFormationCombatHitImpulse(attacker, target);
 
@@ -2322,9 +2325,12 @@ public class SquadCombat : MonoBehaviour
         if (!damageResult.didHit)
             return;
 
-        target.Health.TakeDamage(
+        int appliedDamage = target.Health.TakeDamage(
             damageResult.normalDamage,
             damageResult.armorPiercingDamage);
+
+        if (appliedDamage > 0)
+            GameEvents.CombatDamageDealt(attacker, target, appliedDamage);
 
         if (target.IsAlive)
             target.TryBeginAction(SoldierActionState.HitReact);

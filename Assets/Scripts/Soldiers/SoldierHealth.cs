@@ -59,20 +59,28 @@ public class SoldierHealth : MonoBehaviour
         OnHealthChanged?.Invoke(this);
     }
 
-    public void TakeDamage(int rawDamage, int armorPiercingDamage = 0)
+    /// <summary>
+    /// Applies damage and returns the actual health removed after armor and overkill
+    /// capping. Callers can use this value for battle contribution/stat tracking
+    /// without making SoldierHealth aware of attackers, squads, or game modes.
+    /// </summary>
+    public int TakeDamage(int rawDamage, int armorPiercingDamage = 0)
     {
         if (!IsAlive)
-            return;
+            return 0;
 
         int normalDamage = Mathf.Max(0, rawDamage - armor);
         int totalDamage = Mathf.Max(1, normalDamage + armorPiercingDamage);
+        int appliedDamage = Mathf.Min(currentHealth, totalDamage);
 
-        currentHealth -= totalDamage;
+        currentHealth -= appliedDamage;
 
         OnHealthChanged?.Invoke(this);
 
         if (currentHealth <= 0)
             Die();
+
+        return appliedDamage;
     }
 
     public void Heal(int amount)

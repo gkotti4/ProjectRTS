@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -91,6 +90,7 @@ public class BattleGameModeController : MonoBehaviour
         public SquadMorale morale;
         public int startingSoldierCount;
         public int lastKnownLivingSoldierCount;
+        public int damageDealt;
         public bool routedOffField;
         public bool isPlayerArmy;
     }
@@ -103,6 +103,9 @@ public class BattleGameModeController : MonoBehaviour
 
     private readonly Dictionary<SquadMorale, BattleParticipation> participationByMorale =
         new Dictionary<SquadMorale, BattleParticipation>();
+
+    private readonly Dictionary<SquadController, BattleParticipation> participationBySquad =
+        new Dictionary<SquadController, BattleParticipation>();
 
     private readonly BattleRunState battleRunState = new BattleRunState();
 
@@ -137,6 +140,7 @@ public class BattleGameModeController : MonoBehaviour
         automaticStartTimer = automaticStartDelay;
 
         InitializeBattleRun();
+        GameEvents.OnCombatDamageDealt += HandleCombatDamageDealt;
         
         if (battleMap == null)
             battleMap = BattleMap.Instance; // vs FindInstanceOfType ?
@@ -188,6 +192,7 @@ public class BattleGameModeController : MonoBehaviour
 
     void OnDestroy()
     {
+        GameEvents.OnCombatDamageDealt -= HandleCombatDamageDealt;
         ClearBattleParticipationTracking();
 
         if (Instance == this)
@@ -696,11 +701,13 @@ public class BattleGameModeController : MonoBehaviour
                 lastKnownLivingSoldierCount = squad.Roster != null
                     ? Mathf.Max(0, squad.Roster.LivingCount)
                     : Mathf.Max(0, startingSoldierCount),
+                damageDealt = 0,
                 routedOffField = false,
                 isPlayerArmy = isPlayerArmy
             };
 
         battleParticipations.Add(participation);
+        participationBySquad[squad] = participation;
 
         if (participation.roster != null)
         {
@@ -713,6 +720,25 @@ public class BattleGameModeController : MonoBehaviour
             participationByMorale[participation.morale] = participation;
             participation.morale.OnRoutedOffField += HandleParticipantRoutedOffField;
         }
+    }
+
+    void HandleCombatDamageDealt(
+        SoldierController attacker,
+        SoldierController target,
+        int appliedDamage)
+    {
+        if (state != BattleGameState.Battle ||
+            attacker == null ||
+            attacker.Squad == null ||
+            appliedDamage <= 0 ||
+            !participationBySquad.TryGetValue(
+                attacker.Squad,
+                out BattleParticipation participation))
+        {
+            return;
+        }
+
+        participation.damageDealt += Mathf.Max(0, appliedDamage);
     }
 
     void HandleParticipantRosterChanged(SquadRoster roster)
@@ -784,6 +810,7 @@ public class BattleGameModeController : MonoBehaviour
                     casualtyCount = Mathf.Max(
                         0,
                         participation.startingSoldierCount - survivingSoldierCount),
+                    damageDealt = Mathf.Max(0, participation.damageDealt),
                     routedOffField = participation.routedOffField
                 };
 
@@ -812,6 +839,7 @@ public class BattleGameModeController : MonoBehaviour
 
         participationByRoster.Clear();
         participationByMorale.Clear();
+        participationBySquad.Clear();
         battleParticipations.Clear();
     }
 
@@ -937,5 +965,3 @@ public class BattleGameModeController : MonoBehaviour
 
     #endregion
 }
-
-

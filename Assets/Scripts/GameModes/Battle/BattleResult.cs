@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -35,6 +34,7 @@ public sealed class BattleSquadResult
     public int startingSoldierCount;
     public int survivingSoldierCount;
     public int casualtyCount;
+    public int damageDealt;
     public bool routedOffField;
 }
 
@@ -58,5 +58,3 @@ public sealed class BattleResult
 
     public bool PlayerWon => resultState == BattleGameState.Victory;
 }
-
-

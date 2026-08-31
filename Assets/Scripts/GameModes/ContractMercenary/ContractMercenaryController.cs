@@ -967,13 +967,7 @@ public class ContractMercenaryController : MonoBehaviour
 
         runState.ApplyBattleResult(battleResult);
 
-        if (contractMercenaryData != null)
-        {
-            runState.AwardBattleVeterancyExperience(
-                battleResult,
-                contractMercenaryData.veterancyParticipationExperience,
-                contractMercenaryData.veterancyVictoryBonusExperience);
-        }
+        runState.AwardBattleVeterancyExperience(battleResult);
 
         if (!runState.CompleteCurrentContractVictory())
             return;
@@ -997,4 +991,3 @@ public class ContractMercenaryController : MonoBehaviour
 
     #endregion
 }
-
