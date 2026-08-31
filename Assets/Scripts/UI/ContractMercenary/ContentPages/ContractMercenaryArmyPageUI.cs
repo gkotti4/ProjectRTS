@@ -30,6 +30,9 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI statsText;
     [SerializeField] private TextMeshProUGUI upgradesText;
 
+    [Header("Selected Squad - Veterancy")]
+    [SerializeField] private TextMeshProUGUI veterancyText;
+
     [Header("Selected Squad - Equipment Overview")]
     [SerializeField] private TextMeshProUGUI weaponEquipmentText;
     [SerializeField] private TextMeshProUGUI armorEquipmentText;
@@ -140,6 +143,7 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
             SetText(manpowerText, string.Empty);
             SetText(statsText, string.Empty);
             SetText(upgradesText, string.Empty);
+            SetText(veterancyText, string.Empty);
             SetText(replenishCostText, string.Empty);
             SetText(weaponEquipmentText, "Weapon: Standard Issue");
             SetText(armorEquipmentText, "Armor: Standard Issue");
@@ -157,6 +161,7 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
 
         SetText(statsText, BuildStatsText(selectedSquad));
         SetText(upgradesText, BuildUpgradeSummary(selectedSquad));
+        SetText(veterancyText, BuildVeterancyText(selectedSquad));
         RefreshEquipmentLoadoutSummary();
 
         ContractMercenaryRunState runState = contractController.RunState;
@@ -236,7 +241,9 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
             squadData,
             faction: null,
             squadUpgradeStacks: persistentUpgradeStacks,
-            equipmentLoadout: squadState.Equipment);
+            equipmentLoadout: squadState.Equipment,
+            veterancyData: squadData.veterancyData,
+            veterancyRank: squadState.veterancyRank);
 
         if (soldierStats == null)
             return "Stats unavailable";
@@ -261,6 +268,41 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
 
         builder.Append($"Move Speed: {soldierStats.movement.moveSpeed:0.##}");
         return builder.ToString();
+    }
+
+    string BuildVeterancyText(ContractMercenarySquadState squadState)
+    {
+        if (squadState == null)
+            return string.Empty;
+
+        VeterancyData veterancyData =
+            squadState.squadData != null
+                ? squadState.squadData.veterancyData
+                : null;
+
+        if (veterancyData == null)
+            return "Veterancy: Not Configured";
+
+        int rank = Mathf.Clamp(
+            squadState.veterancyRank,
+            0,
+            veterancyData.MaximumRank);
+
+        string rankName = veterancyData.GetRankDisplayName(rank);
+
+        if (veterancyData.IsMaximumRank(rank))
+        {
+            return
+                $"Veterancy: Rank {rank} - {rankName}\n" +
+                $"XP: {squadState.veterancyExperience} (Max Rank)";
+        }
+
+        int nextRankExperience =
+            veterancyData.GetTotalExperienceRequiredForNextRank(rank);
+
+        return
+            $"Veterancy: Rank {rank} - {rankName}\n" +
+            $"XP: {squadState.veterancyExperience}/{nextRankExperience}";
     }
 
     Dictionary<UpgradeData, int> BuildPersistentUpgradeStackDictionary(
@@ -379,3 +421,4 @@ public class ContractMercenaryArmyPageUI : MonoBehaviour
 
     #endregion
 }
+

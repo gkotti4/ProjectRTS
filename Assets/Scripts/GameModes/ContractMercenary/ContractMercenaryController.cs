@@ -19,6 +19,8 @@ using UnityEngine.Serialization;
 /// - replenish and recruit persistent squads
 /// - purchase persistent broad company upgrades
 /// - synchronize those upgrades into the live player FactionInstance before battle
+/// - bind persistent squad Equipment/Veterancy into spawned runtime squads
+/// - award committed squad Veterancy XP after victorious contracts
 /// - accept/start a contract through the existing BattleGameModeController
 /// - deploy the persistent company army at its current manpower
 /// - consume BattleResult and commit victory casualties/survivors
@@ -856,10 +858,10 @@ public class ContractMercenaryController : MonoBehaviour
             return;
         }
 
-        // CM owns persistent loadouts; BattleGameModeController stays unaware of
-        // campaign progression. Deployment order matches the persistent deployable
-        // army order, so bind each spawned runtime squad to that squad's copied
-        // EquipmentLoadout immediately at battle start, before combat can tick.
+        // CM owns persistent squad progression; BattleGameModeController stays
+        // unaware of campaign systems. Deployment order matches the persistent
+        // deployable army order, so bind Equipment + Veterancy immediately at
+        // battle start and perform one shared runtime-stat refresh before combat.
         int persistentArmyIndex = 0;
 
         for (int runtimeIndex = 0; runtimeIndex < playerArmy.Count; runtimeIndex++)
@@ -890,7 +892,21 @@ public class ContractMercenaryController : MonoBehaviour
                         this);
                 }
 
-                runtimeSquad.SetEquipmentLoadout(persistentSquad.Equipment);
+                VeterancyData veterancyData =
+                    persistentSquad.VeterancyData;
+
+                persistentSquad.RefreshVeterancyRank();
+
+                runtimeSquad.SetEquipmentLoadout(
+                    persistentSquad.Equipment,
+                    refreshRuntimeStats: false);
+
+                runtimeSquad.SetVeterancy(
+                    veterancyData,
+                    persistentSquad.veterancyRank,
+                    refreshRuntimeStats: false);
+
+                runtimeSquad.RefreshRuntimeStats();
                 break;
             }
         }
@@ -951,6 +967,14 @@ public class ContractMercenaryController : MonoBehaviour
 
         runState.ApplyBattleResult(battleResult);
 
+        if (contractMercenaryData != null)
+        {
+            runState.AwardBattleVeterancyExperience(
+                battleResult,
+                contractMercenaryData.veterancyParticipationExperience,
+                contractMercenaryData.veterancyVictoryBonusExperience);
+        }
+
         if (!runState.CompleteCurrentContractVictory())
             return;
 
@@ -973,3 +997,4 @@ public class ContractMercenaryController : MonoBehaviour
 
     #endregion
 }
+

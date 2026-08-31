@@ -31,6 +31,15 @@ public class ContractMercenaryData : ScriptableObject
     [Min(0)]
     public int startingPrestige = 0;
 
+    [Header("Veterancy Rewards")]
+    [Tooltip("XP granted to each surviving participating squad when a contract victory is committed. Each squad resolves rank thresholds/bonuses from its own SquadData.veterancyData.")]
+    [Min(0)]
+    public int veterancyParticipationExperience = 100;
+
+    [Tooltip("Additional XP granted to each surviving participating squad for winning the contract.")]
+    [Min(0)]
+    public int veterancyVictoryBonusExperience = 50;
+
     [Header("Economy")]
     [Tooltip("Base Gold cost for replacing one missing soldier. SquadData.reinforcementCostMultiplier scales this value per squad type.")]
     [Min(0)]
@@ -55,6 +64,8 @@ public class ContractMercenaryData : ScriptableObject
     void OnValidate()
     {
         startingPrestige = Mathf.Max(0, startingPrestige);
+        veterancyParticipationExperience = Mathf.Max(0, veterancyParticipationExperience);
+        veterancyVictoryBonusExperience = Mathf.Max(0, veterancyVictoryBonusExperience);
         replenishmentGoldCostPerSoldier = Mathf.Max(
             0,
             replenishmentGoldCostPerSoldier);
@@ -251,3 +262,4 @@ public class ContractMercenaryData : ScriptableObject
         }
     }
 }
+

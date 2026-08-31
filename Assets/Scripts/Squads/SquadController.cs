@@ -47,6 +47,8 @@ public class SquadController : MonoBehaviour,
         new Dictionary<UpgradeData, int>();
 
     private EquipmentLoadout equipmentLoadout = new EquipmentLoadout();
+    private VeterancyData veterancyData;
+    private int veterancyRank = 0;
 
     private enum QueuedSquadCommandType
     {
@@ -89,6 +91,8 @@ public class SquadController : MonoBehaviour,
     public IReadOnlyDictionary<UpgradeData, int> AppliedUpgradeStacks =>
         appliedUpgradeStacks;
     public EquipmentLoadout EquipmentLoadout => equipmentLoadout;
+    public VeterancyData VeterancyData => veterancyData;
+    public int VeterancyRank => veterancyRank;
 
     public SquadCategory Category =>
         squadData != null ? squadData.category : SquadCategory.Infantry;
@@ -200,7 +204,9 @@ public class SquadController : MonoBehaviour,
             squadData,
             Faction,
             appliedUpgradeStacks,
-            equipmentLoadout);
+            equipmentLoadout,
+            veterancyData,
+            veterancyRank);
 
         Formation?.ApplyStats(Stats.formation);
         Movement?.RefreshRuntimeStats();
@@ -232,6 +238,24 @@ public class SquadController : MonoBehaviour,
         equipmentLoadout = loadout != null
             ? loadout.Clone()
             : new EquipmentLoadout();
+
+        if (refreshRuntimeStats && isInitialized)
+            RefreshRuntimeStats();
+    }
+
+    /// <summary>
+    /// Sets the runtime squad's persistent veterancy context. CM binds this at
+    /// battle start; stat bonuses are resolved through the normal shared resolver.
+    /// </summary>
+    public void SetVeterancy(
+        VeterancyData data,
+        int rank,
+        bool refreshRuntimeStats = true)
+    {
+        veterancyData = data;
+        veterancyRank = veterancyData != null
+            ? Mathf.Clamp(rank, 0, veterancyData.MaximumRank)
+            : 0;
 
         if (refreshRuntimeStats && isInitialized)
             RefreshRuntimeStats();
@@ -377,7 +401,9 @@ public class SquadController : MonoBehaviour,
             squadData,
             Faction,
             appliedUpgradeStacks,
-            equipmentLoadout);
+            equipmentLoadout,
+            veterancyData,
+            veterancyRank);
 
         // 1. Build physical/gameplay body.
         Roster.Initialize(
@@ -803,5 +829,3 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
-
-

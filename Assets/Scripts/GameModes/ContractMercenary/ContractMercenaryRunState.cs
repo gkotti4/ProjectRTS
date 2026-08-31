@@ -104,11 +104,18 @@ public sealed class ContractMercenarySquadState
     [Header("Equipment")]
     public EquipmentLoadout equipment = new EquipmentLoadout();
 
+    [Header("Veterancy")]
+    [Min(0)] public int veterancyExperience = 0;
+    [Min(0)] public int veterancyRank = 0;
+
     // Separate squad-specific UpgradeData channel retained for future authored
     // squad progression. Equipment is a first-class loadout source and does not
     // masquerade as an UpgradeData stack.
     public List<ContractMercenaryUpgradeStack> appliedUpgrades =
         new List<ContractMercenaryUpgradeStack>();
+
+    public VeterancyData VeterancyData =>
+        squadData != null ? squadData.veterancyData : null;
 
     public EquipmentLoadout Equipment
     {
@@ -133,6 +140,30 @@ public sealed class ContractMercenarySquadState
             return false;
 
         return Equipment.Set(equipmentData);
+    }
+
+    public int AddVeterancyExperience(int experienceAmount)
+    {
+        VeterancyData veterancyData = VeterancyData;
+
+        if (veterancyData == null || experienceAmount <= 0)
+            return 0;
+
+        int previousRank = veterancyRank;
+        veterancyExperience = Mathf.Max(0, veterancyExperience + experienceAmount);
+        veterancyRank = veterancyData.GetRankForExperience(veterancyExperience);
+
+        return Mathf.Max(0, veterancyRank - previousRank);
+    }
+
+    public void RefreshVeterancyRank()
+    {
+        VeterancyData veterancyData = VeterancyData;
+
+        veterancyExperience = Mathf.Max(0, veterancyExperience);
+        veterancyRank = veterancyData != null
+            ? veterancyData.GetRankForExperience(veterancyExperience)
+            : 0;
     }
 
     public int MaximumSoldierCount =>
@@ -171,6 +202,7 @@ public sealed class ContractMercenarySquadState
 /// - owned army and current manpower
 /// - persistent broad company upgrade stacks
 /// - persistent per-squad Equipment loadouts
+/// - persistent per-squad Veterancy XP/rank
 /// - separate squad-specific persistent upgrade stacks for future authored systems
 /// - prestige / completed contracts
 /// - currently accepted contract
@@ -623,6 +655,48 @@ public sealed class ContractMercenaryRunState
         return true;
     }
 
+    /// <summary>
+    /// Awards committed battle XP to surviving participating squads. Defeat/retry
+    /// intentionally does not call this in V1, preventing retry-based XP farming.
+    /// </summary>
+    public void AwardBattleVeterancyExperience(
+        BattleResult battleResult,
+        int participationExperience,
+        int victoryBonusExperience)
+    {
+        if (battleResult == null ||
+            battleResult.playerSquads == null)
+        {
+            return;
+        }
+
+        int experienceAward =
+            Mathf.Max(0, participationExperience) +
+            Mathf.Max(0, victoryBonusExperience);
+
+        if (experienceAward <= 0)
+            return;
+
+        for (int resultIndex = 0;
+             resultIndex < battleResult.playerSquads.Count;
+             resultIndex++)
+        {
+            BattleSquadResult squadResult = battleResult.playerSquads[resultIndex];
+
+            if (squadResult == null ||
+                squadResult.survivingSoldierCount <= 0 ||
+                string.IsNullOrWhiteSpace(squadResult.externalSquadId))
+            {
+                continue;
+            }
+
+            ContractMercenarySquadState squadState =
+                FindSquad(squadResult.externalSquadId);
+
+            squadState?.AddVeterancyExperience(experienceAward);
+        }
+    }
+
     public bool RemoveSquad(string companySquadId)
     {
         if (string.IsNullOrWhiteSpace(companySquadId))
@@ -807,3 +881,5 @@ public sealed class ContractMercenaryRunState
 
     #endregion
 }
+
+

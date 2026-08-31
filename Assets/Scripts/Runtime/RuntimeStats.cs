@@ -28,13 +28,16 @@ public static class RuntimeStatResolver
         SquadData data,
         FactionInstance faction,
         IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null,
-        EquipmentLoadout equipmentLoadout = null)
+        EquipmentLoadout equipmentLoadout = null,
+        VeterancyData veterancyData = null,
+        int veterancyRank = 0)
     {
         SquadRuntimeStats result = BuildBaseSquadStats(data);
 
         ApplySquadUpgradeCollection(result, data, faction?.AppliedUpgradeStacks);
         ApplySquadUpgradeCollection(result, data, squadUpgradeStacks);
         ApplySquadEquipmentLoadout(result, data, equipmentLoadout);
+        ApplySquadVeterancy(result, veterancyData, veterancyRank);
 
         ClampSquad(result);
         return result;
@@ -45,7 +48,9 @@ public static class RuntimeStatResolver
         SquadData squadData,
         FactionInstance faction,
         IReadOnlyDictionary<UpgradeData, int> squadUpgradeStacks = null,
-        EquipmentLoadout equipmentLoadout = null)
+        EquipmentLoadout equipmentLoadout = null,
+        VeterancyData veterancyData = null,
+        int veterancyRank = 0)
     {
         SoldierRuntimeStats result = BuildBaseSoldierStats(data);
 
@@ -63,6 +68,7 @@ public static class RuntimeStatResolver
         ApplySoldierUpgradeCollection(result, squadData, faction?.AppliedUpgradeStacks);
         ApplySoldierUpgradeCollection(result, squadData, squadUpgradeStacks);
         ApplySoldierEquipmentLoadout(result, squadData, equipmentLoadout);
+        ApplySoldierVeterancy(result, veterancyData, veterancyRank);
 
         ClampSoldier(result);
         return result;
@@ -421,6 +427,52 @@ public static class RuntimeStatResolver
         s.body.mass *= Mathf.Max(0.01f, 1f + a.massMultiplierDelta);
     }
 
+    static void ApplySoldierVeterancy(
+        SoldierRuntimeStats result,
+        VeterancyData veterancyData,
+        int veterancyRank)
+    {
+        if (result == null || veterancyData == null || veterancyData.ranks == null)
+            return;
+
+        int resolvedRank = Mathf.Clamp(
+            veterancyRank,
+            0,
+            veterancyData.MaximumRank);
+
+        for (int rankIndex = 1; rankIndex <= resolvedRank; rankIndex++)
+        {
+            VeterancyRankDefinition rank =
+                veterancyData.GetRankDefinition(rankIndex);
+
+            if (rank != null)
+                ApplySoldierModifier(result, rank.soldierModifiers);
+        }
+    }
+
+    static void ApplySquadVeterancy(
+        SquadRuntimeStats result,
+        VeterancyData veterancyData,
+        int veterancyRank)
+    {
+        if (result == null || veterancyData == null || veterancyData.ranks == null)
+            return;
+
+        int resolvedRank = Mathf.Clamp(
+            veterancyRank,
+            0,
+            veterancyData.MaximumRank);
+
+        for (int rankIndex = 1; rankIndex <= resolvedRank; rankIndex++)
+        {
+            VeterancyRankDefinition rank =
+                veterancyData.GetRankDefinition(rankIndex);
+
+            if (rank != null)
+                ApplySquadModifier(result, rank.squadModifiers);
+        }
+    }
+
     static void ApplySoldierModifier(SoldierRuntimeStats s, SoldierStatModifiers m)
     {
         s.health.maxHealth += m.maxHealth; s.health.healthRegenerationPerSecond += m.healthRegenerationPerSecond; s.health.healingReceivedMultiplier += m.healingReceivedMultiplierDelta;
@@ -455,5 +507,3 @@ public static class RuntimeStatResolver
         s.morale.maxMorale = Mathf.Max(0f, s.morale.maxMorale); s.morale.leadership = Mathf.Max(0f, s.morale.leadership); s.morale.moraleRecoveryRate = Mathf.Max(0f, s.morale.moraleRecoveryRate); s.morale.casualtyMoraleResistance = Mathf.Clamp01(s.morale.casualtyMoraleResistance); s.morale.flankMoraleResistance = Mathf.Clamp01(s.morale.flankMoraleResistance); s.morale.terrorResistance = Mathf.Clamp01(s.morale.terrorResistance);
     }
 }
-
-

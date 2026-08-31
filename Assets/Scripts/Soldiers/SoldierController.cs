@@ -267,7 +267,9 @@ public class SoldierController : MonoBehaviour
             Squad != null ? Squad.Data : null,
             Faction,
             Squad != null ? Squad.AppliedUpgradeStacks : null,
-            Squad != null ? Squad.EquipmentLoadout : null);
+            Squad != null ? Squad.EquipmentLoadout : null,
+            Squad != null ? Squad.VeterancyData : null,
+            Squad != null ? Squad.VeterancyRank : 0);
 
         if (Stats == null)
             return;
@@ -817,7 +819,3 @@ public class SoldierController : MonoBehaviour
     #endregion
 
 }
-
-
-
-

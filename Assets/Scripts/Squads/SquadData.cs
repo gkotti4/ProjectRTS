@@ -72,6 +72,10 @@ public class SquadData : ScriptableObject
     [Header("Morale")]
     public MoraleStats morale = MoraleStats.Default;
 
+    [Header("Progression")]
+    [Tooltip("Authored veterancy progression for this squad type. Multiple SquadData assets may share the same VeterancyData asset.")]
+    public VeterancyData veterancyData;
+
     [Header("Progression Defaults")]
     [Min(0)] public int reinforcementAmount = 1;
     [Min(0f)] public float reinforcementCostMultiplier = 1f;
@@ -120,3 +124,4 @@ public class SquadCommandSet : ScriptableObject
         return result;
     }
 }
+
