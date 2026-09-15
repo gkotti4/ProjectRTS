@@ -1,5 +1,5 @@
-
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// -----------------------------------------------------------------------------
 /// SoldierAnimator
@@ -21,7 +21,6 @@ public class SoldierAnimator : MonoBehaviour
 
     private RuntimeAnimatorController prefabBaseController; // currently base controller depends on weapon so the base of a unit with 2 weapons will already be an ACO...CHECK
     private int attackVariantCount = 2; // uses attacks 1 though attackVariantCount attacks at random
-    private bool attackUsesFullBody = true;
     private bool hasAttackVariantParameter = true;
 
     #endregion
@@ -79,12 +78,20 @@ public class SoldierAnimator : MonoBehaviour
 
     #region Animator Layers
 
-    [Header("Animator Layers")]
+    [Header("Animator Layers - Arms")]
+    [FormerlySerializedAs("upperBodyLayerName")] [SerializeField] private string armsLayerName = "Arms";
+    [FormerlySerializedAs("controlUpperBodyLayer")] [SerializeField] private bool controlArmsLayer = true;
+    [FormerlySerializedAs("upperBodyLayerDefaultWeight")] [SerializeField] private float armsLayerDefaultWeight = 1f;
+    [FormerlySerializedAs("upperBodyLayerDisabledWeight")] [SerializeField] private float armsLayerDisabledWeight = 0f;
+    [SerializeField] private bool armsLayerDisableDuringAttack = true;
+    private int armsLayerIndex = -1;
+
+    [Header("Animator Layers - Upper Body")]
     [SerializeField] private string upperBodyLayerName = "UpperBody";
-    [SerializeField] private bool controlUpperBodyLayer = true;
+    [SerializeField] private bool controlUpperBodyLayer = false;
     [SerializeField] private float upperBodyLayerDefaultWeight = 1f;
     [SerializeField] private float upperBodyLayerDisabledWeight = 0f;
-
+    [SerializeField] private bool upperBodyLayerDisableDuringAttack = true;
     private int upperBodyLayerIndex = -1;
 
     #endregion
@@ -111,7 +118,7 @@ public class SoldierAnimator : MonoBehaviour
     {
         ResolveReferences();
         CapturePrefabBaseController();
-        InitializeUpperBodyLayer();
+        InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
         InitializeMeasuredVelocity();
         
@@ -128,6 +135,8 @@ public class SoldierAnimator : MonoBehaviour
         locomotionRunBlendValue = Mathf.Max(locomotionWalkBlendValue, locomotionRunBlendValue);
         locomotionBackwardsDotThreshold = Mathf.Clamp(locomotionBackwardsDotThreshold, -1f, 0f);
 
+        armsLayerDefaultWeight = Mathf.Clamp01(armsLayerDefaultWeight);
+        armsLayerDisabledWeight = Mathf.Clamp01(armsLayerDisabledWeight);
         upperBodyLayerDefaultWeight = Mathf.Clamp01(upperBodyLayerDefaultWeight);
         upperBodyLayerDisabledWeight = Mathf.Clamp01(upperBodyLayerDisabledWeight);
     }
@@ -212,7 +221,7 @@ public class SoldierAnimator : MonoBehaviour
 
         animator.runtimeAnimatorController = targetController;
 
-        InitializeUpperBodyLayer();
+        InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
         return true;
     }
@@ -225,9 +234,6 @@ public class SoldierAnimator : MonoBehaviour
         attackVariantCount = weaponProfile != null
             ? Mathf.Max(1, weaponProfile.animationAttackVariantCount)
             : 1;
-
-        attackUsesFullBody = weaponProfile == null ||
-                             weaponProfile.animationDisableUpperBodyLayerDuringAttack;
     }
 
     void RefreshOptionalAnimatorParameters()
@@ -258,8 +264,33 @@ public class SoldierAnimator : MonoBehaviour
         return false;
     }
 
+    void InitializeAnimatorLayers()
+    {
+        InitializeArmsLayer();
+        InitializeUpperBodyLayer();
+    }
+
+    void InitializeArmsLayer()
+    {
+        armsLayerIndex = -1;
+
+        if (animator == null || !controlArmsLayer)
+            return;
+
+        armsLayerIndex = animator.GetLayerIndex(armsLayerName);
+
+        if (armsLayerIndex >= 0)
+        {
+            animator.SetLayerWeight(
+                armsLayerIndex,
+                armsLayerDefaultWeight);
+        }
+    }
+
     void InitializeUpperBodyLayer()
     {
+        upperBodyLayerIndex = -1;
+
         if (animator == null || !controlUpperBodyLayer)
             return;
 
@@ -549,7 +580,10 @@ public class SoldierAnimator : MonoBehaviour
         switch (actionState)
         {
             case SoldierActionState.Attack:
-                if (attackUsesFullBody)
+                if (armsLayerDisableDuringAttack)
+                    DisableArmsLayer();
+
+                if (upperBodyLayerDisableDuringAttack)
                     DisableUpperBodyLayer();
 
                 if (hasAttackVariantParameter)
@@ -565,6 +599,7 @@ public class SoldierAnimator : MonoBehaviour
                 break;
 
             case SoldierActionState.HitReact:
+                DisableArmsLayer();
                 DisableUpperBodyLayer();
                 animator.ResetTrigger(Attack);
                 animator.ResetTrigger(ChargeAttack);
@@ -572,6 +607,7 @@ public class SoldierAnimator : MonoBehaviour
                 break;
 
             case SoldierActionState.Death:
+                DisableArmsLayer();
                 DisableUpperBodyLayer();
                 animator.ResetTrigger(Attack);
                 animator.ResetTrigger(ChargeAttack);
@@ -586,15 +622,20 @@ public class SoldierAnimator : MonoBehaviour
         switch (actionState)
         {
             case SoldierActionState.Attack:
-                if (attackUsesFullBody)
+                if (armsLayerDisableDuringAttack)
+                    EnableArmsLayer();
+
+                if (upperBodyLayerDisableDuringAttack)
                     EnableUpperBodyLayer();
                 break;
 
             case SoldierActionState.HitReact:
+                EnableArmsLayer();
                 EnableUpperBodyLayer();
                 break;
 
             case SoldierActionState.Death:
+                DisableArmsLayer();
                 DisableUpperBodyLayer();
                 break;
         }
@@ -611,16 +652,21 @@ public class SoldierAnimator : MonoBehaviour
                 animator.ResetTrigger(Attack);
                 animator.ResetTrigger(ChargeAttack);
 
-                if (attackUsesFullBody)
+                if (armsLayerDisableDuringAttack)
+                    EnableArmsLayer();
+
+                if (upperBodyLayerDisableDuringAttack)
                     EnableUpperBodyLayer();
                 break;
 
             case SoldierActionState.HitReact:
                 animator.ResetTrigger(HitReact);
+                EnableArmsLayer();
                 EnableUpperBodyLayer();
                 break;
 
             case SoldierActionState.Death:
+                DisableArmsLayer();
                 DisableUpperBodyLayer();
                 break;
         }
@@ -636,6 +682,38 @@ public class SoldierAnimator : MonoBehaviour
 
         animator.SetBool(IsMoving, false);
         animator.SetFloat(MoveSpeed, 0f);
+    }
+
+    #endregion
+
+    #region Arms Layer
+
+    public void SetArmsLayerEnabled(bool enabled)
+    {
+        if (!controlArmsLayer)
+            return;
+
+        if (animator == null)
+            return;
+
+        if (armsLayerIndex < 0)
+            return;
+
+        animator.SetLayerWeight(
+            armsLayerIndex,
+            enabled
+                ? armsLayerDefaultWeight
+                : armsLayerDisabledWeight);
+    }
+
+    public void DisableArmsLayer()
+    {
+        SetArmsLayerEnabled(false);
+    }
+
+    public void EnableArmsLayer()
+    {
+        SetArmsLayerEnabled(true);
     }
 
     #endregion
@@ -672,7 +750,6 @@ public class SoldierAnimator : MonoBehaviour
 
     #endregion
     
-
     #region Animation Events
 
     // Animation Event: melee impact frame.
@@ -740,5 +817,6 @@ public class SoldierAnimator : MonoBehaviour
     
     #endregion
 }
+
 
 

@@ -50,9 +50,7 @@ public class WeaponProfile : ScriptableObject
     [Tooltip("Number of authored AttackVariant melee states available while this weapon is active.")]
     public int animationAttackVariantCount = 1;
 
-    [Tooltip("Temporarily disables the UpperBody layer while this weapon's attack animation plays as a full-body action.")]
-    public bool animationDisableUpperBodyLayerDuringAttack = true;
-    
+
     
     void OnValidate()
     {
@@ -79,3 +77,5 @@ public class WeaponProfile : ScriptableObject
         ranged.ammunition = Mathf.Max(-1, ranged.ammunition);
     }
 }
+
+
