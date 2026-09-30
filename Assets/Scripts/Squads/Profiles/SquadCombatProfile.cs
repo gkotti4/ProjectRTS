@@ -135,192 +135,266 @@ public class SquadCombatProfile : ScriptableObject
 
     
     
-    
-    
 
+   [Header("Attack Timing")]
 
-    [Header("Attack Timing")]
+    [Tooltip("Minimum random value added to the attack interval.")]
     [Min(0f)]
-    public float formationAttackIntervalRandomMin = 0f; // Minimum Random Range value to add to attack interval
+    public float formationAttackIntervalRandomMin = 0f;
 
+    [Tooltip("Maximum random value added to the attack interval.")]
     [Min(0f)]
-    public float formationAttackIntervalRandomMax = 1.0f; // Maximum Random Range value to add to attack interval
+    public float formationAttackIntervalRandomMax = 1.0f;
+
 
     [Header("Reserve Settle / Side-Step")]
-    [Min(0f)]
-    public float formationReserveForwardGapDistance = 1.35f; // Tune // How far ahead a reserve checks for a friendly-body gap before moving forward.
 
+    [Tooltip("How far ahead a reserve checks for a friendly-body gap before moving forward.")]
     [Min(0f)]
-    public float formationReserveForwardGapRadius = 0.60f; // Tune // Width/radius of the forward gap check; higher means reserves need a wider lane.
+    public float formationReserveForwardGapDistance = 1.35f;
 
+    [Tooltip("Width/radius of the forward gap check. Higher values require reserves to find a wider lane.")]
     [Min(0f)]
-    public float formationReserveMinimumBlockedSitTimeMin = 0.35f; // Shortest randomized time a newly blocked reserve must wait before repositioning.
+    public float formationReserveForwardGapRadius = 0.60f;
 
+    [Tooltip("Shortest randomized time a newly blocked reserve must wait before repositioning.")]
     [Min(0f)]
-    public float formationReserveMinimumBlockedSitTimeMax = 1.40f; // Longest randomized time a newly blocked reserve must wait before repositioning.
+    public float formationReserveMinimumBlockedSitTimeMin = 0.35f;
 
-    public bool formationReserveSideStepEnabled = false; // Enables the small local side-step fallback for blocked reserve soldiers.
-
+    [Tooltip("Longest randomized time a newly blocked reserve must wait before repositioning.")]
     [Min(0f)]
-    public float formationReserveSideStepIntervalMin = 5.0f; // Shortest randomized cooldown before a reserve can attempt another side-step.
+    public float formationReserveMinimumBlockedSitTimeMax = 1.40f;
 
-    [Min(0f)]
-    public float formationReserveSideStepIntervalMax = 10.0f; // Longest randomized cooldown before a reserve can attempt another side-step.
+    [Tooltip("Enables the small local side-step fallback for blocked reserve soldiers.")]
+    public bool formationReserveSideStepEnabled = false;
 
+    [Tooltip("Shortest randomized cooldown before a reserve can attempt another side-step.")]
     [Min(0f)]
-    public float formationReserveSideStepDistance = 0.65f; // How far sideways a reserve tries to step when using the side-step fallback.
+    public float formationReserveSideStepIntervalMin = 5.0f;
 
+    [Tooltip("Longest randomized cooldown before a reserve can attempt another side-step.")]
     [Min(0f)]
-    public float formationReserveSideStepOccupancyRadius = 0.85f; // Radius used to reject side-step points already occupied by living soldiers.
+    public float formationReserveSideStepIntervalMax = 10.0f;
 
+    [Tooltip("How far sideways a reserve tries to step when using the side-step fallback.")]
     [Min(0f)]
-    public float formationReserveSideStepSpeedMultiplier = 0.50f; // Movement speed multiplier used while performing a reserve side-step.
+    public float formationReserveSideStepDistance = 0.65f;
+
+    [Tooltip("Radius used to reject side-step points already occupied by living soldiers.")]
+    [Min(0f)]
+    public float formationReserveSideStepOccupancyRadius = 0.85f;
+
+    [Tooltip("Movement speed multiplier used while performing a reserve side-step.")]
+    [Min(0f)]
+    public float formationReserveSideStepSpeedMultiplier = 0.50f;
+
 
     [Header("Local Enemy Targeting")]
-    public bool formationMultiSquadLocalTargetingEnabled = true; // Allows soldiers to locally target nearby enemies from non-primary hostile squads.
 
+    [Tooltip("Allows soldiers to locally target nearby enemies from non-primary hostile squads.")]
+    public bool formationMultiSquadLocalTargetingEnabled = true;
+
+    [Tooltip("Maximum distance for considering non-primary enemy soldiers as local reaction targets.")]
     [Min(0f)]
-    public float formationLocalEnemyTargetSearchRadius = 7.5f; // Max distance for considering non-primary enemy soldiers as local reaction targets.
+    public float formationLocalEnemyTargetSearchRadius = 7.5f;
 
+    [Tooltip("Score penalty for non-primary enemies so soldiers still prefer the ordered target squad.")]
     [Min(0f)]
-    public float formationNonPrimaryTargetPenalty = 1.25f; // Score penalty for non-primary enemies so soldiers still prefer the ordered target squad.
+    public float formationNonPrimaryTargetPenalty = 1.25f;
 
-    public bool formationImmediateContactOverrideEnabled = true; // Forces melee soldiers to prefer obvious nearby enemies over farther assigned targets.
+    [Tooltip("Forces melee soldiers to prefer obvious nearby enemies over farther assigned targets.")]
+    public bool formationImmediateContactOverrideEnabled = true;
 
+    [Tooltip("Extra range added to attack range when checking for immediate-contact enemies.")]
     [Min(0f)]
-    public float formationImmediateContactRangePadding = 0.55f; // Extra range added to attack range when checking for immediate contact enemies.
+    public float formationImmediateContactRangePadding = 0.55f;
+
 
     [Header("Approach Settle Gate")]
-    public bool formationApproachSettleGateEnabled = true; // Enables the short initial delay before full melee release when only a few soldiers arrive.
 
-    [Min(0f)]
-    public float formationApproachSettleDuration = 0.75f; // How long the squad may wait at first contact for more soldiers to arrive.
+    [Tooltip("Enables the short initial delay before full melee release when only a few soldiers arrive.")]
+    public bool formationApproachSettleGateEnabled = true;
 
+    [Tooltip("How long the squad may wait at first contact for more soldiers to arrive.")]
     [Min(0f)]
-    public float formationApproachSettleReadyRatio = 0.45f; // Fraction of living soldiers that must be near the enemy to skip/finish the settle gate.
+    public float formationApproachSettleDuration = 0.75f;
 
+    [Tooltip("Fraction of living soldiers that must be near the enemy to skip or finish the settle gate.")]
     [Min(0f)]
-    public float formationApproachSettleReadyRangePadding = 0.95f; // Extra range added to combat start range when counting soldiers as approach-ready.
+    public float formationApproachSettleReadyRatio = 0.45f;
 
+    [Tooltip("Extra range added to combat start range when counting soldiers as approach-ready.")]
     [Min(0f)]
-    public float formationApproachSettleMinimumReadyRange = 2.75f; // Minimum ready-check radius so very small combat start ranges still count nearby soldiers.
+    public float formationApproachSettleReadyRangePadding = 0.95f;
+
+    [Tooltip("Minimum ready-check radius so very small combat start ranges still count nearby soldiers.")]
+    [Min(0f)]
+    public float formationApproachSettleMinimumReadyRange = 2.75f;
+
 
     [Header("Charge")]
-    public bool formationChargeEnabled = true; // Master capability toggle for the ordered melee charge phase.
 
-    public bool formationChargeEnabledByDefault = true; // Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack and is suppressed by Hold stance.
+    [Tooltip("Master capability toggle for the ordered melee charge phase.")]
+    public bool formationChargeEnabled = true;
 
+    [Tooltip("Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack and is suppressed by Hold stance.")]
+    public bool formationChargeEnabledByDefault = true;
+
+    [Tooltip("Closest living-soldier distance that allows a melee squad to begin charging.")]
     [Min(0f)]
-    public float formationChargeStartDistance = 10.0f; // Closest living soldier distance that allows a melee squad to begin charging.
+    public float formationChargeStartDistance = 10.0f;
 
+    [Tooltip("Formation-wide movement speed multiplier while charging.")]
     [Min(0f)]
-    public float formationChargeSpeedMultiplier = 1.25f; // Formation-wide movement multiplier while charging.
+    public float formationChargeSpeedMultiplier = 1.25f;
 
+    [Tooltip("Safety time limit before the squad enters combat even if charge contact detection is imperfect.")]
     [Min(0f)]
-    public float formationChargeMaximumDuration = 3.0f; // Safety cap before the squad enters combat even if contact detection is imperfect.
+    public float formationChargeMaximumDuration = 3.0f;
 
+    [Tooltip("Fraction of living melee soldiers that must reach personal attack range before the charge enters follow-through.")]
     [Min(0f)]
-    public float formationChargeContactReadyRatio = 0.15f; // Fraction of living melee soldiers that must reach personal attack range before the charge enters follow-through.
+    public float formationChargeContactReadyRatio = 0.15f;
 
+    [Tooltip("Time the formation keeps driving after first meaningful contact before normal melee takes ownership.")]
     [Min(0f)]
-    public float formationChargeFollowThroughDuration = 0.65f; // Time the formation keeps driving after first meaningful contact before normal melee takes ownership.
+    public float formationChargeFollowThroughDuration = 0.65f;
 
+    [Tooltip("Temporary distance beyond the enemy center used as the charge destination so attackers continue through initial contact.")]
     [Min(0f)]
-    public float formationChargeFollowThroughDistance = 1.75f; // Temporary distance beyond the enemy center used as the charge destination so attackers continue through initial contact.
+    public float formationChargeFollowThroughDistance = 1.75f;
 
+    [Tooltip("One-time morale loss applied to the ordered target squad when meaningful charge contact is first reached.")]
     [Min(0f)]
-    public float formationChargeMoraleShock = 8.0f; // One-time morale loss applied to the ordered target squad when meaningful charge contact is first reached.
+    public float formationChargeMoraleShock = 8.0f;
 
-    public bool formationChargeImpulseEnabled = true; // Enables the very light directional contact impulse during the infantry charge MVP.
+    [Tooltip("Enables the light directional contact impulse emitted by charging soldiers.")]
+    public bool formationChargeImpulseEnabled = true;
 
+    [Tooltip("Authored impulse magnitude applied to enemies touched by a charging soldier's forward capsule.")]
     [Min(0f)]
-    public float formationChargeImpulseMagnitude = 4.0f; // Small authored impulse applied to enemies touched by a charging soldier's forward capsule.
+    public float formationChargeImpulseMagnitude = 4.0f;
 
+    [Tooltip("Impulse decay duration. Short values make the effect feel like contact weight rather than sustained knockback.")]
     [Min(0f)]
-    public float formationChargeImpulseDuration = 0.09f; // Short decay keeps this as contact weight rather than visible knockback.
+    public float formationChargeImpulseDuration = 0.09f;
 
+    [Tooltip("Length of the charge-contact capsule projected in front of each charging soldier.")]
     [Min(0f)]
-    public float formationChargeImpulseForwardDistance = 0.95f; // Length of the contact capsule projected in front of each charging soldier.
+    public float formationChargeImpulseForwardDistance = 0.95f;
 
+    [Tooltip("Radius of each charging soldier's forward contact capsule.")]
     [Min(0f)]
-    public float formationChargeImpulseRadius = 0.65f; // Width of each charging soldier's forward contact capsule.
+    public float formationChargeImpulseRadius = 0.65f;
 
+    [Tooltip("Blend between forward and radial impulse direction. Lower values keep the force mostly forward; higher values add more outward spread.")]
     [Min(0f)]
-    public float formationChargeImpulseRadialBlend = 0.12f; // Mostly forward force with a small outward spread.
+    public float formationChargeImpulseRadialBlend = 0.12f;
 
-    public bool formationChargeLeadSpeedEnabled = true; // Enables a small speed edge for the soldiers currently closest to the enemy.
+    [Tooltip("Enables an additional speed advantage for the soldiers currently closest to the enemy.")]
+    public bool formationChargeLeadSpeedEnabled = true;
 
+    [Tooltip("Fraction of living melee soldiers treated as the leading edge. Rounded up to at least one soldier.")]
     [Min(0f)]
-    public float formationChargeLeadSoldierRatio = 0.15f; // 0.15 means 15% of living melee soldiers, rounded up to at least one soldier.
+    public float formationChargeLeadSoldierRatio = 0.15f;
 
+    [Tooltip("Additional per-soldier movement multiplier applied to soldiers on the current leading edge while charging.")]
     [Min(0f)]
-    public float formationChargeLeadSpeedMultiplier = 1.25f; // Additional per-soldier charge movement multiplier for the current leading edge.
+    public float formationChargeLeadSpeedMultiplier = 1.25f;
+
 
     [Header("Melee Impact")]
-    public bool formationMeleeHitImpulseEnabled = true; // Enables physical movement feedback on successful melee damage.
 
-    [Min(0f)]
-    public float formationMeleeHitImpulseMagnitude = 3.0f; // Baseline successful-hit impulse before receiver body mass is applied.
+    [Tooltip("Enables physical movement feedback on successful melee damage.")]
+    public bool formationMeleeHitImpulseEnabled = true;
 
+    [Tooltip("Baseline successful-hit impulse magnitude before receiver body mass is applied.")]
     [Min(0f)]
-    public float formationMeleeHitImpulseDuration = 0.15f; // Short decay gives a visible strike response without sustained sliding.
+    public float formationMeleeHitImpulseMagnitude = 3.0f;
+
+    [Tooltip("Impulse decay duration for successful melee hits. Short values produce a visible strike response without sustained sliding.")]
+    [Min(0f)]
+    public float formationMeleeHitImpulseDuration = 0.15f;
+
 
     [Header("Attacker Combat Lock")]
-    public bool formationAttackerCombatLockEnabled = true; // Enables temporary movement lock for active melee attackers after a move/withdraw order.
 
-    [Min(0f)]
-    public float formationAttackerCombatLockTimeMin = 0.75f; // Shortest time an active melee attacker stays committed after the squad receives a move order.
+    [Tooltip("Enables temporary movement lock for active melee attackers after a move or withdraw order.")]
+    public bool formationAttackerCombatLockEnabled = true;
 
+    [Tooltip("Shortest time an active melee attacker stays committed after the squad receives a move order.")]
     [Min(0f)]
-    public float formationAttackerCombatLockTimeMax = 1.75f; // Longest time an active melee attacker stays committed after the squad receives a move order.
+    public float formationAttackerCombatLockTimeMin = 0.75f;
+
+    [Tooltip("Longest time an active melee attacker stays committed after the squad receives a move order.")]
+    [Min(0f)]
+    public float formationAttackerCombatLockTimeMax = 1.75f;
+
 
     [Header("Reserve Behind-Friendly Reposition")]
-    public bool formationReserveBehindFriendlyRepositionEnabled = true; // Enables blocked reserves to move into an open pocket behind a better-positioned friendly.
 
+    [Tooltip("Enables blocked reserves to move into an open pocket behind a better-positioned friendly.")]
+    public bool formationReserveBehindFriendlyRepositionEnabled = true;
+
+    [Tooltip("Cooldown between behind-friendly reposition searches for each reserve soldier.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlySearchInterval = 3.5f; // Cooldown between behind-friendly reposition searches for each reserve soldier.
+    public float formationReserveBehindFriendlySearchInterval = 3.5f;
 
+    [Tooltip("Maximum distance for finding friendly anchors that the reserve can queue behind.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyAnchorSearchRadius = 5.5f; // Max distance for finding friendly anchors that the reserve can queue behind.
+    public float formationReserveBehindFriendlyAnchorSearchRadius = 5.5f;
 
+    [Tooltip("Distance behind the chosen friendly anchor where the reserve tries to move.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyBackOffset = 1.45f; // Distance behind the chosen friendly anchor where the reserve tries to move.
+    public float formationReserveBehindFriendlyBackOffset = 1.45f;
 
+    [Tooltip("Optional left/right offset from the behind point when side probes are enabled.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlySideOffset = 0f; // 0.65f; // Optional left/right offset from the behind point if side probes are enabled.
+    public float formationReserveBehindFriendlySideOffset = 0f;
 
+    [Tooltip("Maximum distance allowed when projecting a candidate behind-friendly pocket onto the NavMesh.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyNavMeshProjectionRadius = 1.15f; // Max distance allowed when projecting the candidate pocket onto the NavMesh.
+    public float formationReserveBehindFriendlyNavMeshProjectionRadius = 1.15f;
 
+    [Tooltip("Radius used to reject candidate pockets already occupied by a living soldier.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyOccupancyRadius = 1.15f; // Radius used to reject candidate pockets already occupied by a living soldier.
+    public float formationReserveBehindFriendlyOccupancyRadius = 1.15f;
 
+    [Tooltip("Radius used to count nearby bodies around a candidate pocket.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyCrowdRadius = 1.65f; // Radius used to count nearby bodies around a candidate pocket.
+    public float formationReserveBehindFriendlyCrowdRadius = 1.65f;
 
+    [Tooltip("Maximum number of nearby living bodies allowed before a candidate pocket is considered crowded.")]
     [Min(0)]
-    public int formationReserveBehindFriendlyMaxNearbyBodies = 1; // Maximum nearby living bodies allowed before a candidate pocket is considered crowded.
+    public int formationReserveBehindFriendlyMaxNearbyBodies = 1;
 
+    [Tooltip("Distance from the target pocket at which the reserve considers the reposition complete.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyReachDistance = 0.18f; // Distance from the pocket at which the reserve considers the reposition complete.
+    public float formationReserveBehindFriendlyReachDistance = 0.18f;
 
+    [Tooltip("Maximum distance a reserve is allowed to travel for a behind-friendly reposition.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyMaxMoveDistance = 10.0f; // Maximum distance a reserve is allowed to travel for this behind-friendly reposition.
+    public float formationReserveBehindFriendlyMaxMoveDistance = 10.0f;
 
+    [Tooltip("Required amount the friendly anchor must be closer to the target than the reserve.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyMinAnchorForwardGain = 0.85f; // Required amount the friendly anchor must be closer to the target than the reserve.
+    public float formationReserveBehindFriendlyMinAnchorForwardGain = 0.85f;
 
+    [Tooltip("Required amount the candidate point must move the reserve closer to its target.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyMinTargetProgress = 0.05f; // Required amount the candidate point must move the reserve closer to its target.
+    public float formationReserveBehindFriendlyMinTargetProgress = 0.05f;
 
+    [Tooltip("Movement speed multiplier used while moving to a behind-friendly pocket.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlySpeedMultiplier = 0.60f; // Movement speed multiplier used while moving to a behind-friendly pocket.
+    public float formationReserveBehindFriendlySpeedMultiplier = 0.60f;
 
+    [Tooltip("Score penalty applied per nearby body when ranking behind-friendly candidate pockets.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyCrowdScoreWeight = 1.25f; // Score penalty per nearby body when ranking behind-friendly candidate pockets.
+    public float formationReserveBehindFriendlyCrowdScoreWeight = 1.25f;
 
+    [Tooltip("Score bonus for candidate pockets that make better progress toward the target.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyProgressScoreWeight = 0.75f; // Score bonus for candidate pockets that make better progress toward the target.
+    public float formationReserveBehindFriendlyProgressScoreWeight = 0.75f;
 
     void OnValidate()
     {

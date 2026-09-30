@@ -35,11 +35,11 @@ public class SquadController : MonoBehaviour,
 {
     #region Fields
 
-    [Header("Data")]
-    [SerializeField] private SquadData squadData;
+    //[Header("Data")]
+    private SquadData squadData; // NOTE: assigned with SpawnFactory
 
-    [Header("Debug / Scene Setup")]
-    [SerializeField] private bool initializeOnStart = true;
+    //[Header("Debug / Scene Setup")]
+    private bool initializeOnStart = false; // DEBUG: Only use when directly assigning SquadData WITHOUT SpawnFactory
 
     private bool isInitialized = false;
     private bool isSelected = false;

@@ -145,6 +145,7 @@ public class SoldierMotor : MonoBehaviour
     public bool HasPath => agent != null && (agent.hasPath || HasManualMovementVelocity);
     private float impulseResistance = 0f;
 
+    public float BaseMoveSpeed => baseMoveSpeed;
     public float BodyMass => Mathf.Max(0.01f, bodyMass);
     public Vector3 ExternalPushVelocity => externalPushVelocity;
     public bool IsBeingPushed => externalPushTimeRemaining > 0f &&

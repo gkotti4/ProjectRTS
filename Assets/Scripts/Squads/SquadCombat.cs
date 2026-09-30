@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -295,16 +296,19 @@ public class SquadCombat : MonoBehaviour
 
         ClearFormationRuntimeState(clearAttackTimers: false);
 
-        if (IsCloseEnoughToStartEngagement(targetSquad))
-        {
-            BeginEngagement(notifyTarget: true);
-            return;
-        }
-
+        // Ordered melee attacks must get first chance to enter the charge state.
+        // Normal engagement range can overlap the authored charge-start range, so
+        // checking engagement first would bypass Charging and go straight to InCombat.
         if (ShouldUseFormationCharge() &&
             IsCloseEnoughToStartFormationCharge(targetSquad))
         {
             BeginFormationCharge();
+            return;
+        }
+
+        if (IsCloseEnoughToStartEngagement(targetSquad))
+        {
+            BeginEngagement(notifyTarget: true);
             return;
         }
 
@@ -402,6 +406,41 @@ public class SquadCombat : MonoBehaviour
             return;
 
         movement.TickFormationFollow();
+        
+        // // DEBUG: Charging
+        // bool shouldCharge = ShouldUseFormationCharge();
+        // bool closeEnoughToCharge = IsCloseEnoughToStartFormationCharge(targetSquad);
+        //
+        // Debug.Log(
+        //     $"{name} CHARGE CHECK | " +
+        //     $"State={squad.State} | " +
+        //     $"ShouldCharge={shouldCharge} | " +
+        //     $"CloseEnough={closeEnoughToCharge} | " +
+        //     $"ProfileEnabled={squadCombatProfile.formationChargeEnabled} | " +
+        //     $"RuntimeEnabled={formationChargeEnabled} | " +
+        //     $"Engagement={currentEngagementType} | " +
+        //     $"Stance={squad.Stance} | " +
+        //     $"CombatStyle={currentCombatStyle} | " +
+        //     $"Target={(targetSquad != null ? targetSquad.name : "NULL")}"
+        // );
+        //
+        // if (shouldCharge && closeEnoughToCharge)
+        // {
+        //     Debug.Log($"{name} >>> ENTERING CHARGE");
+        //     BeginFormationCharge();
+        //     return;
+        // }
+        // // DEBUG: Charging [end]
+
+        // Ordered melee attacks must get first chance to transition into Charging.
+        // The charge-start range is allowed to overlap (or exceed) normal engagement
+        // range, so evaluating normal engagement first can make Charging unreachable.
+        if (ShouldUseFormationCharge() &&
+            IsCloseEnoughToStartFormationCharge(targetSquad))
+        {
+            BeginFormationCharge();
+            return;
+        }
 
         if (IsCloseEnoughToStartEngagement(targetSquad))
         {
@@ -409,13 +448,6 @@ public class SquadCombat : MonoBehaviour
                 return;
 
             BeginEngagement(notifyTarget: true);
-            return;
-        }
-
-        if (ShouldUseFormationCharge() &&
-            IsCloseEnoughToStartFormationCharge(targetSquad))
-        {
-            BeginFormationCharge();
             return;
         }
 
@@ -2671,7 +2703,7 @@ public class SquadCombat : MonoBehaviour
                formationChargeEnabled &&
                currentEngagementType == SquadEngagementReason.OrderedAttack &&
                squad != null &&
-               squad.Stance != SquadStance.Hold &&
+               //squad.Stance != SquadStance.Hold && // REFACTOR: Charge should be allowed for any-stance as long as it was an ordered attack.
                !IsRangedCombatStyle();
     }
 
@@ -4063,3 +4095,5 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
+
+

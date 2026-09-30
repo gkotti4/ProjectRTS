@@ -371,6 +371,8 @@ public class SoldierAnimator : MonoBehaviour
             ResolveLocomotionBlendValue(),
             locomotionBlendDampTime,
             Time.deltaTime);
+        
+        Debug.Log(ResolveLocomotionBlendValue());
     }
 
     float ResolveLocomotionBlendValue()
