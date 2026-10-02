@@ -596,6 +596,10 @@ public class SquadController : MonoBehaviour,
         if (State == SquadState.InCombat)
             Movement.SyncRootToLivingSoldierCenter();
 
+        // A normal move order must win over passive auto-targeting. SquadCombat keeps
+        // auto-scan suppressed through the move/reform and briefly after reaching Idle.
+        Combat.BeginMoveOrderAutoTargetSuppression();
+
         if (State == SquadState.InCombat)
             Combat.BeginCombatLockedMoveOrder();
         else

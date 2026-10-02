@@ -65,6 +65,14 @@ public class SquadCombat : MonoBehaviour
     // Runtime Timers
     // -----------------------------------------------------------------------------
     private float scanTimer = 0f;
+
+    // A normal move order temporarily owns the squad over passive auto-targeting.
+    // The grace timer is intentionally consumed only after the squad reaches Idle,
+    // so long movement orders do not lose their disengage window while traveling.
+    private const float autoTargetMoveOrderGraceDuration = 0.50f;
+    private bool autoTargetMoveOrderSuppressed = false;
+    private float autoTargetMoveOrderGraceTimer = 0f;
+
     private float approachRefreshTimer = 0f;
     private float approachEngagementSettleTimer = 0f;
     private float formationRangedInitialFireSettleTimer = 0f;
@@ -293,6 +301,9 @@ public class SquadCombat : MonoBehaviour
     /// Receives a direct ordered attack against a specific squad.
     public void OrderAttack(SquadController target)
     {
+        // An explicit attack order supersedes any temporary suppression created by
+        // a previous move order. Passive scans still respect that suppression.
+        ClearMoveOrderAutoTargetSuppression();
         OrderAttack(target, SquadEngagementReason.OrderedAttack);
     }
 
@@ -1084,6 +1095,48 @@ public class SquadCombat : MonoBehaviour
             return;
 
         formationActiveAttackerCombatLockTargets.Remove(soldier);
+    }
+
+    /// <summary>
+    /// Gives an explicit normal move order temporary priority over passive auto-target
+    /// scanning. Suppression lasts for the entire move/reform and then for a short
+    /// grace period after the squad reaches Idle.
+    /// </summary>
+    public void BeginMoveOrderAutoTargetSuppression()
+    {
+        autoTargetMoveOrderSuppressed = true;
+        autoTargetMoveOrderGraceTimer = autoTargetMoveOrderGraceDuration;
+    }
+
+    void ClearMoveOrderAutoTargetSuppression()
+    {
+        autoTargetMoveOrderSuppressed = false;
+        autoTargetMoveOrderGraceTimer = 0f;
+    }
+
+    bool IsMoveOrderAutoTargetSuppressed()
+    {
+        if (!autoTargetMoveOrderSuppressed)
+            return false;
+
+        if (squad == null)
+        {
+            ClearMoveOrderAutoTargetSuppression();
+            return false;
+        }
+
+        // TickIdleScan also runs while Reforming. Keep the suppression fully active
+        // until the move/reform pipeline has actually settled back to Idle.
+        if (squad.State != SquadState.Idle)
+            return true;
+
+        autoTargetMoveOrderGraceTimer -= Time.deltaTime;
+
+        if (autoTargetMoveOrderGraceTimer > 0f)
+            return true;
+
+        ClearMoveOrderAutoTargetSuppression();
+        return false;
     }
 
     public void BeginCombatLockedMoveOrder()
@@ -3462,6 +3515,9 @@ public class SquadCombat : MonoBehaviour
             return false;
 
         if (squad == null || roster == null || !roster.HasLivingSoldiers)
+            return false;
+
+        if (IsMoveOrderAutoTargetSuppressed())
             return false;
 
         return true;
