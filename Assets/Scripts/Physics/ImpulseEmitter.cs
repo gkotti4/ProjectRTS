@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -145,7 +144,8 @@ public static class ImpulseEmitter
         float minimumFalloff = 0.35f,
         LayerMask layerMask = default,
         ISet<SoldierController> excludedTargets = null,
-        ISet<SoldierController> affectedTargets = null)
+        ISet<SoldierController> affectedTargets = null,
+        ISet<SoldierController> contactedTargets = null)
     {
         capsuleRadius = Mathf.Max(0.01f, capsuleRadius);
         impulseMagnitude = Mathf.Max(0f, impulseMagnitude);
@@ -155,7 +155,7 @@ public static class ImpulseEmitter
 
         forwardDirection = NormalizeFlat(forwardDirection);
 
-        if (impulseMagnitude <= 0f || forwardDirection == Vector3.zero)
+        if (forwardDirection == Vector3.zero)
             return 0;
 
         int resolvedLayerMask = ResolveLayerMask(layerMask);
@@ -190,6 +190,11 @@ public static class ImpulseEmitter
             {
                 continue;
             }
+
+            // Optional passive contact collection happens before exclusion so callers
+            // can observe a physical overlap without changing whether this emitter
+            // actually applies another impulse to the target.
+            contactedTargets?.Add(targetSoldier);
 
             if (excludedTargets != null &&
                 excludedTargets.Contains(targetSoldier))
@@ -229,12 +234,15 @@ public static class ImpulseEmitter
                 minimumFalloff,
                 normalizedDistance);
 
-            targetSoldier.Motor.ApplyExternalImpulse(
-                resolvedDirection,
-                impulseMagnitude * distanceStrength,
-                duration);
+            if (impulseMagnitude > 0f)
+            {
+                targetSoldier.Motor.ApplyExternalImpulse(
+                    resolvedDirection,
+                    impulseMagnitude * distanceStrength,
+                    duration);
 
-            affectedTargets?.Add(targetSoldier);
+                affectedTargets?.Add(targetSoldier);
+            }
         }
 
         return impulseUniqueTargets.Count;
@@ -332,5 +340,3 @@ public static class ImpulseEmitter
         return position;
     }
 }
-
-

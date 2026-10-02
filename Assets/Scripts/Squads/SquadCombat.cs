@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -78,7 +77,26 @@ public class SquadCombat : MonoBehaviour
     private bool formationChargeEnabled = true;
     private bool formationChargeContactReached = false;
     private float formationChargeTimer = 0f;
-    private float formationChargeFollowThroughTimer = 0f;
+
+    private Vector3 formationChargeLockedDirection = Vector3.forward;
+    private Vector3 formationChargeFollowThroughStartCenter = Vector3.zero;
+    private Vector3 formationChargeFollowThroughDestination = Vector3.zero;
+
+    private sealed class FormationChargeSoldierRuntime
+    {
+        public float penetrationRemaining = 0f;
+        public bool spent = false;
+
+        public readonly HashSet<SoldierController> impactedEnemies =
+            new HashSet<SoldierController>();
+    }
+
+    private readonly Dictionary<SoldierController, FormationChargeSoldierRuntime>
+        formationChargeSoldierRuntime =
+            new Dictionary<SoldierController, FormationChargeSoldierRuntime>();
+
+    private readonly HashSet<SoldierController> formationChargeCurrentContacts =
+        new HashSet<SoldierController>();
 
     private readonly HashSet<SoldierController> formationChargeImpactedTargets =
         new HashSet<SoldierController>();
@@ -353,7 +371,11 @@ public class SquadCombat : MonoBehaviour
         formationRangedSetupInitialized = false;
         formationChargeContactReached = false;
         formationChargeTimer = 0f;
-        formationChargeFollowThroughTimer = 0f;
+        formationChargeLockedDirection = Vector3.forward;
+        formationChargeFollowThroughStartCenter = Vector3.zero;
+        formationChargeFollowThroughDestination = Vector3.zero;
+        formationChargeSoldierRuntime.Clear();
+        formationChargeCurrentContacts.Clear();
         formationChargeImpactedTargets.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
@@ -406,31 +428,6 @@ public class SquadCombat : MonoBehaviour
             return;
 
         movement.TickFormationFollow();
-        
-        // // DEBUG: Charging
-        // bool shouldCharge = ShouldUseFormationCharge();
-        // bool closeEnoughToCharge = IsCloseEnoughToStartFormationCharge(targetSquad);
-        //
-        // Debug.Log(
-        //     $"{name} CHARGE CHECK | " +
-        //     $"State={squad.State} | " +
-        //     $"ShouldCharge={shouldCharge} | " +
-        //     $"CloseEnough={closeEnoughToCharge} | " +
-        //     $"ProfileEnabled={squadCombatProfile.formationChargeEnabled} | " +
-        //     $"RuntimeEnabled={formationChargeEnabled} | " +
-        //     $"Engagement={currentEngagementType} | " +
-        //     $"Stance={squad.Stance} | " +
-        //     $"CombatStyle={currentCombatStyle} | " +
-        //     $"Target={(targetSquad != null ? targetSquad.name : "NULL")}"
-        // );
-        //
-        // if (shouldCharge && closeEnoughToCharge)
-        // {
-        //     Debug.Log($"{name} >>> ENTERING CHARGE");
-        //     BeginFormationCharge();
-        //     return;
-        // }
-        // // DEBUG: Charging [end]
 
         // Ordered melee attacks must get first chance to transition into Charging.
         // The charge-start range is allowed to overlap (or exceed) normal engagement
@@ -460,8 +457,10 @@ public class SquadCombat : MonoBehaviour
     /// Charge is intentionally different from normal approach:
     /// - only an OrderedAttack may enter this state
     /// - reaching first contact does not immediately stop the formation
-    /// - after contact, the formation keeps driving through the target for a short
-    ///   authored follow-through window before normal melee takes ownership
+    /// - meaningful contact locks the charge direction so the formation cannot
+    ///   boomerang back toward a target it has already passed
+    /// - per-soldier penetration and hard distance/time caps decide when normal
+    ///   melee takes ownership
     public void TickCharging()
     {
         if (!HasCombatProfile())
@@ -495,9 +494,7 @@ public class SquadCombat : MonoBehaviour
             HasFormationChargeReachedContactRatio(targetSquad))
         {
             formationChargeContactReached = true;
-            formationChargeFollowThroughTimer = Mathf.Max(
-                0f,
-                squadCombatProfile.formationChargeFollowThroughDuration);
+            LockFormationChargeFollowThrough();
 
             // Charge shock is a one-time morale event at meaningful formation contact.
             // The target's SquadMorale owns routing/shattered consequences.
@@ -509,17 +506,18 @@ public class SquadCombat : MonoBehaviour
                     squadCombatProfile.formationChargeMoraleShock);
             }
 
-            // Refresh immediately so the charge destination moves through the enemy
-            // formation instead of retaining the old normal approach stop point.
+            // Once meaningful contact happens, target-relative steering ends. The
+            // charge follows its locked entry vector so passing the enemy center can
+            // never reverse the formation back toward the original target.
             approachRefreshTimer = 0f;
-            MoveTowardCombatTarget(chargeThroughTarget: true);
+            MoveAlongFormationChargeFollowThrough();
         }
 
         if (formationChargeContactReached)
         {
-            formationChargeFollowThroughTimer -= Time.deltaTime;
-
-            if (formationChargeFollowThroughTimer <= 0f)
+            if (HasFormationChargeExhausted() ||
+                HasFormationChargeReachedMaximumFollowThroughDistance() ||
+                formationChargeTimer <= 0f)
             {
                 BeginEngagement(notifyTarget: true);
                 return;
@@ -529,8 +527,7 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
-        // Safety cap for a charge that never achieves valid contact. Once contact
-        // has happened, follow-through owns the transition into normal melee.
+        // Safety cap for a charge that never achieves valid contact.
         if (formationChargeTimer <= 0f)
         {
             BeginEngagement(notifyTarget: true);
@@ -550,6 +547,14 @@ public class SquadCombat : MonoBehaviour
         approachRefreshTimer = Mathf.Max(
             0.01f,
             squadCombatProfile.combatApproachRefreshInterval);
+
+        if (squad != null &&
+            squad.State == SquadState.Charging &&
+            formationChargeContactReached)
+        {
+            MoveAlongFormationChargeFollowThrough();
+            return;
+        }
 
         MoveTowardCombatTarget(
             chargeThroughTarget: squad != null && squad.State == SquadState.Charging);
@@ -1097,7 +1102,11 @@ public class SquadCombat : MonoBehaviour
         approachEngagementSettleTimer = 0f;
         formationChargeContactReached = false;
         formationChargeTimer = 0f;
-        formationChargeFollowThroughTimer = 0f;
+        formationChargeLockedDirection = Vector3.forward;
+        formationChargeFollowThroughStartCenter = Vector3.zero;
+        formationChargeFollowThroughDestination = Vector3.zero;
+        formationChargeSoldierRuntime.Clear();
+        formationChargeCurrentContacts.Clear();
 
         ClearFormationRuntimeState(
             clearAttackTimers: false,
@@ -2703,7 +2712,6 @@ public class SquadCombat : MonoBehaviour
                formationChargeEnabled &&
                currentEngagementType == SquadEngagementReason.OrderedAttack &&
                squad != null &&
-               //squad.Stance != SquadStance.Hold && // REFACTOR: Charge should be allowed for any-stance as long as it was an ordered attack.
                !IsRangedCombatStyle();
     }
 
@@ -2740,19 +2748,205 @@ public class SquadCombat : MonoBehaviour
         approachEngagementSettleTimer = 0f;
         approachRefreshTimer = 0f;
         formationChargeImpactedTargets.Clear();
+        formationChargeCurrentContacts.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
         formationChargeAttackStartedSoldiers.Clear();
+        formationChargeSoldierRuntime.Clear();
         formationChargeContactReached = false;
-        formationChargeFollowThroughTimer = 0f;
+        formationChargeLockedDirection = Vector3.forward;
+        formationChargeFollowThroughStartCenter = Vector3.zero;
+        formationChargeFollowThroughDestination = Vector3.zero;
         formationChargeTimer = Mathf.Max(
             0.01f,
             squadCombatProfile.formationChargeMaximumDuration);
+
+        InitializeFormationChargeSoldierRuntime();
 
         if (squad != null)
             squad.SetState(SquadState.Charging);
 
         MoveTowardCombatTarget(chargeThroughTarget: true);
+    }
+
+    void InitializeFormationChargeSoldierRuntime()
+    {
+        if (roster == null)
+            return;
+
+        float penetrationMultiplier = Mathf.Max(
+            0f,
+            squadCombatProfile.formationChargePenetrationMultiplier);
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null ||
+                !soldier.IsAlive ||
+                soldier.Motor == null ||
+                IsRangedWeapon(GetWeaponProfile(soldier)))
+            {
+                continue;
+            }
+
+            float initialPenetration =
+                soldier.Motor.BodyMass * penetrationMultiplier;
+
+            formationChargeSoldierRuntime[soldier] =
+                new FormationChargeSoldierRuntime
+                {
+                    penetrationRemaining = Mathf.Max(0f, initialPenetration),
+                    spent = initialPenetration <= 0f
+                };
+        }
+    }
+
+    bool IsFormationChargeSoldierSpent(SoldierController soldier)
+    {
+        return soldier != null &&
+               formationChargeSoldierRuntime.TryGetValue(
+                   soldier,
+                   out FormationChargeSoldierRuntime runtime) &&
+               runtime.spent;
+    }
+
+    void LockFormationChargeFollowThrough()
+    {
+        Vector3 direction = Vector3.zero;
+
+        if (roster != null)
+        {
+            foreach (SoldierController soldier in roster.Soldiers)
+            {
+                if (soldier == null ||
+                    !soldier.IsAlive ||
+                    soldier.Motor == null ||
+                    IsRangedWeapon(GetWeaponProfile(soldier)))
+                {
+                    continue;
+                }
+
+                Vector3 velocity = soldier.Motor.Velocity;
+                velocity.y = 0f;
+
+                if (velocity.sqrMagnitude > 0.0001f)
+                    direction += velocity.normalized;
+            }
+        }
+
+        if (direction.sqrMagnitude <= 0.0001f && movement != null)
+            direction = movement.DesiredFacing;
+
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+            direction = combatContactDirection;
+
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+            direction = transform.forward;
+
+        formationChargeLockedDirection = direction.normalized;
+
+        formationChargeFollowThroughStartCenter =
+            TryGetLivingSoldierCenter(roster, out Vector3 resolvedCenter)
+                ? resolvedCenter
+                : transform.position;
+
+        formationChargeFollowThroughDestination =
+            formationChargeFollowThroughStartCenter +
+            formationChargeLockedDirection *
+            Mathf.Max(
+                0f,
+                squadCombatProfile.formationChargeFollowThroughMaximumDistance);
+    }
+
+    void MoveAlongFormationChargeFollowThrough()
+    {
+        if (movement == null)
+            return;
+
+        movement.OrderMove(
+            formationChargeFollowThroughDestination,
+            formationChargeLockedDirection);
+    }
+
+    bool HasFormationChargeReachedMaximumFollowThroughDistance()
+    {
+        float maximumDistance = Mathf.Max(
+            0f,
+            squadCombatProfile.formationChargeFollowThroughMaximumDistance);
+
+        if (maximumDistance <= 0f)
+            return true;
+
+        Vector3 currentCenter =
+            TryGetLivingSoldierCenter(roster, out Vector3 resolvedCenter)
+                ? resolvedCenter
+                : transform.position;
+
+        Vector3 travel = currentCenter - formationChargeFollowThroughStartCenter;
+        travel.y = 0f;
+
+        float forwardDistance = Vector3.Dot(
+            travel,
+            formationChargeLockedDirection);
+
+        return forwardDistance >= maximumDistance;
+    }
+
+    bool HasFormationChargeExhausted()
+    {
+        int activeChargers = 0;
+        int spentChargers = 0;
+
+        foreach (KeyValuePair<SoldierController, FormationChargeSoldierRuntime> pair
+                 in formationChargeSoldierRuntime)
+        {
+            SoldierController soldier = pair.Key;
+
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            activeChargers++;
+
+            if (pair.Value.spent)
+                spentChargers++;
+        }
+
+        if (activeChargers <= 0)
+            return true;
+
+        float spentRatio = spentChargers / (float)activeChargers;
+
+        return spentRatio >= Mathf.Clamp01(
+            squadCombatProfile.formationChargeEndSpentRatio);
+    }
+
+    void RegisterFormationChargeContact(
+        SoldierController charger,
+        SoldierController enemy)
+    {
+        if (charger == null || enemy == null || enemy.Motor == null)
+            return;
+
+        if (!formationChargeSoldierRuntime.TryGetValue(
+                charger,
+                out FormationChargeSoldierRuntime runtime))
+        {
+            return;
+        }
+
+        if (runtime.spent || !runtime.impactedEnemies.Add(enemy))
+            return;
+
+        runtime.penetrationRemaining -= enemy.Motor.BodyMass;
+
+        if (runtime.penetrationRemaining <= 0f)
+        {
+            runtime.penetrationRemaining = 0f;
+            runtime.spent = true;
+        }
     }
 
     void RefreshFormationChargeLeadSoldiers()
@@ -2773,8 +2967,11 @@ public class SquadCombat : MonoBehaviour
             if (soldier == null || !soldier.IsAlive)
                 continue;
 
-            if (IsRangedWeapon(GetWeaponProfile(soldier)))
+            if (IsRangedWeapon(GetWeaponProfile(soldier)) ||
+                IsFormationChargeSoldierSpent(soldier))
+            {
                 continue;
+            }
 
             formationChargeLeadCandidates.Add(soldier);
         }
@@ -2845,6 +3042,7 @@ public class SquadCombat : MonoBehaviour
             if (attacker == null ||
                 !attacker.IsAlive ||
                 attacker.IsActionLocked ||
+                IsFormationChargeSoldierSpent(attacker) ||
                 formationChargeAttackStartedSoldiers.Contains(attacker))
             {
                 continue;
@@ -2929,22 +3127,25 @@ public class SquadCombat : MonoBehaviour
 
     void TickFormationChargeImpulseEmitters()
     {
-        if (!squadCombatProfile.formationChargeImpulseEnabled ||
-            roster == null ||
-            targetSquad == null)
-        {
+        if (roster == null || targetSquad == null)
             return;
-        }
+
+        bool applyImpulse = squadCombatProfile.formationChargeImpulseEnabled;
 
         foreach (SoldierController soldier in roster.Soldiers)
         {
             if (soldier == null || !soldier.IsAlive || soldier.Motor == null)
                 continue;
 
-            if (IsRangedWeapon(GetWeaponProfile(soldier)))
+            if (IsRangedWeapon(GetWeaponProfile(soldier)) ||
+                IsFormationChargeSoldierSpent(soldier))
+            {
                 continue;
+            }
 
-            Vector3 chargeDirection = soldier.Motor.Velocity;
+            Vector3 chargeDirection = formationChargeContactReached
+                ? formationChargeLockedDirection
+                : soldier.Motor.Velocity;
             chargeDirection.y = 0f;
 
             if (chargeDirection.sqrMagnitude <= 0.0001f)
@@ -2965,19 +3166,31 @@ public class SquadCombat : MonoBehaviour
                 capsuleStart +
                 chargeDirection * squadCombatProfile.formationChargeImpulseForwardDistance;
 
+            formationChargeCurrentContacts.Clear();
+
             ImpulseEmitter.EmitDirectionalCapsule(
                 capsuleStart,
                 capsuleEnd,
                 squadCombatProfile.formationChargeImpulseRadius,
                 chargeDirection,
-                squadCombatProfile.formationChargeImpulseMagnitude,
+                applyImpulse
+                    ? squadCombatProfile.formationChargeImpulseMagnitude
+                    : 0f,
                 squadCombatProfile.formationChargeImpulseDuration,
                 sourceSoldier: soldier,
                 affectFriendlies: false,
                 radialBlend: squadCombatProfile.formationChargeImpulseRadialBlend,
                 minimumFalloff: 0.65f,
-                excludedTargets: formationChargeImpactedTargets,
-                affectedTargets: formationChargeImpactedTargets);
+                excludedTargets: applyImpulse
+                    ? formationChargeImpactedTargets
+                    : null,
+                affectedTargets: applyImpulse
+                    ? formationChargeImpactedTargets
+                    : null,
+                contactedTargets: formationChargeCurrentContacts);
+
+            foreach (SoldierController contactedEnemy in formationChargeCurrentContacts)
+                RegisterFormationChargeContact(soldier, contactedEnemy);
         }
     }
 
@@ -3104,7 +3317,7 @@ public class SquadCombat : MonoBehaviour
                 targetCenter +
                 facing * Mathf.Max(
                     0f,
-                    squadCombatProfile.formationChargeFollowThroughDistance);
+                    squadCombatProfile.formationChargeFollowThroughMaximumDistance);
         }
         else
         {
@@ -4095,5 +4308,3 @@ public class SquadCombat : MonoBehaviour
 
     #endregion
 }
-
-

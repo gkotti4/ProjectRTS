@@ -237,7 +237,7 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Master capability toggle for the ordered melee charge phase.")]
     public bool formationChargeEnabled = true;
 
-    [Tooltip("Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack and is suppressed by Hold stance.")]
+    [Tooltip("Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack.")]
     public bool formationChargeEnabledByDefault = true;
 
     [Tooltip("Closest living-soldier distance that allows a melee squad to begin charging.")]
@@ -256,13 +256,18 @@ public class SquadCombatProfile : ScriptableObject
     [Min(0f)]
     public float formationChargeContactReadyRatio = 0.15f;
 
-    [Tooltip("Time the formation keeps driving after first meaningful contact before normal melee takes ownership.")]
+    [Tooltip("Multiplier applied to each charging soldier's BodyStats mass to create its per-charge penetration budget. Enemy body mass consumes this budget once per unique charger/enemy contact.")]
     [Min(0f)]
-    public float formationChargeFollowThroughDuration = 0.65f;
+    public float formationChargePenetrationMultiplier = 1.0f;
 
-    [Tooltip("Temporary distance beyond the enemy center used as the charge destination so attackers continue through initial contact.")]
+    [Tooltip("Fraction of living charging soldiers that must exhaust their penetration before the squad leaves the charge and enters normal melee.")]
+    [Range(0f, 1f)]
+    public float formationChargeEndSpentRatio = 0.65f;
+
+    [FormerlySerializedAs("formationChargeFollowThroughDistance")]
+    [Tooltip("Maximum forward distance the formation may travel after meaningful contact. The post-contact direction is locked, so this is a hard penetration ceiling rather than a target-relative destination.")]
     [Min(0f)]
-    public float formationChargeFollowThroughDistance = 1.75f;
+    public float formationChargeFollowThroughMaximumDistance = 1.75f;
 
     [Tooltip("One-time morale loss applied to the ordered target squad when meaningful charge contact is first reached.")]
     [Min(0f)]
@@ -454,8 +459,9 @@ public class SquadCombatProfile : ScriptableObject
         formationChargeSpeedMultiplier = Mathf.Max(0f, formationChargeSpeedMultiplier);
         formationChargeMaximumDuration = Mathf.Max(0f, formationChargeMaximumDuration);
         formationChargeContactReadyRatio = Mathf.Clamp01(formationChargeContactReadyRatio);
-        formationChargeFollowThroughDuration = Mathf.Max(0f, formationChargeFollowThroughDuration);
-        formationChargeFollowThroughDistance = Mathf.Max(0f, formationChargeFollowThroughDistance);
+        formationChargePenetrationMultiplier = Mathf.Max(0f, formationChargePenetrationMultiplier);
+        formationChargeEndSpentRatio = Mathf.Clamp01(formationChargeEndSpentRatio);
+        formationChargeFollowThroughMaximumDistance = Mathf.Max(0f, formationChargeFollowThroughMaximumDistance);
         formationChargeMoraleShock = Mathf.Max(0f, formationChargeMoraleShock);
         formationChargeImpulseMagnitude = Mathf.Max(0f, formationChargeImpulseMagnitude);
         formationChargeImpulseDuration = Mathf.Max(0f, formationChargeImpulseDuration);
