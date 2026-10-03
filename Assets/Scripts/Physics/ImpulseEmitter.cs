@@ -50,7 +50,10 @@ public static class ImpulseEmitter
         float minimumFalloff = 0.15f,
         LayerMask layerMask = default,
         ISet<SoldierController> excludedTargets = null,
-        ISet<SoldierController> affectedTargets = null)
+        ISet<SoldierController> affectedTargets = null,
+        float visualLaunchHeight = 0f,
+        float visualLaunchDuration = 0.65f,
+        float visualLaunchRotationDegrees = 55f)
     {
         radius = Mathf.Max(0.01f, radius);
         impulseMagnitude = Mathf.Max(0f, impulseMagnitude);
@@ -115,6 +118,19 @@ public static class ImpulseEmitter
                 radialDirection,
                 impulseMagnitude * distanceStrength,
                 duration);
+
+            float resolvedLaunchHeight =
+                Mathf.Max(0f, visualLaunchHeight) * distanceStrength;
+
+            if (resolvedLaunchHeight > 0.05f &&
+                targetSoldier.ImpactPresentation != null)
+            {
+                targetSoldier.ImpactPresentation.PlayLaunch(
+                    radialDirection,
+                    resolvedLaunchHeight,
+                    visualLaunchDuration,
+                    Mathf.Max(0f, visualLaunchRotationDegrees) * distanceStrength);
+            }
 
             affectedTargets?.Add(targetSoldier);
         }

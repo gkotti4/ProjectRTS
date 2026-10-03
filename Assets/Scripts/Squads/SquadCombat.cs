@@ -67,12 +67,11 @@ public class SquadCombat : MonoBehaviour
     private float scanTimer = 0f;
 
     // A normal move order temporarily owns the squad over passive auto-targeting.
-    // The grace timer is intentionally consumed only after the squad reaches Idle,
-    // so long movement orders do not lose their disengage window while traveling.
+    // The grace timer is consumed only after the squad reaches Idle, so long move
+    // orders do not lose their disengage window while traveling or reforming.
     private const float autoTargetMoveOrderGraceDuration = 0.50f;
     private bool autoTargetMoveOrderSuppressed = false;
     private float autoTargetMoveOrderGraceTimer = 0f;
-
     private float approachRefreshTimer = 0f;
     private float approachEngagementSettleTimer = 0f;
     private float formationRangedInitialFireSettleTimer = 0f;
@@ -108,6 +107,17 @@ public class SquadCombat : MonoBehaviour
 
     private readonly HashSet<SoldierController> formationChargeImpactedTargets =
         new HashSet<SoldierController>();
+
+    // FullCharge shock damage is applied at most once per enemy soldier per charge,
+    // independently from per-rider penetration accounting.
+    private readonly HashSet<SoldierController> formationChargeShockDamagedTargets =
+        new HashSet<SoldierController>();
+
+    // A contacted enemy squad is notified once when the charge physically reaches it.
+    // This lets defenders enter combat/facing without converting their response into
+    // an OrderedAttack or counter-charge.
+    private readonly HashSet<SquadController> formationChargeNotifiedSquads =
+        new HashSet<SquadController>();
 
     private readonly HashSet<SoldierController> formationChargeLeadSoldiers =
         new HashSet<SoldierController>();
@@ -388,6 +398,8 @@ public class SquadCombat : MonoBehaviour
         formationChargeSoldierRuntime.Clear();
         formationChargeCurrentContacts.Clear();
         formationChargeImpactedTargets.Clear();
+        formationChargeShockDamagedTargets.Clear();
+        formationChargeNotifiedSquads.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
         formationChargeAttackStartedSoldiers.Clear();
@@ -465,13 +477,11 @@ public class SquadCombat : MonoBehaviour
 
     /// Ticks the ordered melee charge phase.
     ///
-    /// Charge is intentionally different from normal approach:
-    /// - only an OrderedAttack may enter this state
-    /// - reaching first contact does not immediately stop the formation
-    /// - meaningful contact locks the charge direction so the formation cannot
-    ///   boomerang back toward a target it has already passed
-    /// - per-soldier penetration and hard distance/time caps decide when normal
-    ///   melee takes ownership
+    /// Charge is intentionally different from normal approach and contains two
+    /// explicit internal behaviors:
+    /// - RunUp: lightweight final rush, opening moving attack, settle on contact
+    /// - FullCharge: momentum/shock/penetration/follow-through before normal melee
+    /// Only an OrderedAttack may enter either behavior.
     public void TickCharging()
     {
         if (!HasCombatProfile())
@@ -489,6 +499,60 @@ public class SquadCombat : MonoBehaviour
             return;
         }
 
+        switch (squadCombatProfile.formationChargeMode)
+        {
+            case FormationChargeMode.FullCharge:
+                TickFormationFullCharge();
+                break;
+
+            case FormationChargeMode.RunUp:
+            default:
+                TickFormationRunUpCharge();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Lightweight infantry-style charge. Soldiers get the authored charge movement
+    /// speed and moving opening attack, but contact immediately hands ownership to
+    /// normal melee. No penetration, charge-through, shock capsule, or follow-through.
+    /// </summary>
+    void TickFormationRunUpCharge()
+    {
+        formationChargeTimer -= Time.deltaTime;
+
+        RefreshFormationChargeLeadSoldiers();
+        TickFormationChargeAttacks();
+
+        movement.TickFormationFollow(
+            squadCombatProfile.formationChargeSpeedMultiplier,
+            formationChargeLeadSoldiers,
+            squadCombatProfile.formationChargeLeadSpeedMultiplier);
+
+        if (HasFormationChargeReachedContactRatio(targetSquad))
+        {
+            formationChargeContactReached = true;
+            ApplyFormationChargeMoraleShock();
+            BeginEngagement(notifyTarget: true);
+            return;
+        }
+
+        if (formationChargeTimer <= 0f)
+        {
+            BeginEngagement(notifyTarget: true);
+            return;
+        }
+
+        TickCombatApproachRefresh();
+    }
+
+    /// <summary>
+    /// Momentum-driven charge used by cavalry/monsters/chariots. This owns the
+    /// physical contact capsule, shock damage, penetration, locked-direction
+    /// follow-through, and spent-rider exit rules.
+    /// </summary>
+    void TickFormationFullCharge()
+    {
         formationChargeTimer -= Time.deltaTime;
 
         RefreshFormationChargeLeadSoldiers();
@@ -506,16 +570,7 @@ public class SquadCombat : MonoBehaviour
         {
             formationChargeContactReached = true;
             LockFormationChargeFollowThrough();
-
-            // Charge shock is a one-time morale event at meaningful formation contact.
-            // The target's SquadMorale owns routing/shattered consequences.
-            if (targetSquad != null &&
-                targetSquad.Morale != null &&
-                squadCombatProfile.formationChargeMoraleShock > 0f)
-            {
-                targetSquad.Morale.ApplyMoraleLoss(
-                    squadCombatProfile.formationChargeMoraleShock);
-            }
+            ApplyFormationChargeMoraleShock();
 
             // Once meaningful contact happens, target-relative steering ends. The
             // charge follows its locked entry vector so passing the enemy center can
@@ -548,6 +603,19 @@ public class SquadCombat : MonoBehaviour
         TickCombatApproachRefresh();
     }
 
+    void ApplyFormationChargeMoraleShock()
+    {
+        if (targetSquad == null ||
+            targetSquad.Morale == null ||
+            squadCombatProfile.formationChargeMoraleShock <= 0f)
+        {
+            return;
+        }
+
+        targetSquad.Morale.ApplyMoraleLoss(
+            squadCombatProfile.formationChargeMoraleShock);
+    }
+
     void TickCombatApproachRefresh()
     {
         approachRefreshTimer -= Time.deltaTime;
@@ -561,6 +629,7 @@ public class SquadCombat : MonoBehaviour
 
         if (squad != null &&
             squad.State == SquadState.Charging &&
+            squadCombatProfile.formationChargeMode == FormationChargeMode.FullCharge &&
             formationChargeContactReached)
         {
             MoveAlongFormationChargeFollowThrough();
@@ -1125,8 +1194,8 @@ public class SquadCombat : MonoBehaviour
             return false;
         }
 
-        // TickIdleScan also runs while Reforming. Keep the suppression fully active
-        // until the move/reform pipeline has actually settled back to Idle.
+        // TickIdleScan also runs while Reforming. Keep suppression fully active until
+        // the normal move/reform pipeline has genuinely settled back to Idle.
         if (squad.State != SquadState.Idle)
             return true;
 
@@ -1160,6 +1229,9 @@ public class SquadCombat : MonoBehaviour
         formationChargeFollowThroughDestination = Vector3.zero;
         formationChargeSoldierRuntime.Clear();
         formationChargeCurrentContacts.Clear();
+        formationChargeImpactedTargets.Clear();
+        formationChargeShockDamagedTargets.Clear();
+        formationChargeNotifiedSquads.Clear();
 
         ClearFormationRuntimeState(
             clearAttackTimers: false,
@@ -2785,7 +2857,16 @@ public class SquadCombat : MonoBehaviour
             GetEffectiveCombatStartRange(),
             squadCombatProfile.formationChargeStartDistance);
 
-        return distanceSqr <= chargeStartDistance * chargeStartDistance;
+        float minimumStartDistance = Mathf.Clamp(
+            squadCombatProfile.formationChargeMinimumStartDistance,
+            0f,
+            chargeStartDistance);
+
+        // Charging is a run-up window, not merely a maximum range. If the player
+        // issues an attack while already inside the minimum run-up distance, normal
+        // engagement wins instead of manufacturing a point-blank charge.
+        return distanceSqr <= chargeStartDistance * chargeStartDistance &&
+               distanceSqr >= minimumStartDistance * minimumStartDistance;
     }
 
     void BeginFormationCharge()
@@ -2801,6 +2882,8 @@ public class SquadCombat : MonoBehaviour
         approachEngagementSettleTimer = 0f;
         approachRefreshTimer = 0f;
         formationChargeImpactedTargets.Clear();
+        formationChargeShockDamagedTargets.Clear();
+        formationChargeNotifiedSquads.Clear();
         formationChargeCurrentContacts.Clear();
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
@@ -2814,7 +2897,8 @@ public class SquadCombat : MonoBehaviour
             0.01f,
             squadCombatProfile.formationChargeMaximumDuration);
 
-        InitializeFormationChargeSoldierRuntime();
+        if (squadCombatProfile.formationChargeMode == FormationChargeMode.FullCharge)
+            InitializeFormationChargeSoldierRuntime();
 
         if (squad != null)
             squad.SetState(SquadState.Charging);
@@ -2983,6 +3067,9 @@ public class SquadCombat : MonoBehaviour
         if (charger == null || enemy == null || enemy.Motor == null)
             return;
 
+        NotifySquadOfFormationChargeContact(enemy);
+        TryApplyFullChargeShockDamage(charger, enemy);
+
         if (!formationChargeSoldierRuntime.TryGetValue(
                 charger,
                 out FormationChargeSoldierRuntime runtime))
@@ -2993,13 +3080,191 @@ public class SquadCombat : MonoBehaviour
         if (runtime.spent || !runtime.impactedEnemies.Add(enemy))
             return;
 
-        runtime.penetrationRemaining -= enemy.Motor.BodyMass;
+        Vector3 chargeDirection = ResolveFormationChargeImpactDirection(charger);
+        float speedRatio = ResolveFullChargeSpeedRatio(charger, chargeDirection);
+        float minimumSpeedRatio = Mathf.Clamp01(
+            squadCombatProfile.formationFullChargeMinimumImpactSpeedRatio);
+
+        float penetrationSpeedStrength = speedRatio < minimumSpeedRatio
+            ? 0f
+            : minimumSpeedRatio >= 0.999f
+                ? 1f
+                : Mathf.InverseLerp(minimumSpeedRatio, 1f, speedRatio);
+
+        if (penetrationSpeedStrength <= 0f)
+        {
+            runtime.penetrationRemaining = 0f;
+            runtime.spent = true;
+            return;
+        }
+
+        // Lower-speed FullCharge contacts burn through the same mass budget faster;
+        // a fully built charge uses the authored mass budget at full efficiency.
+        float penetrationCost = enemy.Motor.BodyMass /
+                                Mathf.Max(0.25f, penetrationSpeedStrength);
+
+        runtime.penetrationRemaining -= penetrationCost;
 
         if (runtime.penetrationRemaining <= 0f)
         {
             runtime.penetrationRemaining = 0f;
             runtime.spent = true;
         }
+    }
+
+    void NotifySquadOfFormationChargeContact(SoldierController contactedEnemy)
+    {
+        if (contactedEnemy == null ||
+            contactedEnemy.Squad == null ||
+            contactedEnemy.Squad == squad ||
+            contactedEnemy.Squad.Combat == null)
+        {
+            return;
+        }
+
+        SquadController contactedSquad = contactedEnemy.Squad;
+
+        if (!formationChargeNotifiedSquads.Add(contactedSquad))
+            return;
+
+        // ReceiveEngagementRequest deliberately creates PassiveContact /
+        // DefensiveHold rather than OrderedAttack, so being hit by a charge never
+        // causes the defender to enter its own charge approach.
+        contactedSquad.Combat.ReceiveEngagementRequest(squad);
+    }
+
+    void TryApplyFullChargeShockDamage(
+        SoldierController charger,
+        SoldierController enemy)
+    {
+        if (squadCombatProfile.formationChargeMode != FormationChargeMode.FullCharge ||
+            charger == null ||
+            charger.Motor == null ||
+            enemy == null ||
+            enemy.Health == null ||
+            enemy.Motor == null ||
+            !enemy.IsAlive)
+        {
+            return;
+        }
+
+        Vector3 chargeDirection = ResolveFormationChargeImpactDirection(charger);
+        float impactStrength = ResolveFullChargeImpactStrength(
+            charger,
+            enemy,
+            chargeDirection);
+
+        if (impactStrength <= 0f)
+            return;
+
+        if (!formationChargeShockDamagedTargets.Add(enemy))
+            return;
+
+        int normalDamage = Mathf.RoundToInt(
+            squadCombatProfile.formationFullChargeImpactDamage *
+            impactStrength);
+
+        int armorPiercingDamage = Mathf.RoundToInt(
+            squadCombatProfile.formationFullChargeImpactArmorPiercingDamage *
+            impactStrength);
+
+        if (normalDamage <= 0 && armorPiercingDamage <= 0)
+            return;
+
+        int appliedDamage = enemy.Health.TakeDamage(
+            normalDamage,
+            armorPiercingDamage);
+
+        if (appliedDamage > 0)
+            GameEvents.CombatDamageDealt(charger, enemy, appliedDamage);
+
+        if (enemy.IsAlive)
+            enemy.TryBeginAction(SoldierActionState.HitReact);
+    }
+
+    Vector3 ResolveFormationChargeImpactDirection(SoldierController charger)
+    {
+        Vector3 direction = formationChargeContactReached
+            ? formationChargeLockedDirection
+            : charger != null && charger.Motor != null
+                ? charger.Motor.Velocity
+                : Vector3.zero;
+
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+            direction = combatContactDirection;
+
+        direction.y = 0f;
+
+        if (direction.sqrMagnitude <= 0.0001f && charger != null)
+            direction = charger.transform.forward;
+
+        direction.y = 0f;
+
+        return direction.sqrMagnitude > 0.0001f
+            ? direction.normalized
+            : Vector3.forward;
+    }
+
+    float ResolveFullChargeSpeedRatio(
+        SoldierController charger,
+        Vector3 chargeDirection)
+    {
+        if (charger == null || charger.Motor == null)
+            return 0f;
+
+        Vector3 velocity = charger.Motor.Velocity;
+        velocity.y = 0f;
+
+        float forwardSpeed = Mathf.Max(
+            0f,
+            Vector3.Dot(velocity, chargeDirection));
+
+        float authoredChargeSpeed = Mathf.Max(
+            0.01f,
+            charger.Motor.BaseMoveSpeed *
+            Mathf.Max(0.01f, squadCombatProfile.formationChargeSpeedMultiplier));
+
+        return Mathf.Clamp01(forwardSpeed / authoredChargeSpeed);
+    }
+
+    float ResolveFullChargeImpactStrength(
+        SoldierController charger,
+        SoldierController enemy,
+        Vector3 chargeDirection)
+    {
+        if (charger == null || charger.Motor == null ||
+            enemy == null || enemy.Motor == null)
+        {
+            return 0f;
+        }
+
+        float speedRatio = ResolveFullChargeSpeedRatio(
+            charger,
+            chargeDirection);
+
+        float minimumSpeedRatio = Mathf.Clamp01(
+            squadCombatProfile.formationFullChargeMinimumImpactSpeedRatio);
+
+        if (speedRatio < minimumSpeedRatio)
+            return 0f;
+
+        float speedStrength = minimumSpeedRatio >= 0.999f
+            ? 1f
+            : Mathf.InverseLerp(minimumSpeedRatio, 1f, speedRatio);
+
+        float massRatio = charger.Motor.BodyMass /
+                          Mathf.Max(0.01f, enemy.Motor.BodyMass);
+
+        // Square-root mass scaling keeps body mass meaningful without allowing
+        // extreme profiles to multiply shock damage uncontrollably.
+        float massStrength = Mathf.Clamp(
+            Mathf.Sqrt(Mathf.Max(0.01f, massRatio)),
+            0.50f,
+            1.50f);
+
+        return speedStrength * massStrength;
     }
 
     void RefreshFormationChargeLeadSoldiers()
@@ -3196,20 +3461,8 @@ public class SquadCombat : MonoBehaviour
                 continue;
             }
 
-            Vector3 chargeDirection = formationChargeContactReached
-                ? formationChargeLockedDirection
-                : soldier.Motor.Velocity;
-            chargeDirection.y = 0f;
-
-            if (chargeDirection.sqrMagnitude <= 0.0001f)
-                chargeDirection = combatContactDirection;
-
-            chargeDirection.y = 0f;
-
-            if (chargeDirection.sqrMagnitude <= 0.0001f)
-                chargeDirection = soldier.transform.forward;
-
-            chargeDirection.Normalize();
+            Vector3 chargeDirection =
+                ResolveFormationChargeImpactDirection(soldier);
 
             Vector3 capsuleStart =
                 soldier.transform.position +
@@ -3221,13 +3474,37 @@ public class SquadCombat : MonoBehaviour
 
             formationChargeCurrentContacts.Clear();
 
+            float chargeSpeedRatio = ResolveFullChargeSpeedRatio(
+                soldier,
+                chargeDirection);
+
+            float minimumImpactSpeedRatio = Mathf.Clamp01(
+                squadCombatProfile.formationFullChargeMinimumImpactSpeedRatio);
+
+            float impulseSpeedStrength = chargeSpeedRatio < minimumImpactSpeedRatio
+                ? 0f
+                : minimumImpactSpeedRatio >= 0.999f
+                    ? 1f
+                    : Mathf.InverseLerp(
+                        minimumImpactSpeedRatio,
+                        1f,
+                        chargeSpeedRatio);
+
+            // FullCharge physical impulse is momentum-like: current charge-speed
+            // buildup and body mass both contribute. Receiver mass is still handled
+            // by SoldierMotor.ApplyExternalImpulse.
+            float resolvedImpulseMagnitude =
+                squadCombatProfile.formationChargeImpulseMagnitude *
+                soldier.Motor.BodyMass *
+                impulseSpeedStrength;
+
             ImpulseEmitter.EmitDirectionalCapsule(
                 capsuleStart,
                 capsuleEnd,
                 squadCombatProfile.formationChargeImpulseRadius,
                 chargeDirection,
                 applyImpulse
-                    ? squadCombatProfile.formationChargeImpulseMagnitude
+                    ? resolvedImpulseMagnitude
                     : 0f,
                 squadCombatProfile.formationChargeImpulseDuration,
                 sourceSoldier: soldier,

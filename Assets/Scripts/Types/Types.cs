@@ -1,4 +1,3 @@
-
 //-----------------------------------------------------------------------------------------
 using System;
 using System.Collections.Generic;
@@ -91,6 +90,18 @@ public enum SquadEngagementReason
     DefensiveHold,
     RangedDuel
 }
+
+public enum FormationChargeMode
+{
+    // Lightweight final run-up used by ordinary melee troops.
+    // Contact immediately hands ownership to normal melee combat.
+    RunUp = 0,
+
+    // Momentum-driven charge used by cavalry, monsters, chariots, and other
+    // units whose physical impact is itself part of the attack.
+    FullCharge = 1
+}
+
 
 public enum SquadState
 {
@@ -993,5 +1004,7 @@ public struct FormationBounds
 //--------------------------------------------------------
 // END OF Types.cs
 //--------------------------------------------------------
+
+
 
 

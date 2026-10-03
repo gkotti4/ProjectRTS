@@ -240,9 +240,16 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack.")]
     public bool formationChargeEnabledByDefault = true;
 
-    [Tooltip("Closest living-soldier distance that allows a melee squad to begin charging.")]
+    [Tooltip("Selects the behavior used inside SquadState.Charging. RunUp performs a lightweight infantry-style final rush and immediately settles on contact. FullCharge enables momentum, shock damage, penetration, and follow-through.")]
+    public FormationChargeMode formationChargeMode = FormationChargeMode.RunUp;
+
+    [Tooltip("Farthest closest-soldier distance that allows this squad to enter Charging from ApproachingCombat.")]
     [Min(0f)]
     public float formationChargeStartDistance = 10.0f;
+
+    [Tooltip("Minimum run-up space required to begin a NEW charge. Attack orders issued inside this distance enter normal engagement instead of manufacturing a point-blank charge. Tune this per squad: ordinary infantry can use a shorter window, while cavalry should require substantial run-up space.")]
+    [Min(0f)]
+    public float formationChargeMinimumStartDistance = 4.0f;
 
     [Tooltip("Formation-wide movement speed multiplier while charging.")]
     [Min(0f)]
@@ -252,11 +259,42 @@ public class SquadCombatProfile : ScriptableObject
     [Min(0f)]
     public float formationChargeMaximumDuration = 3.0f;
 
-    [Tooltip("Fraction of living melee soldiers that must reach personal attack range before the charge enters follow-through.")]
+    [Tooltip("Fraction of living melee soldiers that must reach personal attack range before the charge resolves contact. RunUp settles directly into melee; FullCharge begins follow-through.")]
     [Min(0f)]
     public float formationChargeContactReadyRatio = 0.15f;
 
-    [Tooltip("Multiplier applied to each charging soldier's BodyStats mass to create its per-charge penetration budget. Enemy body mass consumes this budget once per unique charger/enemy contact.")]
+
+    [Tooltip("One-time morale loss applied to the ordered target squad when meaningful charge contact is first reached. Applies to both RunUp and FullCharge; tune ordinary infantry much lower than shock units if desired.")]
+    [Min(0f)]
+    public float formationChargeMoraleShock = 8.0f;
+
+    [Tooltip("Enables an additional speed advantage for the soldiers currently closest to the enemy during either RunUp or FullCharge.")]
+    public bool formationChargeLeadSpeedEnabled = true;
+
+    [Tooltip("Fraction of living melee soldiers treated as the leading edge. Rounded up to at least one soldier.")]
+    [Min(0f)]
+    public float formationChargeLeadSoldierRatio = 0.15f;
+
+    [Tooltip("Additional per-soldier movement multiplier applied to soldiers on the current leading edge while charging.")]
+    [Min(0f)]
+    public float formationChargeLeadSpeedMultiplier = 1.25f;
+
+
+    [Header("Charge - Full Charge")]
+
+    [Tooltip("Minimum fraction of authored charge speed required before FullCharge contact produces shock damage or the momentum-scaled charge impulse. Below this threshold the body may still make contact, but it has not built meaningful shock power.")]
+    [Range(0f, 1f)]
+    public float formationFullChargeMinimumImpactSpeedRatio = 0.45f;
+
+    [Tooltip("Maximum normal shock damage applied once per enemy soldier per FullCharge. Actual damage scales from current forward charge speed and the charger/receiver body-mass relationship. This is separate from the rider's normal targeted charge attack.")]
+    [Min(0)]
+    public int formationFullChargeImpactDamage = 6;
+
+    [Tooltip("Maximum armor-piercing portion of FullCharge shock damage. Scales with the same speed/mass impact factor as normal shock damage.")]
+    [Min(0)]
+    public int formationFullChargeImpactArmorPiercingDamage = 1;
+
+    [Tooltip("Multiplier applied to each charging soldier's BodyStats mass to create its per-charge penetration budget. Enemy body mass consumes this budget once per unique charger/enemy contact. FullCharge only.")]
     [Min(0f)]
     public float formationChargePenetrationMultiplier = 1.0f;
 
@@ -269,14 +307,10 @@ public class SquadCombatProfile : ScriptableObject
     [Min(0f)]
     public float formationChargeFollowThroughMaximumDistance = 1.75f;
 
-    [Tooltip("One-time morale loss applied to the ordered target squad when meaningful charge contact is first reached.")]
-    [Min(0f)]
-    public float formationChargeMoraleShock = 8.0f;
-
-    [Tooltip("Enables the light directional contact impulse emitted by charging soldiers.")]
+    [Tooltip("Enables the momentum-scaled directional contact impulse emitted by FullCharge soldiers. RunUp relies on its normal weapon-hit impulse instead.")]
     public bool formationChargeImpulseEnabled = true;
 
-    [Tooltip("Authored impulse magnitude applied to enemies touched by a charging soldier's forward capsule.")]
+    [Tooltip("FullCharge impulse scale. Final impulse is derived from this value, the charger's body mass, and its current forward charge-speed ratio.")]
     [Min(0f)]
     public float formationChargeImpulseMagnitude = 4.0f;
 
@@ -295,17 +329,6 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Blend between forward and radial impulse direction. Lower values keep the force mostly forward; higher values add more outward spread.")]
     [Min(0f)]
     public float formationChargeImpulseRadialBlend = 0.12f;
-
-    [Tooltip("Enables an additional speed advantage for the soldiers currently closest to the enemy.")]
-    public bool formationChargeLeadSpeedEnabled = true;
-
-    [Tooltip("Fraction of living melee soldiers treated as the leading edge. Rounded up to at least one soldier.")]
-    [Min(0f)]
-    public float formationChargeLeadSoldierRatio = 0.15f;
-
-    [Tooltip("Additional per-soldier movement multiplier applied to soldiers on the current leading edge while charging.")]
-    [Min(0f)]
-    public float formationChargeLeadSpeedMultiplier = 1.25f;
 
 
     [Header("Melee Impact")]
@@ -456,9 +479,13 @@ public class SquadCombatProfile : ScriptableObject
         formationApproachSettleReadyRangePadding = Mathf.Max(0f, formationApproachSettleReadyRangePadding);
         formationApproachSettleMinimumReadyRange = Mathf.Max(0f, formationApproachSettleMinimumReadyRange);
         formationChargeStartDistance = Mathf.Max(0f, formationChargeStartDistance);
+        formationChargeMinimumStartDistance = Mathf.Clamp(formationChargeMinimumStartDistance, 0f, formationChargeStartDistance);
         formationChargeSpeedMultiplier = Mathf.Max(0f, formationChargeSpeedMultiplier);
         formationChargeMaximumDuration = Mathf.Max(0f, formationChargeMaximumDuration);
         formationChargeContactReadyRatio = Mathf.Clamp01(formationChargeContactReadyRatio);
+        formationFullChargeMinimumImpactSpeedRatio = Mathf.Clamp01(formationFullChargeMinimumImpactSpeedRatio);
+        formationFullChargeImpactDamage = Mathf.Max(0, formationFullChargeImpactDamage);
+        formationFullChargeImpactArmorPiercingDamage = Mathf.Max(0, formationFullChargeImpactArmorPiercingDamage);
         formationChargePenetrationMultiplier = Mathf.Max(0f, formationChargePenetrationMultiplier);
         formationChargeEndSpentRatio = Mathf.Clamp01(formationChargeEndSpentRatio);
         formationChargeFollowThroughMaximumDistance = Mathf.Max(0f, formationChargeFollowThroughMaximumDistance);
@@ -495,3 +522,4 @@ public class SquadCombatProfile : ScriptableObject
         formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
     }
 }
+

@@ -46,6 +46,7 @@ public class SoldierController : MonoBehaviour
     public SoldierAnimator SoldierAnimator { get; private set; }
     public SoldierSelectionVisualUI SelectionVisual { get; private set; }
     public SoldierEquipmentController Equipment { get; private set; }
+    public SoldierImpactPresentation ImpactPresentation { get; private set; }
 
     public WeaponProfile MeleeWeaponProfile =>
         Stats != null
@@ -99,6 +100,7 @@ public class SoldierController : MonoBehaviour
     // -----------------------------------------------------------------------------
     private float currentActionStartedAt = 0f;
     private float hitReactLockTimer = 0f;
+    private float impactMovementLockTimer = 0f;
     private bool hasLoggedActionStuckWarning = false;
 
     public Transform AttackOrigin => attackOrigin != null ? attackOrigin : transform; // CHECK IF IMPLEMENTED
@@ -116,6 +118,7 @@ public class SoldierController : MonoBehaviour
     private bool currentAttackAllowsMovement = false;
 
     public bool IsMovementLocked =>
+        impactMovementLockTimer > 0f ||
         (ActionState == SoldierActionState.Attack && !currentAttackAllowsMovement) ||
         ActionState == SoldierActionState.HitReact ||
         ActionState == SoldierActionState.Death;
@@ -136,6 +139,7 @@ public class SoldierController : MonoBehaviour
         ContactSensor = GetComponent<SoldierContactSensor>();
         SelectionVisual = GetComponentInChildren<SoldierSelectionVisualUI>();
         Equipment = GetComponent<SoldierEquipmentController>();
+        ImpactPresentation = GetComponent<SoldierImpactPresentation>();
 
         SetSelectionVisual(false);
         SetHoverVisual(false);
@@ -162,6 +166,7 @@ public class SoldierController : MonoBehaviour
     void Update()
     {
         TickHitReactLock();
+        TickImpactMovementLock();
         TickActionDebugWatchdog();
     }
 
@@ -715,6 +720,44 @@ public class SoldierController : MonoBehaviour
 
         if (hitReactLockTimer <= 0f)
             CompleteAction(SoldierActionState.HitReact);
+    }
+
+    /// Temporarily blocks voluntary movement while preserving external impulse
+    /// displacement. Used by visual launch / knockdown presentation so gameplay
+    /// remains grounded on the NavMesh while the model appears airborne.
+    public void ApplyImpactMovementLock(
+        float duration,
+        bool interruptCurrentAction = true)
+    {
+        if (!IsAlive)
+            return;
+
+        duration = Mathf.Max(0f, duration);
+
+        impactMovementLockTimer = Mathf.Max(
+            impactMovementLockTimer,
+            duration);
+
+        if (interruptCurrentAction &&
+            ActionState != SoldierActionState.None &&
+            ActionState != SoldierActionState.Death)
+        {
+            CancelCurrentAction();
+        }
+
+        // SoldierMotor.Stop only clears voluntary path/manual movement. External
+        // push velocity remains active and continues resolving during this lock.
+        Stop();
+    }
+
+    void TickImpactMovementLock()
+    {
+        if (impactMovementLockTimer <= 0f)
+            return;
+
+        impactMovementLockTimer = Mathf.Max(
+            0f,
+            impactMovementLockTimer - Time.deltaTime);
     }
 
     void TickActionDebugWatchdog()
