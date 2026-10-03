@@ -71,6 +71,9 @@ public class SoldierAnimator : MonoBehaviour
     [Header("Combat State")]
     [SerializeField] private bool useCombatStateFromSquad = true;
 
+    [Header("Mounted State")]
+    [SerializeField] private bool isMounted = false;
+
     [Tooltip("ApproachingCombat can use combat-ready idle/walk visuals.")]
     [SerializeField] private bool approachCountsAsCombat = true;
 
@@ -84,6 +87,7 @@ public class SoldierAnimator : MonoBehaviour
     [FormerlySerializedAs("upperBodyLayerDefaultWeight")] [SerializeField] private float armsLayerDefaultWeight = 1f;
     [FormerlySerializedAs("upperBodyLayerDisabledWeight")] [SerializeField] private float armsLayerDisabledWeight = 0f;
     [SerializeField] private bool armsLayerDisableDuringAttack = true;
+    [SerializeField] private bool armsLayerUseDuringLocomotion = true;
     private int armsLayerIndex = -1;
 
     [Header("Animator Layers - Upper Body")]
@@ -92,6 +96,7 @@ public class SoldierAnimator : MonoBehaviour
     [SerializeField] private float upperBodyLayerDefaultWeight = 1f;
     [SerializeField] private float upperBodyLayerDisabledWeight = 0f;
     [SerializeField] private bool upperBodyLayerDisableDuringAttack = true;
+    [SerializeField] private bool upperBodyLayerUseDuringLocomotion = true;
     private int upperBodyLayerIndex = -1;
 
     #endregion
@@ -101,6 +106,7 @@ public class SoldierAnimator : MonoBehaviour
     private static readonly int IsMoving = Animator.StringToHash("IsMoving");
     private static readonly int MoveSpeed = Animator.StringToHash("MoveSpeed");
     private static readonly int InCombat = Animator.StringToHash("InCombat");
+    private static readonly int IsMounted = Animator.StringToHash("IsMounted");
     private static readonly int IsUsingRangedWeapon = Animator.StringToHash("IsUsingRangedWeapon");
     private static readonly int Attack = Animator.StringToHash("Attack");
     private static readonly int ChargeAttack = Animator.StringToHash("ChargeAttack");
@@ -120,6 +126,7 @@ public class SoldierAnimator : MonoBehaviour
         CapturePrefabBaseController();
         InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
+        UpdateMountedParameter();
         InitializeMeasuredVelocity();
         
         // Reserve Rally MVP
@@ -146,7 +153,9 @@ public class SoldierAnimator : MonoBehaviour
         UpdateMeasuredWorldVelocity(); // PERFORMANCE
         UpdateMovementParameters(); // PERFORMANCE!
         UpdateCombatParameter(); // PERFORMANCE
+        UpdateMountedParameter();
         UpdateActiveWeaponParameter();
+        RefreshAnimatorLayerWeights();
         
         // Reserve Rally MVP
         TickReserveRally();
@@ -223,6 +232,7 @@ public class SoldierAnimator : MonoBehaviour
 
         InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
+        UpdateMountedParameter();
         return true;
     }
 
@@ -268,6 +278,7 @@ public class SoldierAnimator : MonoBehaviour
     {
         InitializeArmsLayer();
         InitializeUpperBodyLayer();
+        RefreshAnimatorLayerWeights();
     }
 
     void InitializeArmsLayer()
@@ -532,6 +543,24 @@ public class SoldierAnimator : MonoBehaviour
             IsInCombatAnimationState());
     }
 
+
+    public bool IsMountedState => isMounted;
+
+    public void SetMounted(bool mounted)
+    {
+        isMounted = mounted;
+        UpdateMountedParameter();
+        RefreshAnimatorLayerWeights();
+    }
+
+    void UpdateMountedParameter()
+    {
+        if (animator == null)
+            return;
+
+        animator.SetBool(IsMounted, isMounted);
+    }
+
     void UpdateActiveWeaponParameter()
     {
         if (animator == null)
@@ -688,6 +717,49 @@ public class SoldierAnimator : MonoBehaviour
 
     #endregion
 
+    void RefreshAnimatorLayerWeights()
+    {
+        bool isMoving = locomotionMovingVisual;
+        SoldierActionState actionState = soldierController != null
+            ? soldierController.ActionState
+            : SoldierActionState.None;
+
+        bool armsEnabled =
+            !isMoving || armsLayerUseDuringLocomotion;
+
+        bool upperBodyEnabled =
+            !isMoving || upperBodyLayerUseDuringLocomotion;
+
+        if (actionState == SoldierActionState.Attack)
+        {
+            if (armsLayerDisableDuringAttack)
+                armsEnabled = false;
+
+            if (upperBodyLayerDisableDuringAttack)
+                upperBodyEnabled = false;
+        }
+        else if (actionState == SoldierActionState.HitReact ||
+                 actionState == SoldierActionState.Death)
+        {
+            armsEnabled = false;
+            upperBodyEnabled = false;
+        }
+
+        if (controlArmsLayer && animator != null && armsLayerIndex >= 0)
+        {
+            animator.SetLayerWeight(
+                armsLayerIndex,
+                armsEnabled ? armsLayerDefaultWeight : armsLayerDisabledWeight);
+        }
+
+        if (controlUpperBodyLayer && animator != null && upperBodyLayerIndex >= 0)
+        {
+            animator.SetLayerWeight(
+                upperBodyLayerIndex,
+                upperBodyEnabled ? upperBodyLayerDefaultWeight : upperBodyLayerDisabledWeight);
+        }
+    }
+
     #region Arms Layer
 
     public void SetArmsLayerEnabled(bool enabled)
@@ -715,7 +787,7 @@ public class SoldierAnimator : MonoBehaviour
 
     public void EnableArmsLayer()
     {
-        SetArmsLayerEnabled(true);
+        RefreshAnimatorLayerWeights();
     }
 
     #endregion
@@ -747,7 +819,7 @@ public class SoldierAnimator : MonoBehaviour
 
     public void EnableUpperBodyLayer()
     {
-        SetUpperBodyLayerEnabled(true);
+        RefreshAnimatorLayerWeights();
     }
 
     #endregion
@@ -819,6 +891,3 @@ public class SoldierAnimator : MonoBehaviour
     
     #endregion
 }
-
-
-
