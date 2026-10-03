@@ -88,6 +88,8 @@ public class SoldierAnimator : MonoBehaviour
     [FormerlySerializedAs("upperBodyLayerDisabledWeight")] [SerializeField] private float armsLayerDisabledWeight = 0f;
     [SerializeField] private bool armsLayerDisableDuringAttack = true;
     [SerializeField] private bool armsLayerUseDuringLocomotion = true;
+    [Tooltip("When enabled, the Arms layer may transition into its locomotion state while IsMoving is true. Disable this to keep the layer active on its idle/combat-ready pose while the Base Layer continues walking.")]
+    [SerializeField] private bool armsLayerUseLocomotionState = true;
     private int armsLayerIndex = -1;
 
     [Header("Animator Layers - Upper Body")]
@@ -97,6 +99,8 @@ public class SoldierAnimator : MonoBehaviour
     [SerializeField] private float upperBodyLayerDisabledWeight = 0f;
     [SerializeField] private bool upperBodyLayerDisableDuringAttack = true;
     [SerializeField] private bool upperBodyLayerUseDuringLocomotion = true;
+    [Tooltip("When enabled, the UpperBody layer may transition into its locomotion state while IsMoving is true. Disable this to keep the layer active on its idle/combat-ready pose while the Base Layer continues walking.")]
+    [SerializeField] private bool upperBodyLayerUseLocomotionState = true;
     private int upperBodyLayerIndex = -1;
 
     #endregion
@@ -107,6 +111,8 @@ public class SoldierAnimator : MonoBehaviour
     private static readonly int MoveSpeed = Animator.StringToHash("MoveSpeed");
     private static readonly int InCombat = Animator.StringToHash("InCombat");
     private static readonly int IsMounted = Animator.StringToHash("IsMounted");
+    private static readonly int ArmsUseLocomotion = Animator.StringToHash("ArmsUseLocomotion");
+    private static readonly int UpperBodyUseLocomotion = Animator.StringToHash("UpperBodyUseLocomotion");
     private static readonly int IsUsingRangedWeapon = Animator.StringToHash("IsUsingRangedWeapon");
     private static readonly int Attack = Animator.StringToHash("Attack");
     private static readonly int ChargeAttack = Animator.StringToHash("ChargeAttack");
@@ -127,6 +133,7 @@ public class SoldierAnimator : MonoBehaviour
         InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
         UpdateMountedParameter();
+        UpdateLayerLocomotionParameters();
         InitializeMeasuredVelocity();
         
         // Reserve Rally MVP
@@ -154,6 +161,7 @@ public class SoldierAnimator : MonoBehaviour
         UpdateMovementParameters(); // PERFORMANCE!
         UpdateCombatParameter(); // PERFORMANCE
         UpdateMountedParameter();
+        UpdateLayerLocomotionParameters();
         UpdateActiveWeaponParameter();
         RefreshAnimatorLayerWeights();
         
@@ -233,6 +241,7 @@ public class SoldierAnimator : MonoBehaviour
         InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
         UpdateMountedParameter();
+        UpdateLayerLocomotionParameters();
         return true;
     }
 
@@ -559,6 +568,20 @@ public class SoldierAnimator : MonoBehaviour
             return;
 
         animator.SetBool(IsMounted, isMounted);
+    }
+
+    void UpdateLayerLocomotionParameters()
+    {
+        if (animator == null)
+            return;
+
+        animator.SetBool(
+            ArmsUseLocomotion,
+            armsLayerUseLocomotionState);
+
+        animator.SetBool(
+            UpperBodyUseLocomotion,
+            upperBodyLayerUseLocomotionState);
     }
 
     void UpdateActiveWeaponParameter()
