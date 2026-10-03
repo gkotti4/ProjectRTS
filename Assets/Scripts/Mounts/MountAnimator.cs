@@ -163,7 +163,7 @@ public class MountAnimator : MonoBehaviour
 
         animator.SetBool(IsMoving, locomotionMovingVisual);
         
-        Debug.Log(moveSpeed01);
+        //Debug.Log(moveSpeed01);
     }
 
     bool ShouldUseLocomotion()
