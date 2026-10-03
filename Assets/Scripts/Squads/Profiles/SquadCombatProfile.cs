@@ -249,11 +249,11 @@ public class SquadCombatProfile : ScriptableObject
 
     [Tooltip("Minimum run-up space required to begin a NEW charge. Attack orders issued inside this distance enter normal engagement instead of manufacturing a point-blank charge. Tune this per squad: ordinary infantry can use a shorter window, while cavalry should require substantial run-up space.")]
     [Min(0f)]
-    public float formationChargeMinimumStartDistance = 4.0f;
+    public float formationChargeMinimumStartDistance = 10.0f;
 
     [Tooltip("Formation-wide movement speed multiplier while charging.")]
     [Min(0f)]
-    public float formationChargeSpeedMultiplier = 1.25f;
+    public float formationChargeSpeedMultiplier = 1.20f;
 
     [Tooltip("Safety time limit before the squad enters combat even if charge contact detection is imperfect.")]
     [Min(0f)]
