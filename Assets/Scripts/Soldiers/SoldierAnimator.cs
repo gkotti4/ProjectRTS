@@ -74,6 +74,10 @@ public class SoldierAnimator : MonoBehaviour
     [Header("Mounted State")]
     [SerializeField] private bool isMounted = false;
 
+    [Header("Base Layer Attack Policy")]
+    [Tooltip("When enabled, the Base Layer may transition into its full-body attack states. Disable this for mounted units that should keep mounted locomotion/idle on the lower body while Arms/UpperBody layers perform the attack.")]
+    [SerializeField] private bool useBaseLayerAttackStates = true;
+
     [Tooltip("ApproachingCombat can use combat-ready idle/walk visuals.")]
     [SerializeField] private bool approachCountsAsCombat = true;
 
@@ -111,6 +115,7 @@ public class SoldierAnimator : MonoBehaviour
     private static readonly int MoveSpeed = Animator.StringToHash("MoveSpeed");
     private static readonly int InCombat = Animator.StringToHash("InCombat");
     private static readonly int IsMounted = Animator.StringToHash("IsMounted");
+    private static readonly int UseBaseLayerAttackStates = Animator.StringToHash("UseBaseLayerAttackStates");
     private static readonly int ArmsUseLocomotion = Animator.StringToHash("ArmsUseLocomotion");
     private static readonly int UpperBodyUseLocomotion = Animator.StringToHash("UpperBodyUseLocomotion");
     private static readonly int IsUsingRangedWeapon = Animator.StringToHash("IsUsingRangedWeapon");
@@ -133,6 +138,7 @@ public class SoldierAnimator : MonoBehaviour
         InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
         UpdateMountedParameter();
+        UpdateBaseLayerAttackParameter();
         UpdateLayerLocomotionParameters();
         InitializeMeasuredVelocity();
         
@@ -161,6 +167,7 @@ public class SoldierAnimator : MonoBehaviour
         UpdateMovementParameters(); // PERFORMANCE!
         UpdateCombatParameter(); // PERFORMANCE
         UpdateMountedParameter();
+        UpdateBaseLayerAttackParameter();
         UpdateLayerLocomotionParameters();
         UpdateActiveWeaponParameter();
         RefreshAnimatorLayerWeights();
@@ -241,6 +248,7 @@ public class SoldierAnimator : MonoBehaviour
         InitializeAnimatorLayers();
         RefreshOptionalAnimatorParameters();
         UpdateMountedParameter();
+        UpdateBaseLayerAttackParameter();
         UpdateLayerLocomotionParameters();
         return true;
     }
@@ -568,6 +576,16 @@ public class SoldierAnimator : MonoBehaviour
             return;
 
         animator.SetBool(IsMounted, isMounted);
+    }
+
+    void UpdateBaseLayerAttackParameter()
+    {
+        if (animator == null)
+            return;
+
+        animator.SetBool(
+            UseBaseLayerAttackStates,
+            useBaseLayerAttackStates);
     }
 
     void UpdateLayerLocomotionParameters()
