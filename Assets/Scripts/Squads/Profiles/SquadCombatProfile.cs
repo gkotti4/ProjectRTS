@@ -245,11 +245,11 @@ public class SquadCombatProfile : ScriptableObject
 
     [Tooltip("Farthest closest-soldier distance that allows this squad to enter Charging from ApproachingCombat.")]
     [Min(0f)]
-    public float formationChargeStartDistance = 10.0f;
+    public float formationChargeStartDistance = 12.0f; // much higher for cav (~25)
 
     [Tooltip("Minimum run-up space required to begin a NEW charge. Attack orders issued inside this distance enter normal engagement instead of manufacturing a point-blank charge. Tune this per squad: ordinary infantry can use a shorter window, while cavalry should require substantial run-up space.")]
     [Min(0f)]
-    public float formationChargeMinimumStartDistance = 10.0f;
+    public float formationChargeMinimumStartDistance = 10.0f; // much higher for cav (~20)
 
     [Tooltip("Formation-wide movement speed multiplier while charging.")]
     [Min(0f)]
