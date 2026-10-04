@@ -353,10 +353,23 @@ public class SoldierController : MonoBehaviour
         }
 
         if (ActiveWeaponProfile == weaponProfile)
+        {
+            SoldierAnimator?.RefreshActiveWeaponParameter();
             return false;
+        }
+
+        // A committed attack belongs to the weapon that started it. Never carry a
+        // ranged hold/release or melee swing across a weapon-mode transition.
+        bool interruptedAttackForWeaponSwitch =
+            ActionState == SoldierActionState.Attack;
+
+        if (interruptedAttackForWeaponSwitch)
+            CancelCurrentAction();
 
         ActiveWeaponProfile = weaponProfile;
-        ApplyActiveWeaponPresentation();
+        ApplyActiveWeaponPresentation(
+            reassertAttackCancellation: interruptedAttackForWeaponSwitch);
+
         return true;
     }
 
@@ -402,7 +415,8 @@ public class SoldierController : MonoBehaviour
             : MeleeWeaponProfile;
     }
 
-    void ApplyActiveWeaponPresentation()
+    void ApplyActiveWeaponPresentation(
+        bool reassertAttackCancellation = false)
     {
         WeaponProfile activeWeapon = ActiveWeaponProfile != null
             ? ActiveWeaponProfile
@@ -415,6 +429,11 @@ public class SoldierController : MonoBehaviour
                 activeWeapon != null
                     ? activeWeapon.animatorOverrideController
                     : null);
+
+            SoldierAnimator.RefreshActiveWeaponParameter();
+
+            if (reassertAttackCancellation)
+                SoldierAnimator.ReassertAttackCancellationAfterWeaponSwitch();
         }
 
         if (Equipment != null)

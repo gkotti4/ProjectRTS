@@ -116,11 +116,13 @@ public class SoldierAnimator : MonoBehaviour
     private static readonly int InCombat = Animator.StringToHash("InCombat");
     private static readonly int IsMounted = Animator.StringToHash("IsMounted");
     private static readonly int UseBaseLayerAttackStates = Animator.StringToHash("UseBaseLayerAttackStates");
-    private static readonly int ArmsUseLocomotion = Animator.StringToHash("ArmsUseLocomotion");
-    private static readonly int UpperBodyUseLocomotion = Animator.StringToHash("UpperBodyUseLocomotion");
+    private static readonly int ArmsUseLocomotionState = Animator.StringToHash("ArmsUseLocomotionState");
+    private static readonly int UpperBodyUseLocomotionState = Animator.StringToHash("UpperBodyUseLocomotionState");
     private static readonly int IsUsingRangedWeapon = Animator.StringToHash("IsUsingRangedWeapon");
     private static readonly int Attack = Animator.StringToHash("Attack");
     private static readonly int ChargeAttack = Animator.StringToHash("ChargeAttack");
+    private static readonly int RangedRelease = Animator.StringToHash("RangedRelease");
+    private static readonly int CancelAttack = Animator.StringToHash("CancelAttack");
     private static readonly int AttackVariant = Animator.StringToHash("AttackVariant");
     private static readonly int HitReact = Animator.StringToHash("HitReact");
     private static readonly int Death = Animator.StringToHash("Death");
@@ -250,6 +252,7 @@ public class SoldierAnimator : MonoBehaviour
         UpdateMountedParameter();
         UpdateBaseLayerAttackParameter();
         UpdateLayerLocomotionParameters();
+        UpdateActiveWeaponParameter();
         return true;
     }
 
@@ -400,7 +403,7 @@ public class SoldierAnimator : MonoBehaviour
             locomotionBlendDampTime,
             Time.deltaTime);
         
-        Debug.Log(ResolveLocomotionBlendValue());
+        //Debug.Log(ResolveLocomotionBlendValue());
     }
 
     float ResolveLocomotionBlendValue()
@@ -594,11 +597,11 @@ public class SoldierAnimator : MonoBehaviour
             return;
 
         animator.SetBool(
-            ArmsUseLocomotion,
+            ArmsUseLocomotionState,
             armsLayerUseLocomotionState);
 
         animator.SetBool(
-            UpperBodyUseLocomotion,
+            UpperBodyUseLocomotionState,
             upperBodyLayerUseLocomotionState);
     }
 
@@ -611,6 +614,33 @@ public class SoldierAnimator : MonoBehaviour
             IsUsingRangedWeapon,
             soldierController != null &&
             soldierController.IsUsingRangedWeapon);
+    }
+
+    /// <summary>
+    /// Immediately synchronizes the Animator's ranged/melee parameter with the
+    /// SoldierController. Weapon-mode switches call this directly so presentation
+    /// does not wait until the next Update tick.
+    /// </summary>
+    public void RefreshActiveWeaponParameter()
+    {
+        UpdateActiveWeaponParameter();
+    }
+
+    /// <summary>
+    /// Reasserts attack cancellation after a runtime controller/AOC switch.
+    /// A controller swap may preserve the currently active Animator state, so an
+    /// old ranged hold must be told to exit again after the new weapon is installed.
+    /// </summary>
+    public void ReassertAttackCancellationAfterWeaponSwitch()
+    {
+        if (animator == null)
+            return;
+
+        animator.ResetTrigger(Attack);
+        animator.ResetTrigger(ChargeAttack);
+        animator.ResetTrigger(RangedRelease);
+        animator.ResetTrigger(CancelAttack);
+        animator.SetTrigger(CancelAttack);
     }
 
     bool IsInCombatAnimationState()
@@ -666,6 +696,8 @@ public class SoldierAnimator : MonoBehaviour
                 }
 
                 animator.ResetTrigger(HitReact);
+                animator.ResetTrigger(RangedRelease);
+                animator.ResetTrigger(CancelAttack);
                 animator.ResetTrigger(preserveLocomotion ? Attack : ChargeAttack);
                 animator.SetTrigger(preserveLocomotion ? ChargeAttack : Attack);
                 break;
@@ -723,6 +755,9 @@ public class SoldierAnimator : MonoBehaviour
             case SoldierActionState.Attack:
                 animator.ResetTrigger(Attack);
                 animator.ResetTrigger(ChargeAttack);
+                animator.ResetTrigger(RangedRelease);
+                animator.ResetTrigger(CancelAttack);
+                animator.SetTrigger(CancelAttack);
 
                 if (armsLayerDisableDuringAttack)
                     EnableArmsLayer();
@@ -743,6 +778,26 @@ public class SoldierAnimator : MonoBehaviour
                 break;
         }
     }
+    /// <summary>
+    /// Releases a ranged attack that is currently holding/aiming.
+    /// SquadCombat owns when this is called; the release animation still owns the
+    /// exact projectile spawn frame through OnProjectileRelease.
+    /// </summary>
+    public void ReleaseRangedAttack()
+    {
+        if (animator == null ||
+            soldierController == null ||
+            soldierController.ActionState != SoldierActionState.Attack ||
+            !soldierController.IsUsingRangedWeapon)
+        {
+            return;
+        }
+
+        animator.ResetTrigger(CancelAttack);
+        animator.ResetTrigger(RangedRelease);
+        animator.SetTrigger(RangedRelease);
+    }
+
 
     void ForceMovementParametersOff()
     {

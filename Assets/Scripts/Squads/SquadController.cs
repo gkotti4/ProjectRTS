@@ -595,6 +595,10 @@ public class SquadController : MonoBehaviour,
         // the squad rather than pulling everyone back toward an old banner position.
         if (State == SquadState.InCombat)
             Movement.SyncRootToLivingSoldierCenter();
+        // Ranged soldiers must never stay Attack-locked behind a moving virtual root.
+        // A normal move order cancels any current ranged hold/recovery immediately.
+        Combat.CancelRangedAttacksForMoveOrder();
+
 
         // A normal move order must win over passive auto-targeting. SquadCombat keeps
         // auto-scan suppressed through the move/reform and briefly after reaching Idle.

@@ -50,11 +50,16 @@ public class WeaponProfile : ScriptableObject
     [Tooltip("Number of authored AttackVariant melee states available while this weapon is active.")]
     public int animationAttackVariantCount = 1;
 
+    [Min(0f)]
+    [Tooltip("Seconds from beginning a ranged Attack action until SquadCombat triggers RangedRelease. RangedAttackHold should loop until this delay expires.")]
+    public float animationRangedAttackHoldTime = 0.35f;
+
 
     
     void OnValidate()
     {
         animationAttackVariantCount = Mathf.Max(1, animationAttackVariantCount);
+        animationRangedAttackHoldTime = Mathf.Max(0f, animationRangedAttackHoldTime);
 
         melee.meleeAttack = Mathf.Max(0, melee.meleeAttack);
         melee.weaponDamage = Mathf.Max(0, melee.weaponDamage);
@@ -77,5 +82,3 @@ public class WeaponProfile : ScriptableObject
         ranged.ammunition = Mathf.Max(-1, ranged.ammunition);
     }
 }
-
-

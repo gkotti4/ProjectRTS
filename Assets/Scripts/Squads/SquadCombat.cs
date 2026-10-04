@@ -177,6 +177,11 @@ public class SquadCombat : MonoBehaviour
 
     private readonly Dictionary<SoldierController, WeaponProfile> formationPendingProjectileWeapons =
         new Dictionary<SoldierController, WeaponProfile>();
+
+    // Ranged attacks enter a looping RangedAttackHold first. Gameplay owns this
+    // delay and explicitly tells the Animator when to enter RangedAttackRelease.
+    private readonly Dictionary<SoldierController, float> formationRangedReleaseTimers =
+        new Dictionary<SoldierController, float>();
     
     // Target committed when a melee attack begins.
     // The AttackImpact animation event consumes this target so target refreshes
@@ -736,8 +741,16 @@ public class SquadCombat : MonoBehaviour
         
         // Ranged Volley (or Synced Attack) MVP
         bool waitToAttack = false;
-        if (rangedVolleyEnabled && IsRangedCombatStyle() && !IsAllSoldierAttackTimersReady())
+        bool shouldSynchronizeRangedVolley =
+            rangedVolleyEnabled &&
+            IsRangedCombatStyle() &&
+            !formationRangedSquadUsingMeleeFallback;
+
+        if (shouldSynchronizeRangedVolley &&
+            !IsAllSoldierAttackTimersReady())
+        {
             waitToAttack = true;
+        }
         
         foreach (SoldierController soldier in roster.Soldiers)
         {
@@ -908,6 +921,13 @@ public class SquadCombat : MonoBehaviour
             out float attackRange,
             out float attackInterval,
             out float stoppingDistance);
+
+        if (isRangedWeapon)
+        {
+            TryCancelInvalidPendingRangedAttack(
+                soldier,
+                rangedStats);
+        }
 
         if (soldier.IsMovementLocked)
         {
@@ -1207,6 +1227,30 @@ public class SquadCombat : MonoBehaviour
         ClearMoveOrderAutoTargetSuppression();
         return false;
     }
+    /// <summary>
+    /// A normal move order immediately cancels ranged Attack actions.
+    /// Before projectile release this discards the pending shot; after release the
+    /// already-spawned projectile stays valid while the soldier regains movement.
+    /// </summary>
+    public void CancelRangedAttacksForMoveOrder()
+    {
+        if (roster == null)
+            return;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null ||
+                !soldier.IsAlive ||
+                soldier.ActionState != SoldierActionState.Attack ||
+                !soldier.IsUsingRangedWeapon)
+            {
+                continue;
+            }
+
+            soldier.CancelCurrentAction();
+        }
+    }
+
 
     public void BeginCombatLockedMoveOrder()
     {
@@ -2075,6 +2119,36 @@ public class SquadCombat : MonoBehaviour
         formationReserveBlockedSitTimers[soldier] -= Time.deltaTime;
         formationReserveBehindFriendlySearchTimers[soldier] -= Time.deltaTime;
 
+        TickFormationRangedReleaseTimer(soldier);
+    }
+
+    void TickFormationRangedReleaseTimer(SoldierController soldier)
+    {
+        if (soldier == null ||
+            !formationRangedReleaseTimers.TryGetValue(soldier, out float releaseTimer))
+        {
+            return;
+        }
+
+        releaseTimer -= Time.deltaTime;
+
+        if (releaseTimer > 0f)
+        {
+            formationRangedReleaseTimers[soldier] = releaseTimer;
+            return;
+        }
+
+        // Consume first so one attack can issue RangedRelease only once.
+        formationRangedReleaseTimers.Remove(soldier);
+
+        if (!soldier.IsAlive ||
+            soldier.ActionState != SoldierActionState.Attack ||
+            !soldier.IsUsingRangedWeapon)
+        {
+            return;
+        }
+
+        soldier.SoldierAnimator?.ReleaseRangedAttack();
     }
 
     bool TryFindImmediateFormationContactTarget(
@@ -2343,6 +2417,55 @@ public class SquadCombat : MonoBehaviour
         return true;
     }
     
+    bool TryCancelInvalidPendingRangedAttack(
+        SoldierController attacker,
+        RangedCombatStats rangedStats)
+    {
+        if (attacker == null ||
+            attacker.ActionState != SoldierActionState.Attack ||
+            !formationPendingProjectileTargets.TryGetValue(
+                attacker,
+                out SoldierController pendingTarget))
+        {
+            return false;
+        }
+
+        bool targetIsValid =
+            pendingTarget != null &&
+            pendingTarget.IsAlive &&
+            pendingTarget.Squad != null &&
+            CanAttack(pendingTarget.Squad);
+
+        if (targetIsValid)
+        {
+            float attackRange = Mathf.Max(0.1f, rangedStats.attackRange);
+
+            Vector3 toPendingTarget =
+                pendingTarget.transform.position -
+                attacker.transform.position;
+
+            toPendingTarget.y = 0f;
+
+            targetIsValid =
+                toPendingTarget.sqrMagnitude <=
+                attackRange * attackRange;
+        }
+
+        if (targetIsValid &&
+            IsTargetSquadWithinRangedFiringArc(
+                rangedStats.attackRangeArc))
+        {
+            return false;
+        }
+
+        // CancelCurrentAction routes through the existing interruption pipeline,
+        // which clears the pending projectile, ranged release timer, and Animator
+        // hold via CancelAttack.
+        attacker.CancelCurrentAction();
+        return true;
+    }
+
+
     void TryFormationAttack(
         SoldierController attacker,
         SoldierController target,
@@ -2455,6 +2578,12 @@ public class SquadCombat : MonoBehaviour
     {
         if (attacker == null || target == null)
             return;
+
+        float rangedHoldTime = weaponProfile != null
+            ? Mathf.Max(0f, weaponProfile.animationRangedAttackHoldTime)
+            : 0f;
+
+        formationRangedReleaseTimers[attacker] = rangedHoldTime;
 
         if (weaponProfile != null && rangedStats.projectilePrefab != null)
         {
@@ -2667,6 +2796,7 @@ public class SquadCombat : MonoBehaviour
 
         formationPendingProjectileTargets.Remove(soldier);
         formationPendingProjectileWeapons.Remove(soldier);
+        formationRangedReleaseTimers.Remove(soldier);
     }
 
     void ClearFormationRuntimeState(
@@ -2694,6 +2824,7 @@ public class SquadCombat : MonoBehaviour
         
         formationPendingProjectileTargets.Clear();
         formationPendingProjectileWeapons.Clear();
+        formationRangedReleaseTimers.Clear();
 
         if (clearAttackTimers)
             formationAttackTimers.Clear();
@@ -4356,6 +4487,41 @@ public class SquadCombat : MonoBehaviour
             : null;
     }
 
+    void DesynchronizeFormationAttackTimersForMeleeFallback()
+    {
+        if (roster == null)
+            return;
+
+        foreach (SoldierController soldier in roster.Soldiers)
+        {
+            if (soldier == null || !soldier.IsAlive)
+                continue;
+
+            WeaponProfile meleeWeapon =
+                soldier.MeleeWeaponProfile;
+
+            float meleeInterval =
+                meleeWeapon != null
+                    ? Mathf.Max(
+                        0.05f,
+                        soldier.Stats != null
+                            ? soldier.Stats.melee.attackInterval
+                            : meleeWeapon.melee.attackInterval)
+                    : Mathf.Max(
+                        0.05f,
+                        squadCombatProfile.formationFallbackMeleeAttackInterval);
+
+            float randomOffset = Random.Range(
+                0f,
+                Mathf.Max(
+                    0.10f,
+                    meleeInterval * 0.35f));
+
+            formationAttackTimers[soldier] = randomOffset;
+        }
+    }
+
+
     void UpdateFormationSquadCombatMode()
     {
         bool isRangedSquad =
@@ -4375,9 +4541,17 @@ public class SquadCombat : MonoBehaviour
 
         if (!hasRangedAmmunition)
         {
+            bool enteringMeleeFallback =
+                hasMeleeFallback &&
+                !formationRangedSquadUsingMeleeFallback;
+
             formationRangedSquadUsingMeleeFallback = hasMeleeFallback;
             currentCombatStyle = SquadCombatStyle.FormationCombat;
             SetFormationSquadWeaponMode(useRangedWeapon: false);
+
+            if (enteringMeleeFallback)
+                DesynchronizeFormationAttackTimersForMeleeFallback();
+
             return;
         }
 
@@ -4415,6 +4589,7 @@ public class SquadCombat : MonoBehaviour
             formationRangedSquadUsingMeleeFallback = true;
             currentCombatStyle = SquadCombatStyle.FormationCombat;
             SetFormationSquadWeaponMode(useRangedWeapon: false);
+            DesynchronizeFormationAttackTimersForMeleeFallback();
             return;
         }
 
@@ -4432,23 +4607,40 @@ public class SquadCombat : MonoBehaviour
             if (squadMember == null || !squadMember.IsAlive)
                 continue;
 
-            if (useRangedWeapon)
-            {
-                if (squadMember.HasRangedWeapon)
-                    squadMember.UseRangedWeapon();
-                else if (squadMember.HasMeleeWeapon)
-                    squadMember.UseMeleeWeapon();
-                else
-                    squadMember.SetActiveWeaponProfile(null);
+            WeaponProfile desiredWeapon =
+                ResolveFormationWeaponForMode(
+                    squadMember,
+                    useRangedWeapon);
 
-                continue;
-            }
+            // SoldierController owns the atomic transition:
+            // cancel any Attack authored for the old weapon, let the normal
+            // interruption pipeline clear pending combat state, then switch the
+            // active weapon/controller/visuals as one operation.
+            squadMember.SetActiveWeaponProfile(desiredWeapon);
+        }
+    }
+
+    WeaponProfile ResolveFormationWeaponForMode(
+        SoldierController squadMember,
+        bool useRangedWeapon)
+    {
+        if (squadMember == null)
+            return null;
+
+        if (useRangedWeapon)
+        {
+            if (squadMember.HasRangedWeapon)
+                return squadMember.RangedWeaponProfile;
 
             if (squadMember.HasMeleeWeapon)
-                squadMember.UseMeleeWeapon();
-            else
-                squadMember.SetActiveWeaponProfile(null);
+                return squadMember.MeleeWeaponProfile;
+
+            return null;
         }
+
+        return squadMember.HasMeleeWeapon
+            ? squadMember.MeleeWeaponProfile
+            : null;
     }
 
     bool HasLivingMeleeWeapon()
