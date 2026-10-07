@@ -7,7 +7,7 @@ using UnityEngine;
 /// Temporary formation body-space sensor.
 /// It does not decide combat.
 /// It does not move the soldier.
-/// It only answers simple local body-space questions for FormationCombat.
+/// It only answers simple local body-space questions for Formed combat execution.
 ///
 [DisallowMultipleComponent]
 public class SoldierContactSensor : MonoBehaviour
@@ -288,3 +288,5 @@ public class SoldierContactSensor : MonoBehaviour
         return value.normalized;
     }
 }
+
+

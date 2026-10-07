@@ -6,21 +6,16 @@ using UnityEngine.AI;
 /// SquadCombat
 /// -----------------------------------------------------------------------------
 ///
-/// Squad-level combat coordinator for the new FormationCombat base.
-/// Owns squad target selection, approach, engagement start/end, simple formation
-/// target assignment, and attack resolution hooks.
+/// Squad-level combat coordinator.
 ///
-/// Removed on purpose:
-/// - old formation-combat combat homes
-/// - old loose-combat anchors
-/// - pressure goals
-/// - old row-scoring/support budgets
-/// - old SoldierCombat rhythm/cohesion routing
+/// Combat is modeled on two independent axes:
+/// - SquadCombatStyle: Melee, Ranged, or Siege (what family owns the fight).
+/// - SquadCombatExecutionMode: Formed, Loose, Skirmish, or Deployed (how that
+///   family organizes itself spatially).
 ///
-/// Design role:
-/// The squad decides which enemy squad is being fought and provides shared combat
-/// context. Soldiers still execute through SoldierController/SoldierMotor and use
-/// SoldierContactSensor for local body-space checks.
+/// This partial MonoBehaviour remains the single runtime authority for target,
+/// engagement, approach, charge, and combat-family/execution-mode state. Family
+/// behavior is split across MeleeCombat.cs, RangedCombat.cs, and SiegeCombat.cs.
 ///
 [DisallowMultipleComponent]
 public partial class SquadCombat : MonoBehaviour
@@ -42,7 +37,8 @@ public partial class SquadCombat : MonoBehaviour
     // -----------------------------------------------------------------------------
     private SquadController targetSquad;
     private Vector3 combatContactDirection = Vector3.forward;
-    private SquadCombatStyle currentCombatStyle = SquadCombatStyle.FormationCombat;
+    private SquadCombatStyle currentCombatStyle = SquadCombatStyle.Melee;
+    private SquadCombatExecutionMode currentCombatExecutionMode = SquadCombatExecutionMode.Formed;
     private SquadEngagementReason currentEngagementType = SquadEngagementReason.None;
 
     // -----------------------------------------------------------------------------
@@ -59,7 +55,7 @@ public partial class SquadCombat : MonoBehaviour
     private float approachRefreshTimer = 0f;
     private float approachEngagementSettleTimer = 0f;
     // -----------------------------------------------------------------------------
-    // Formation Combat Runtime State
+    // Formation Charge Runtime State
     // -----------------------------------------------------------------------------
     private bool formationChargeEnabled = true;
     private bool formationChargeContactReached = false;
@@ -118,6 +114,7 @@ public partial class SquadCombat : MonoBehaviour
     // -----------------------------------------------------------------------------
     public SquadController TargetSquad => targetSquad;
     public SquadCombatStyle CurrentCombatStyle => currentCombatStyle;
+    public SquadCombatExecutionMode CurrentCombatExecutionMode => currentCombatExecutionMode;
     public SquadEngagementReason CurrentEngagementType => currentEngagementType;
     public bool FormationChargeEnabled => formationChargeEnabled;
 
@@ -128,7 +125,7 @@ public partial class SquadCombat : MonoBehaviour
 
     void Awake()
     {
-        formationReserveBehindFriendlyPath = new NavMeshPath();
+        formedReserveBehindFriendlyPath = new NavMeshPath();
     }
 
     /// Initializes squad-level combat references.
@@ -145,7 +142,7 @@ public partial class SquadCombat : MonoBehaviour
         movement = squadMovement;
         data = squadData;
         squadCombatProfile = data != null ? data.squadCombatProfile : null;
-        currentCombatStyle = ResolveCombatStyle();
+        ResetActiveCombatModeToAuthoredDefaults();
         currentEngagementType = SquadEngagementReason.None;
         rangedVolleyEnabled =
             squadCombatProfile != null &&
@@ -157,7 +154,7 @@ public partial class SquadCombat : MonoBehaviour
 
         formationChargeEnabled =
             squadCombatProfile != null &&
-            squadCombatProfile.formationChargeEnabledByDefault;
+            squadCombatProfile.chargeEnabledByDefault;
 
         rangedAmmunitionStartingSoldierCount = CountLivingRangedSoldiers();
         InitializeRangedAmmunition();
@@ -229,11 +226,11 @@ public partial class SquadCombat : MonoBehaviour
             return;
 
         targetSquad = target;
-        currentCombatStyle = ResolveCombatStyle();
+        ResetActiveCombatModeToAuthoredDefaults();
         currentEngagementType = engagementType;
         approachRefreshTimer = 0f;
 
-        ClearFormationRuntimeState(clearAttackTimers: false);
+        ClearFormedCombatRuntimeState(clearAttackTimers: false);
 
         // Ordered melee attacks must get first chance to enter the charge state.
         // Normal engagement range can overlap the authored charge-start range, so
@@ -264,12 +261,12 @@ public partial class SquadCombat : MonoBehaviour
             return;
 
         targetSquad = attacker;
-        currentCombatStyle = ResolveCombatStyle();
+        ResetActiveCombatModeToAuthoredDefaults();
         currentEngagementType = squad != null && squad.Stance == SquadStance.Hold
             ? SquadEngagementReason.DefensiveHold
             : SquadEngagementReason.PassiveContact;
 
-        ClearFormationRuntimeState(clearAttackTimers: false);
+        ClearFormedCombatRuntimeState(clearAttackTimers: false);
 
         if (!IsCloseEnoughToStartEngagement(targetSquad))
             return;
@@ -281,15 +278,15 @@ public partial class SquadCombat : MonoBehaviour
     public void ClearTargets()
     {
         targetSquad = null;
-        currentCombatStyle = ResolveCombatStyle();
+        ResetActiveCombatModeToAuthoredDefaults();
         currentEngagementType = SquadEngagementReason.None;
-        formationRangedSquadUsingMeleeFallback = false;
+        rangedUsingMeleeFallback = false;
         rangedAvoidanceThreatSquad = null;
         approachRefreshTimer = 0f;
         approachEngagementSettleTimer = 0f;
-        formationRangedInitialFireSettleTimer = 0f;
-        formationRangedSetupRequired = false;
-        formationRangedSetupInitialized = false;
+        rangedInitialFireSettleTimer = 0f;
+        rangedSetupRequired = false;
+        rangedSetupInitialized = false;
         formationChargeContactReached = false;
         formationChargeTimer = 0f;
         formationChargeLockedDirection = Vector3.forward;
@@ -304,7 +301,7 @@ public partial class SquadCombat : MonoBehaviour
         formationChargeLeadCandidates.Clear();
         formationChargeAttackStartedSoldiers.Clear();
 
-        ClearFormationRuntimeState(clearAttackTimers: true);
+        ClearFormedCombatRuntimeState(clearAttackTimers: true);
         ClearSoldierCombatStates();
     }
 
@@ -347,7 +344,7 @@ public partial class SquadCombat : MonoBehaviour
 
         // Ranged avoidance can trigger while the formation is still approaching,
         // so a close melee threat does not need to wait for InCombat first.
-        if (TryBeginFormationRangedAvoidance())
+        if (TryBeginRangedAvoidance())
             return;
 
         movement.TickFormationFollow();
@@ -399,13 +396,13 @@ public partial class SquadCombat : MonoBehaviour
             return;
         }
 
-        switch (squadCombatProfile.formationChargeMode)
+        switch (squadCombatProfile.chargeMode)
         {
-            case FormationChargeMode.FullCharge:
+            case ChargeMode.FullCharge:
                 TickFormationFullCharge();
                 break;
 
-            case FormationChargeMode.RunUp:
+            case ChargeMode.RunUp:
             default:
                 TickFormationRunUpCharge();
                 break;
@@ -425,9 +422,9 @@ public partial class SquadCombat : MonoBehaviour
         TickFormationChargeAttacks();
 
         movement.TickFormationFollow(
-            squadCombatProfile.formationChargeSpeedMultiplier,
+            squadCombatProfile.chargeSpeedMultiplier,
             formationChargeLeadSoldiers,
-            squadCombatProfile.formationChargeLeadSpeedMultiplier);
+            squadCombatProfile.chargeLeadSpeedMultiplier);
 
         if (HasFormationChargeReachedContactRatio(targetSquad))
         {
@@ -459,9 +456,9 @@ public partial class SquadCombat : MonoBehaviour
         TickFormationChargeAttacks();
 
         movement.TickFormationFollow(
-            squadCombatProfile.formationChargeSpeedMultiplier,
+            squadCombatProfile.chargeSpeedMultiplier,
             formationChargeLeadSoldiers,
-            squadCombatProfile.formationChargeLeadSpeedMultiplier);
+            squadCombatProfile.chargeLeadSpeedMultiplier);
 
         TickFormationChargeImpulseEmitters();
 
@@ -507,13 +504,13 @@ public partial class SquadCombat : MonoBehaviour
     {
         if (targetSquad == null ||
             targetSquad.Morale == null ||
-            squadCombatProfile.formationChargeMoraleShock <= 0f)
+            squadCombatProfile.chargeMoraleShock <= 0f)
         {
             return;
         }
 
         targetSquad.Morale.ApplyMoraleLoss(
-            squadCombatProfile.formationChargeMoraleShock);
+            squadCombatProfile.chargeMoraleShock);
     }
 
     void TickCombatApproachRefresh()
@@ -529,7 +526,7 @@ public partial class SquadCombat : MonoBehaviour
 
         if (squad != null &&
             squad.State == SquadState.Charging &&
-            squadCombatProfile.formationChargeMode == FormationChargeMode.FullCharge &&
+            squadCombatProfile.chargeMode == ChargeMode.FullCharge &&
             formationChargeContactReached)
         {
             MoveAlongFormationChargeFollowThrough();
@@ -540,14 +537,24 @@ public partial class SquadCombat : MonoBehaviour
             chargeThroughTarget: squad != null && squad.State == SquadState.Charging);
     }
 
-    /// Ticks active squad combat.
+    /// Ticks active squad combat through the selected combat family.
     public void TickCombat()
     {
-        // SquadCombat remains the single runtime coordinator. The actual formation
-        // executor lives in FormationCombat.cs, while ranged policy/state lives in
-        // RangedCombat.cs. Both are partials of this same component so combat state
-        // cannot drift between separate MonoBehaviour lifecycles.
-        TickFormationCombat();
+        switch (currentCombatStyle)
+        {
+            case SquadCombatStyle.Ranged:
+                TickRangedCombat();
+                return;
+
+            case SquadCombatStyle.Siege:
+                TickSiegeCombat();
+                return;
+
+            case SquadCombatStyle.Melee:
+            default:
+                TickMeleeCombat();
+                return;
+        }
     }
 
     #endregion
@@ -625,13 +632,13 @@ public partial class SquadCombat : MonoBehaviour
         ClearSoldierCombatStates();
         approachEngagementSettleTimer = 0f;
 
-        if (IsAuthoredRangedSquad())
+        if (IsAuthoredRangedCombat())
         {
-            formationRangedSetupRequired = true;
-            formationRangedSetupInitialized = false;
-            formationRangedInitialFireSettleTimer =
+            rangedSetupRequired = true;
+            rangedSetupInitialized = false;
+            rangedInitialFireSettleTimer =
                 squadCombatProfile != null
-                    ? squadCombatProfile.formationRangedInitialFireSettleTime
+                    ? squadCombatProfile.rangedInitialFireSettleTime
                     : 0f;
         }
 
@@ -643,10 +650,10 @@ public partial class SquadCombat : MonoBehaviour
 
     bool ShouldHoldInitialEngagementForApproachSettle(SquadController target)
     {
-        if (!squadCombatProfile.formationApproachSettleGateEnabled)
+        if (!squadCombatProfile.approachSettleGateEnabled)
             return false;
 
-        if (IsRangedCombatStyle())
+        if (IsRangedCombat())
             return false;
 
         if (!CanAttack(target))
@@ -659,7 +666,7 @@ public partial class SquadCombat : MonoBehaviour
         }
 
         approachEngagementSettleTimer += Time.deltaTime;
-        return approachEngagementSettleTimer < squadCombatProfile.formationApproachSettleDuration;
+        return approachEngagementSettleTimer < squadCombatProfile.approachSettleDuration;
     }
 
     bool HasEnoughSoldiersReadyForInitialEngagement(SquadController target)
@@ -671,8 +678,8 @@ public partial class SquadCombat : MonoBehaviour
         int readySoldiers = 0;
 
         float readyRange = Mathf.Max(
-            squadCombatProfile.formationApproachSettleMinimumReadyRange,
-            GetSquadWeaponAttackRange() + squadCombatProfile.formationApproachSettleReadyRangePadding);
+            squadCombatProfile.approachSettleMinimumReadyRange,
+            GetSquadWeaponAttackRange() + squadCombatProfile.approachSettleReadyRangePadding);
 
         float readyRangeSqr = readyRange * readyRange;
 
@@ -696,7 +703,7 @@ public partial class SquadCombat : MonoBehaviour
             return true;
 
         int requiredReadySoldiers = Mathf.Clamp(
-            Mathf.CeilToInt(livingSoldiers * squadCombatProfile.formationApproachSettleReadyRatio),
+            Mathf.CeilToInt(livingSoldiers * squadCombatProfile.approachSettleReadyRatio),
             1,
             livingSoldiers);
 
@@ -730,11 +737,11 @@ public partial class SquadCombat : MonoBehaviour
 
     bool ShouldUseFormationCharge()
     {
-        return squadCombatProfile.formationChargeEnabled &&
+        return squadCombatProfile.chargeEnabled &&
                formationChargeEnabled &&
                currentEngagementType == SquadEngagementReason.OrderedAttack &&
                squad != null &&
-               !IsRangedCombatStyle();
+               !IsRangedCombat();
     }
 
     bool IsCloseEnoughToStartFormationCharge(SquadController target)
@@ -752,10 +759,10 @@ public partial class SquadCombat : MonoBehaviour
 
         float chargeStartDistance = Mathf.Max(
             GetEffectiveCombatStartRange(),
-            squadCombatProfile.formationChargeStartDistance);
+            squadCombatProfile.chargeStartDistance);
 
         float minimumStartDistance = Mathf.Clamp(
-            squadCombatProfile.formationChargeMinimumStartDistance,
+            squadCombatProfile.chargeMinimumStartDistance,
             0f,
             chargeStartDistance);
 
@@ -792,9 +799,9 @@ public partial class SquadCombat : MonoBehaviour
         formationChargeFollowThroughDestination = Vector3.zero;
         formationChargeTimer = Mathf.Max(
             0.01f,
-            squadCombatProfile.formationChargeMaximumDuration);
+            squadCombatProfile.chargeMaximumDuration);
 
-        if (squadCombatProfile.formationChargeMode == FormationChargeMode.FullCharge)
+        if (squadCombatProfile.chargeMode == ChargeMode.FullCharge)
             InitializeFormationChargeSoldierRuntime();
 
         if (squad != null)
@@ -810,7 +817,7 @@ public partial class SquadCombat : MonoBehaviour
 
         float penetrationMultiplier = Mathf.Max(
             0f,
-            squadCombatProfile.formationChargePenetrationMultiplier);
+            squadCombatProfile.chargePenetrationMultiplier);
 
         foreach (SoldierController soldier in roster.Soldiers)
         {
@@ -892,7 +899,7 @@ public partial class SquadCombat : MonoBehaviour
             formationChargeLockedDirection *
             Mathf.Max(
                 0f,
-                squadCombatProfile.formationChargeFollowThroughMaximumDistance);
+                squadCombatProfile.chargeFollowThroughMaximumDistance);
     }
 
     void MoveAlongFormationChargeFollowThrough()
@@ -909,7 +916,7 @@ public partial class SquadCombat : MonoBehaviour
     {
         float maximumDistance = Mathf.Max(
             0f,
-            squadCombatProfile.formationChargeFollowThroughMaximumDistance);
+            squadCombatProfile.chargeFollowThroughMaximumDistance);
 
         if (maximumDistance <= 0f)
             return true;
@@ -954,7 +961,7 @@ public partial class SquadCombat : MonoBehaviour
         float spentRatio = spentChargers / (float)activeChargers;
 
         return spentRatio >= Mathf.Clamp01(
-            squadCombatProfile.formationChargeEndSpentRatio);
+            squadCombatProfile.chargeEndSpentRatio);
     }
 
     void RegisterFormationChargeContact(
@@ -980,7 +987,7 @@ public partial class SquadCombat : MonoBehaviour
         Vector3 chargeDirection = ResolveFormationChargeImpactDirection(charger);
         float speedRatio = ResolveFullChargeSpeedRatio(charger, chargeDirection);
         float minimumSpeedRatio = Mathf.Clamp01(
-            squadCombatProfile.formationFullChargeMinimumImpactSpeedRatio);
+            squadCombatProfile.fullChargeMinimumImpactSpeedRatio);
 
         float penetrationSpeedStrength = speedRatio < minimumSpeedRatio
             ? 0f
@@ -1034,7 +1041,7 @@ public partial class SquadCombat : MonoBehaviour
         SoldierController charger,
         SoldierController enemy)
     {
-        if (squadCombatProfile.formationChargeMode != FormationChargeMode.FullCharge ||
+        if (squadCombatProfile.chargeMode != ChargeMode.FullCharge ||
             charger == null ||
             charger.Motor == null ||
             enemy == null ||
@@ -1058,11 +1065,11 @@ public partial class SquadCombat : MonoBehaviour
             return;
 
         int normalDamage = Mathf.RoundToInt(
-            squadCombatProfile.formationFullChargeImpactDamage *
+            squadCombatProfile.fullChargeImpactDamage *
             impactStrength);
 
         int armorPiercingDamage = Mathf.RoundToInt(
-            squadCombatProfile.formationFullChargeImpactArmorPiercingDamage *
+            squadCombatProfile.fullChargeImpactArmorPiercingDamage *
             impactStrength);
 
         if (normalDamage <= 0 && armorPiercingDamage <= 0)
@@ -1121,7 +1128,7 @@ public partial class SquadCombat : MonoBehaviour
         float authoredChargeSpeed = Mathf.Max(
             0.01f,
             charger.Motor.BaseMoveSpeed *
-            Mathf.Max(0.01f, squadCombatProfile.formationChargeSpeedMultiplier));
+            Mathf.Max(0.01f, squadCombatProfile.chargeSpeedMultiplier));
 
         return Mathf.Clamp01(forwardSpeed / authoredChargeSpeed);
     }
@@ -1142,7 +1149,7 @@ public partial class SquadCombat : MonoBehaviour
             chargeDirection);
 
         float minimumSpeedRatio = Mathf.Clamp01(
-            squadCombatProfile.formationFullChargeMinimumImpactSpeedRatio);
+            squadCombatProfile.fullChargeMinimumImpactSpeedRatio);
 
         if (speedRatio < minimumSpeedRatio)
             return 0f;
@@ -1169,7 +1176,7 @@ public partial class SquadCombat : MonoBehaviour
         formationChargeLeadSoldiers.Clear();
         formationChargeLeadCandidates.Clear();
 
-        if (!squadCombatProfile.formationChargeLeadSpeedEnabled ||
+        if (!squadCombatProfile.chargeLeadSpeedEnabled ||
             roster == null ||
             targetSquad == null ||
             targetSquad.Roster == null)
@@ -1213,7 +1220,7 @@ public partial class SquadCombat : MonoBehaviour
         int leadCount = Mathf.Clamp(
             Mathf.CeilToInt(
                 formationChargeLeadCandidates.Count *
-                squadCombatProfile.formationChargeLeadSoldierRatio),
+                squadCombatProfile.chargeLeadSoldierRatio),
             0,
             formationChargeLeadCandidates.Count);
 
@@ -1268,7 +1275,7 @@ public partial class SquadCombat : MonoBehaviour
             if (IsRangedWeapon(weaponProfile))
                 continue;
 
-            GetFormationAttackValues(
+            GetCombatAttackValues(
                 attacker,
                 weaponProfile,
                 false,
@@ -1294,15 +1301,15 @@ public partial class SquadCombat : MonoBehaviour
                 continue;
 
             formationChargeAttackStartedSoldiers.Add(attacker);
-            formationPendingMeleeTargets[attacker] = target;
+            meleePendingTargets[attacker] = target;
 
             // Preserve normal melee cadence after the opening charge strike so the
             // soldier does not immediately chain a second normal attack on settle.
             float randomInterval = Random.Range(
-                squadCombatProfile.formationAttackIntervalRandomMin,
-                squadCombatProfile.formationAttackIntervalRandomMax);
+                squadCombatProfile.attackIntervalRandomMin,
+                squadCombatProfile.attackIntervalRandomMax);
 
-            formationAttackTimers[attacker] = Mathf.Max(
+            formedAttackTimers[attacker] = Mathf.Max(
                 0.05f,
                 attackInterval + randomInterval);
         }
@@ -1324,7 +1331,7 @@ public partial class SquadCombat : MonoBehaviour
 
         foreach (SoldierController enemy in enemyRoster.Soldiers)
         {
-            if (!IsValidFormationTarget(enemy))
+            if (!IsValidFormedTarget(enemy))
                 continue;
 
             float distanceSqr = Vector3.SqrMagnitude(
@@ -1345,7 +1352,7 @@ public partial class SquadCombat : MonoBehaviour
         if (roster == null || targetSquad == null)
             return;
 
-        bool applyImpulse = squadCombatProfile.formationChargeImpulseEnabled;
+        bool applyImpulse = squadCombatProfile.chargeImpulseEnabled;
 
         foreach (SoldierController soldier in roster.Soldiers)
         {
@@ -1367,7 +1374,7 @@ public partial class SquadCombat : MonoBehaviour
 
             Vector3 capsuleEnd =
                 capsuleStart +
-                chargeDirection * squadCombatProfile.formationChargeImpulseForwardDistance;
+                chargeDirection * squadCombatProfile.chargeImpulseForwardDistance;
 
             formationChargeCurrentContacts.Clear();
 
@@ -1376,7 +1383,7 @@ public partial class SquadCombat : MonoBehaviour
                 chargeDirection);
 
             float minimumImpactSpeedRatio = Mathf.Clamp01(
-                squadCombatProfile.formationFullChargeMinimumImpactSpeedRatio);
+                squadCombatProfile.fullChargeMinimumImpactSpeedRatio);
 
             float impulseSpeedStrength = chargeSpeedRatio < minimumImpactSpeedRatio
                 ? 0f
@@ -1391,22 +1398,22 @@ public partial class SquadCombat : MonoBehaviour
             // buildup and body mass both contribute. Receiver mass is still handled
             // by SoldierMotor.ApplyExternalImpulse.
             float resolvedImpulseMagnitude =
-                squadCombatProfile.formationChargeImpulseMagnitude *
+                squadCombatProfile.chargeImpulseMagnitude *
                 soldier.Motor.BodyMass *
                 impulseSpeedStrength;
 
             ImpulseEmitter.EmitDirectionalCapsule(
                 capsuleStart,
                 capsuleEnd,
-                squadCombatProfile.formationChargeImpulseRadius,
+                squadCombatProfile.chargeImpulseRadius,
                 chargeDirection,
                 applyImpulse
                     ? resolvedImpulseMagnitude
                     : 0f,
-                squadCombatProfile.formationChargeImpulseDuration,
+                squadCombatProfile.chargeImpulseDuration,
                 sourceSoldier: soldier,
                 affectFriendlies: false,
-                radialBlend: squadCombatProfile.formationChargeImpulseRadialBlend,
+                radialBlend: squadCombatProfile.chargeImpulseRadialBlend,
                 minimumFalloff: 0.65f,
                 excludedTargets: applyImpulse
                     ? formationChargeImpactedTargets
@@ -1441,7 +1448,7 @@ public partial class SquadCombat : MonoBehaviour
 
             livingMeleeSoldiers++;
 
-            GetFormationAttackValues(
+            GetCombatAttackValues(
                 soldier,
                 weaponProfile,
                 false,
@@ -1465,7 +1472,7 @@ public partial class SquadCombat : MonoBehaviour
 
         int requiredContactSoldiers = Mathf.Clamp(
             Mathf.CeilToInt(
-                livingMeleeSoldiers * squadCombatProfile.formationChargeContactReadyRatio),
+                livingMeleeSoldiers * squadCombatProfile.chargeContactReadyRatio),
             1,
             livingMeleeSoldiers);
 
@@ -1478,24 +1485,24 @@ public partial class SquadCombat : MonoBehaviour
             return;
 
         movement.OrderStop();
-        currentCombatStyle = ResolveCombatStyle();
+        ResetActiveCombatModeToAuthoredDefaults();
         combatContactDirection = GetContactDirection();
         approachEngagementSettleTimer = 0f;
 
-        if (IsRangedCombatStyle())
+        if (IsRangedCombat())
         {
             // Entering a new ranged firing position is one of the few times the
             // formation is allowed to compact around current survivors. Once setup
             // completes, casualties leave holes until another deliberate formation
             // event (approach/reface/reform) occurs.
             formation?.Rebuild();
-            formationRangedSetupRequired = true;
-            formationRangedSetupInitialized = false;
-            formationRangedInitialFireSettleTimer =
-                squadCombatProfile.formationRangedInitialFireSettleTime;
+            rangedSetupRequired = true;
+            rangedSetupInitialized = false;
+            rangedInitialFireSettleTimer =
+                squadCombatProfile.rangedInitialFireSettleTime;
         }
 
-        ClearFormationRuntimeState(clearAttackTimers: false);
+        ClearFormedCombatRuntimeState(clearAttackTimers: false);
 
         if (squad != null)
             squad.SetState(SquadState.InCombat);
@@ -1538,13 +1545,13 @@ public partial class SquadCombat : MonoBehaviour
         // squad's forward movement intent.
         Vector3 approachPoint;
 
-        if (chargeThroughTarget && !IsRangedCombatStyle())
+        if (chargeThroughTarget && !IsRangedCombat())
         {
             approachPoint =
                 targetCenter +
                 facing * Mathf.Max(
                     0f,
-                    squadCombatProfile.formationChargeFollowThroughMaximumDistance);
+                    squadCombatProfile.chargeFollowThroughMaximumDistance);
         }
         else
         {
@@ -1552,7 +1559,7 @@ public partial class SquadCombat : MonoBehaviour
             // simply advances toward the enemy; TickApproachingCombat enters combat as
             // soon as the ranged combat-start range is satisfied. If already in range,
             // ranged squads never back away unless Ranged Avoidance explicitly does it.
-            approachPoint = IsRangedCombatStyle()
+            approachPoint = IsRangedCombat()
                 ? targetCenter
                 : targetCenter + fromTargetToMe * GetEffectiveApproachStopDistance();
         }
@@ -1597,7 +1604,7 @@ public partial class SquadCombat : MonoBehaviour
 
             if (preserveCombatLockedSoldiers &&
                 IsSoldierCombatLocked(soldier) &&
-                formationAttackerCombatLockTargets.TryGetValue(
+                meleeAttackerCombatLockTargets.TryGetValue(
                     soldier,
                     out SoldierController lockTarget))
             {
@@ -1758,8 +1765,8 @@ public partial class SquadCombat : MonoBehaviour
 
         // Force soldiers to reconsider local enemy assignments under the new
         // primary target while preserving attack cooldowns/action state.
-        formationTargets.Clear();
-        formationTargetRefreshTimers.Clear();
+        formedTargets.Clear();
+        formedTargetRefreshTimers.Clear();
 
         return true;
     }
@@ -1832,13 +1839,26 @@ public partial class SquadCombat : MonoBehaviour
 
     #endregion
 
-    #region Range / Style Helpers
+    #region Range / Combat Mode Helpers
+
+    void ResetActiveCombatModeToAuthoredDefaults()
+    {
+        currentCombatStyle = ResolveCombatStyle();
+        currentCombatExecutionMode = ResolveCombatExecutionMode();
+    }
 
     SquadCombatStyle ResolveCombatStyle()
     {
         return data != null
             ? data.defaultCombatStyle
-            : SquadCombatStyle.FormationCombat;
+            : SquadCombatStyle.Melee;
+    }
+
+    SquadCombatExecutionMode ResolveCombatExecutionMode()
+    {
+        return data != null
+            ? data.defaultCombatExecutionMode
+            : SquadCombatExecutionMode.Formed;
     }
 
 
@@ -1883,3 +1903,5 @@ public partial class SquadCombat : MonoBehaviour
 
     #endregion
 }
+
+

@@ -19,8 +19,8 @@ public partial class SquadCombat
     // -----------------------------------------------------------------------------
     // Ranged Runtime State
     // -----------------------------------------------------------------------------
-    // Ranged squads switch as one unit between ranged and melee fallback.
-    private bool formationRangedSquadUsingMeleeFallback = false;
+    // Ranged combat may switch the squad as one unit between ranged and melee fallback.
+    private bool rangedUsingMeleeFallback = false;
 
     private bool rangedVolleyEnabled = false;
     private bool rangedAvoidanceEnabled = false;
@@ -35,21 +35,40 @@ public partial class SquadCombat
     private int maximumRangedAmmunition = 0;
     private int rangedAmmunitionStartingSoldierCount = 0;
 
-    private float formationRangedInitialFireSettleTimer = 0f;
-    private bool formationRangedSetupRequired = false;
-    private bool formationRangedSetupInitialized = false;
+    private float rangedInitialFireSettleTimer = 0f;
+    private bool rangedSetupRequired = false;
+    private bool rangedSetupInitialized = false;
     
-    private readonly Dictionary<SoldierController, SoldierController> formationPendingProjectileTargets =
+    private readonly Dictionary<SoldierController, SoldierController> rangedPendingProjectileTargets =
         new Dictionary<SoldierController, SoldierController>();
 
-    private readonly Dictionary<SoldierController, WeaponProfile> formationPendingProjectileWeapons =
+    private readonly Dictionary<SoldierController, WeaponProfile> rangedPendingProjectileWeapons =
         new Dictionary<SoldierController, WeaponProfile>();
 
     // Ranged attacks enter a looping RangedAttackHold first. Gameplay owns this
     // delay and explicitly tells the Animator when to enter RangedAttackRelease.
-    private readonly Dictionary<SoldierController, float> formationRangedReleaseTimers =
+    private readonly Dictionary<SoldierController, float> rangedReleaseTimers =
         new Dictionary<SoldierController, float>();
     
+    void TickRangedCombat()
+    {
+        switch (currentCombatExecutionMode)
+        {
+            case SquadCombatExecutionMode.Formed:
+                TickFormedCombat();
+                return;
+
+            // Loose and Skirmish are intentionally real authored modes already,
+            // but their executors are not implemented yet. Preserve current
+            // gameplay by falling back to the stable Formed path for now.
+            case SquadCombatExecutionMode.Loose:
+            case SquadCombatExecutionMode.Skirmish:
+            default:
+                TickFormedCombat();
+                return;
+        }
+    }
+
     // -----------------------------------------------------------------------------
     // Public Ranged Access
     // -----------------------------------------------------------------------------
@@ -60,7 +79,7 @@ public partial class SquadCombat
     public int MaximumRangedAmmunition => maximumRangedAmmunition;
     public bool HasUnlimitedRangedAmmunition => maximumRangedAmmunition < 0;
     public bool HasRangedAmmunition =>
-        IsAuthoredRangedSquad() &&
+        IsAuthoredRangedCombat() &&
         (HasUnlimitedRangedAmmunition || currentRangedAmmunition > 0);
 
     public void SetRangedVolleyEnabled(bool enabled)
@@ -79,10 +98,10 @@ public partial class SquadCombat
     {
         rangedAvoidanceEnabled = !rangedAvoidanceEnabled;
     }
-    bool TryBeginFormationRangedAvoidance()
+    bool TryBeginRangedAvoidance()
     {
         if (!rangedAvoidanceEnabled ||
-            !IsAuthoredRangedSquad() ||
+            !IsAuthoredRangedCombat() ||
             !HasRangedAmmunition ||
             targetSquad == null ||
             movement == null ||
@@ -93,17 +112,17 @@ public partial class SquadCombat
 
         float avoidanceEnterDistance = Mathf.Max(
             0.1f,
-            squadCombatProfile.formationRangedAvoidanceEnterDistance);
+            squadCombatProfile.rangedAvoidanceEnterDistance);
 
         // Use the same physical soldier-proximity basis as melee fallback. Squad
         // roots are virtual formation anchors and can be offset from the actual fight.
         if (!IsAnyLivingSquadMemberThreatenedWithin(avoidanceEnterDistance))
             return false;
 
-        BeginFormationRangedAvoidanceRetreat(targetSquad);
+        BeginRangedAvoidanceRetreat(targetSquad);
         return true;
     }
-    public bool TryChainFormationRangedAvoidanceWithdrawal()
+    public bool TryChainRangedAvoidanceWithdrawal()
     {
         if (!rangedAvoidanceEnabled ||
             !HasRangedAmmunition ||
@@ -127,14 +146,14 @@ public partial class SquadCombat
 
         float recheckDistance = Mathf.Max(
             0.1f,
-            squadCombatProfile.formationRangedAvoidanceRecheckDistance);
+            squadCombatProfile.rangedAvoidanceRecheckDistance);
 
         if (distanceToDestination > recheckDistance)
             return false;
 
         float avoidanceDistance = Mathf.Max(
             0.1f,
-            squadCombatProfile.formationRangedAvoidanceEnterDistance);
+            squadCombatProfile.rangedAvoidanceEnterDistance);
 
         if (!IsAnyLivingSquadMemberThreatenedBySquad(
                 rangedAvoidanceThreatSquad,
@@ -144,10 +163,10 @@ public partial class SquadCombat
             return false;
         }
 
-        BeginFormationRangedAvoidanceRetreat(rangedAvoidanceThreatSquad);
+        BeginRangedAvoidanceRetreat(rangedAvoidanceThreatSquad);
         return true;
     }
-    void BeginFormationRangedAvoidanceRetreat(SquadController avoidanceThreat)
+    void BeginRangedAvoidanceRetreat(SquadController avoidanceThreat)
     {
         if (avoidanceThreat == null || avoidanceThreat.Roster == null)
             return;
@@ -179,7 +198,7 @@ public partial class SquadCombat
 
         Vector3 retreatDestination =
             squad.transform.position +
-            awayFromTarget * squadCombatProfile.formationRangedAvoidanceRetreatDistance;
+            awayFromTarget * squadCombatProfile.rangedAvoidanceRetreatDistance;
 
         // Clear normal combat ownership, but preserve the avoidance threat separately
         // so withdrawal can recheck it before reaching the destination.
@@ -208,10 +227,10 @@ public partial class SquadCombat
             soldier.CancelCurrentAction();
         }
     }
-    void TickFormationRangedReleaseTimer(SoldierController soldier)
+    void TickRangedReleaseTimer(SoldierController soldier)
     {
         if (soldier == null ||
-            !formationRangedReleaseTimers.TryGetValue(soldier, out float releaseTimer))
+            !rangedReleaseTimers.TryGetValue(soldier, out float releaseTimer))
         {
             return;
         }
@@ -220,12 +239,12 @@ public partial class SquadCombat
 
         if (releaseTimer > 0f)
         {
-            formationRangedReleaseTimers[soldier] = releaseTimer;
+            rangedReleaseTimers[soldier] = releaseTimer;
             return;
         }
 
         // Consume first so one attack can issue RangedRelease only once.
-        formationRangedReleaseTimers.Remove(soldier);
+        rangedReleaseTimers.Remove(soldier);
 
         if (!soldier.IsAlive ||
             soldier.ActionState != SoldierActionState.Attack ||
@@ -242,7 +261,7 @@ public partial class SquadCombat
     {
         if (attacker == null ||
             attacker.ActionState != SoldierActionState.Attack ||
-            !formationPendingProjectileTargets.TryGetValue(
+            !rangedPendingProjectileTargets.TryGetValue(
                 attacker,
                 out SoldierController pendingTarget))
         {
@@ -283,7 +302,7 @@ public partial class SquadCombat
         attacker.CancelCurrentAction();
         return true;
     }
-    void BeginFormationRangedAttack(
+    void BeginRangedAttack(
         SoldierController attacker,
         SoldierController target,
         WeaponProfile weaponProfile,
@@ -296,24 +315,24 @@ public partial class SquadCombat
             ? Mathf.Max(0f, weaponProfile.animationRangedAttackHoldTime)
             : 0f;
 
-        formationRangedReleaseTimers[attacker] = rangedHoldTime;
+        rangedReleaseTimers[attacker] = rangedHoldTime;
 
         if (weaponProfile != null && rangedStats.projectilePrefab != null)
         {
-            formationPendingProjectileTargets[attacker] = target;
-            formationPendingProjectileWeapons[attacker] = weaponProfile;
+            rangedPendingProjectileTargets[attacker] = target;
+            rangedPendingProjectileWeapons[attacker] = weaponProfile;
             return;
         }
 
         if (!TryConsumeRangedAmmunition())
             return;
 
-        ResolveFormationRangedHit(
+        ResolveRangedHit(
             attacker,
             target,
             rangedStats);
     }
-    void ResolveFormationRangedHit(
+    void ResolveRangedHit(
         SoldierController attacker,
         SoldierController target,
         RangedCombatStats rangedStats)
@@ -347,14 +366,14 @@ public partial class SquadCombat
         if (attacker == null)
             return;
 
-        if (!formationPendingProjectileTargets.TryGetValue(
+        if (!rangedPendingProjectileTargets.TryGetValue(
                 attacker,
                 out SoldierController target))
         {
             return;
         }
 
-        if (!formationPendingProjectileWeapons.TryGetValue(
+        if (!rangedPendingProjectileWeapons.TryGetValue(
                 attacker,
                 out WeaponProfile weaponProfile))
         {
@@ -409,17 +428,17 @@ public partial class SquadCombat
         if (soldier == null)
             return;
 
-        formationPendingProjectileTargets.Remove(soldier);
-        formationPendingProjectileWeapons.Remove(soldier);
-        formationRangedReleaseTimers.Remove(soldier);
+        rangedPendingProjectileTargets.Remove(soldier);
+        rangedPendingProjectileWeapons.Remove(soldier);
+        rangedReleaseTimers.Remove(soldier);
     }
-    bool IsAuthoredRangedSquad()
+    bool IsAuthoredRangedCombat()
     {
-        return ResolveCombatStyle() == SquadCombatStyle.RangedLine;
+        return ResolveCombatStyle() == SquadCombatStyle.Ranged;
     }
-    bool IsRangedCombatStyle()
+    bool IsRangedCombat()
     {
-        return currentCombatStyle == SquadCombatStyle.RangedLine;
+        return currentCombatStyle == SquadCombatStyle.Ranged;
     }
     float GetEffectiveScanRange()
     {
@@ -430,7 +449,7 @@ public partial class SquadCombat
             ? squadCombatProfile.holdStanceAutoTargetScanRange
             : squadCombatProfile.engageStanceAutoTargetScanRange;
 
-        if (!IsRangedCombatStyle() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
+        if (!IsRangedCombat() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
             return baseRange;
 
         return Mathf.Max(
@@ -439,7 +458,7 @@ public partial class SquadCombat
     }
     float GetEffectiveCombatStartRange()
     {
-        if (!IsRangedCombatStyle() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
+        if (!IsRangedCombat() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
             return Mathf.Max(0f, squadCombatProfile.defaultCombatStartRange);
 
         return Mathf.Max(
@@ -448,7 +467,7 @@ public partial class SquadCombat
     }
     float GetEffectiveCombatBreakRange()
     {
-        if (!IsRangedCombatStyle() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
+        if (!IsRangedCombat() || !squadCombatProfile.rangedUseWeaponRangeForTacticalRanges)
         {
             return Mathf.Max(
                 squadCombatProfile.defaultCombatStartRange,
@@ -465,7 +484,7 @@ public partial class SquadCombat
 
         if (weaponProfile == null)
             return squadCombatProfile != null
-                ? squadCombatProfile.formationFallbackMeleeAttackRange
+                ? squadCombatProfile.fallbackMeleeAttackRange
                 : 1.5f;
 
         return weaponProfile.weaponKind == WeaponKind.Ranged
@@ -477,7 +496,7 @@ public partial class SquadCombat
         if (data == null || data.soldierData == null)
             return null;
 
-        if (IsRangedCombatStyle() &&
+        if (IsRangedCombat() &&
             data.soldierData.rangedWeaponProfile != null)
         {
             return data.soldierData.rangedWeaponProfile;
@@ -517,7 +536,7 @@ public partial class SquadCombat
     }
     int CalculateMaximumRangedAmmunition()
     {
-        if (!IsAuthoredRangedSquad() || rangedAmmunitionStartingSoldierCount <= 0)
+        if (!IsAuthoredRangedCombat() || rangedAmmunitionStartingSoldierCount <= 0)
             return 0;
 
         WeaponProfile rangedWeapon = GetSquadRangedWeaponProfile();
@@ -547,7 +566,7 @@ public partial class SquadCombat
     }
     int CountLivingRangedSoldiers()
     {
-        if (!IsAuthoredRangedSquad() || roster == null)
+        if (!IsAuthoredRangedCombat() || roster == null)
             return 0;
 
         int count = 0;
@@ -576,9 +595,9 @@ public partial class SquadCombat
         currentRangedAmmunition -= amount;
         return true;
     }
-    bool TickFormationRangedSetup()
+    bool TickFormedRangedSetup()
     {
-        if (!IsRangedCombatStyle())
+        if (!IsRangedCombat())
             return true;
 
         if (formation == null || roster == null || targetSquad == null)
@@ -612,21 +631,21 @@ public partial class SquadCombat
         // Sustained ranged fire is intentionally stable. Small target-center shifts
         // and casualties do not force the squad back through formation setup. Only
         // a real firing-arc failure starts a deliberate reface/setup cycle.
-        if (!formationRangedSetupRequired && !targetOutsideFiringArc)
+        if (!rangedSetupRequired && !targetOutsideFiringArc)
             return true;
 
-        if (!formationRangedSetupRequired && targetOutsideFiringArc)
+        if (!rangedSetupRequired && targetOutsideFiringArc)
         {
             // Major refacing is a meaningful formation event, so this is an
             // appropriate time to compact around the current survivors.
             formation.Rebuild();
-            formationRangedSetupRequired = true;
-            formationRangedSetupInitialized = false;
-            formationRangedInitialFireSettleTimer =
-                squadCombatProfile.formationRangedInitialFireSettleTime;
+            rangedSetupRequired = true;
+            rangedSetupInitialized = false;
+            rangedInitialFireSettleTimer =
+                squadCombatProfile.rangedInitialFireSettleTime;
         }
 
-        if (!formationRangedSetupInitialized)
+        if (!rangedSetupInitialized)
         {
             // Pick the new facing and nearest slot assignment ONCE. CurrentSlots then
             // stay fixed for this setup cycle so root-following cannot move the
@@ -635,10 +654,10 @@ public partial class SquadCombat
                 transform.position,
                 desiredFacing);
 
-            formationRangedSetupInitialized = true;
+            rangedSetupInitialized = true;
         }
 
-        if (!IsFormationRangedSetupReady())
+        if (!IsFormedRangedSetupReady())
         {
             MoveRangedSquadTowardFormationSlots(targetCenter);
             return false;
@@ -652,17 +671,17 @@ public partial class SquadCombat
             soldier.Stop();
         }
 
-        if (formationRangedInitialFireSettleTimer > 0f)
+        if (rangedInitialFireSettleTimer > 0f)
         {
-            formationRangedInitialFireSettleTimer -= Time.deltaTime;
+            rangedInitialFireSettleTimer -= Time.deltaTime;
             return false;
         }
 
-        formationRangedSetupRequired = false;
-        formationRangedSetupInitialized = false;
+        rangedSetupRequired = false;
+        rangedSetupInitialized = false;
         return true;
     }
-    bool IsFormationRangedSetupReady()
+    bool IsFormedRangedSetupReady()
     {
         if (formation == null || roster == null)
             return false;
@@ -691,7 +710,7 @@ public partial class SquadCombat
                 Flatten(soldier.transform.position),
                 Flatten(slots[slotIndex]));
 
-            if (slotDistance <= squadCombatProfile.formationRangedSetupSlotDistance)
+            if (slotDistance <= squadCombatProfile.rangedSetupSlotDistance)
                 readyCount++;
         }
 
@@ -701,7 +720,7 @@ public partial class SquadCombat
         float readyRatio = (float)readyCount / livingCount;
 
         return readyRatio >=
-               squadCombatProfile.formationRangedSetupRequiredRatio;
+               squadCombatProfile.rangedSetupRequiredRatio;
     }
     void MoveRangedSquadTowardFormationSlots(Vector3 targetCenter)
     {
@@ -729,7 +748,7 @@ public partial class SquadCombat
                 slots[slotIndex],
                 0.05f,
                 0.1f,
-                squadCombatProfile.formationRangedSetupMoveSpeedMultiplier);
+                squadCombatProfile.rangedSetupMoveSpeedMultiplier);
 
             soldier.FaceToward(
                 targetCenter,
@@ -802,7 +821,7 @@ public partial class SquadCombat
             ? data.soldierData.rangedWeaponProfile
             : null;
     }
-    void DesynchronizeFormationAttackTimersForMeleeFallback()
+    void DesynchronizeFormedAttackTimersForMeleeFallback()
     {
         if (roster == null)
             return;
@@ -824,7 +843,7 @@ public partial class SquadCombat
                             : meleeWeapon.melee.attackInterval)
                     : Mathf.Max(
                         0.05f,
-                        squadCombatProfile.formationFallbackMeleeAttackInterval);
+                        squadCombatProfile.fallbackMeleeAttackInterval);
 
             float randomOffset = Random.Range(
                 0f,
@@ -832,20 +851,20 @@ public partial class SquadCombat
                     0.10f,
                     meleeInterval * 0.35f));
 
-            formationAttackTimers[soldier] = randomOffset;
+            formedAttackTimers[soldier] = randomOffset;
         }
     }
-    void UpdateFormationSquadCombatMode()
+    void UpdateRangedCombatMode()
     {
         bool isRangedSquad =
-            IsAuthoredRangedSquad() &&
+            IsAuthoredRangedCombat() &&
             HasLivingRangedWeapon();
 
         if (!isRangedSquad)
         {
-            formationRangedSquadUsingMeleeFallback = false;
-            currentCombatStyle = SquadCombatStyle.FormationCombat;
-            SetFormationSquadWeaponMode(useRangedWeapon: false);
+            rangedUsingMeleeFallback = false;
+            currentCombatStyle = SquadCombatStyle.Melee;
+            SetRangedSquadWeaponMode(useRangedWeapon: false);
             return;
         }
 
@@ -856,42 +875,42 @@ public partial class SquadCombat
         {
             bool enteringMeleeFallback =
                 hasMeleeFallback &&
-                !formationRangedSquadUsingMeleeFallback;
+                !rangedUsingMeleeFallback;
 
-            formationRangedSquadUsingMeleeFallback = hasMeleeFallback;
-            currentCombatStyle = SquadCombatStyle.FormationCombat;
-            SetFormationSquadWeaponMode(useRangedWeapon: false);
+            rangedUsingMeleeFallback = hasMeleeFallback;
+            currentCombatStyle = SquadCombatStyle.Melee;
+            SetRangedSquadWeaponMode(useRangedWeapon: false);
 
             if (enteringMeleeFallback)
-                DesynchronizeFormationAttackTimersForMeleeFallback();
+                DesynchronizeFormedAttackTimersForMeleeFallback();
 
             return;
         }
 
-        if (!squadCombatProfile.formationRangedMeleeFallbackEnabled ||
+        if (!squadCombatProfile.rangedMeleeFallbackEnabled ||
             !hasMeleeFallback)
         {
-            formationRangedSquadUsingMeleeFallback = false;
-            currentCombatStyle = SquadCombatStyle.RangedLine;
-            SetFormationSquadWeaponMode(useRangedWeapon: true);
+            rangedUsingMeleeFallback = false;
+            currentCombatStyle = SquadCombatStyle.Ranged;
+            SetRangedSquadWeaponMode(useRangedWeapon: true);
             return;
         }
 
         float meleeFallbackEnterDistance = Mathf.Max(
             GetSquadRangedMinimumRange(),
-            squadCombatProfile.formationRangedMeleeFallbackEnterDistance);
+            squadCombatProfile.rangedMeleeFallbackEnterDistance);
 
         float meleeFallbackExitDistance = Mathf.Max(
             meleeFallbackEnterDistance,
-            squadCombatProfile.formationRangedMeleeFallbackExitDistance);
+            squadCombatProfile.rangedMeleeFallbackExitDistance);
 
-        if (formationRangedSquadUsingMeleeFallback)
+        if (rangedUsingMeleeFallback)
         {
             if (!IsAnyLivingSquadMemberThreatenedWithin(meleeFallbackExitDistance))
             {
-                formationRangedSquadUsingMeleeFallback = false;
-                currentCombatStyle = SquadCombatStyle.RangedLine;
-                SetFormationSquadWeaponMode(useRangedWeapon: true);
+                rangedUsingMeleeFallback = false;
+                currentCombatStyle = SquadCombatStyle.Ranged;
+                SetRangedSquadWeaponMode(useRangedWeapon: true);
             }
 
             return;
@@ -899,17 +918,17 @@ public partial class SquadCombat
 
         if (IsAnyLivingSquadMemberThreatenedWithin(meleeFallbackEnterDistance))
         {
-            formationRangedSquadUsingMeleeFallback = true;
-            currentCombatStyle = SquadCombatStyle.FormationCombat;
-            SetFormationSquadWeaponMode(useRangedWeapon: false);
-            DesynchronizeFormationAttackTimersForMeleeFallback();
+            rangedUsingMeleeFallback = true;
+            currentCombatStyle = SquadCombatStyle.Melee;
+            SetRangedSquadWeaponMode(useRangedWeapon: false);
+            DesynchronizeFormedAttackTimersForMeleeFallback();
             return;
         }
 
-        currentCombatStyle = SquadCombatStyle.RangedLine;
-        SetFormationSquadWeaponMode(useRangedWeapon: true);
+        currentCombatStyle = SquadCombatStyle.Ranged;
+        SetRangedSquadWeaponMode(useRangedWeapon: true);
     }
-    void SetFormationSquadWeaponMode(bool useRangedWeapon)
+    void SetRangedSquadWeaponMode(bool useRangedWeapon)
     {
         if (roster == null)
             return;
@@ -920,7 +939,7 @@ public partial class SquadCombat
                 continue;
 
             WeaponProfile desiredWeapon =
-                ResolveFormationWeaponForMode(
+                ResolveWeaponForRangedMode(
                     squadMember,
                     useRangedWeapon);
 
@@ -931,7 +950,7 @@ public partial class SquadCombat
             squadMember.SetActiveWeaponProfile(desiredWeapon);
         }
     }
-    WeaponProfile ResolveFormationWeaponForMode(
+    WeaponProfile ResolveWeaponForRangedMode(
         SoldierController squadMember,
         bool useRangedWeapon)
     {
@@ -1026,7 +1045,7 @@ public partial class SquadCombat
         float clampedDistance = Mathf.Max(0f, distance);
         float distanceSqr = clampedDistance * clampedDistance;
 
-        if (squadCombatProfile.formationMultiSquadLocalTargetingEnabled &&
+        if (squadCombatProfile.multiSquadLocalTargetingEnabled &&
             SquadManager.Instance != null)
         {
             foreach (SquadController candidateSquad in SquadManager.Instance.Squads)
@@ -1087,3 +1106,5 @@ public partial class SquadCombat
 
     #endregion
 }
+
+

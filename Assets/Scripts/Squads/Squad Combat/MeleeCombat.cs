@@ -3,68 +3,87 @@ using UnityEngine;
 using UnityEngine.AI;
 
 /// -----------------------------------------------------------------------------
-/// FormationCombat
+/// MeleeCombat
 /// -----------------------------------------------------------------------------
 ///
-/// Formation/melee behavior module for SquadCombat.
+/// Melee-family behavior plus the current shared Formed execution baseline.
 ///
 /// This is intentionally a partial of the single SquadCombat MonoBehaviour rather
-/// than a second component. It owns the formation soldier executor, local target
-/// assignment, reserve movement, combat locks, attack timers, and melee impact
-/// resolution while sharing one authoritative squad combat state with the coordinator.
+/// than a second component. Melee-specific impact/commitment behavior lives here,
+/// while the existing formed soldier executor remains shared with Ranged combat.
+/// Future Loose execution can branch from the family entry point without creating
+/// another combat-family enum value.
 ///
 public partial class SquadCombat
 {
-    #region Formation Combat Module
+    #region Melee / Formed Combat Module
 
     // -----------------------------------------------------------------------------
-    // Formation Runtime State
+    // Formed Execution Runtime State
     // -----------------------------------------------------------------------------
-    private readonly Dictionary<SoldierController, SoldierController> formationTargets =
+    private readonly Dictionary<SoldierController, SoldierController> formedTargets =
         new Dictionary<SoldierController, SoldierController>();
 
-    private readonly Dictionary<SoldierController, float> formationTargetRefreshTimers =
+    private readonly Dictionary<SoldierController, float> formedTargetRefreshTimers =
         new Dictionary<SoldierController, float>();
 
-    private readonly Dictionary<SoldierController, float> formationAttackTimers =
+    private readonly Dictionary<SoldierController, float> formedAttackTimers =
         new Dictionary<SoldierController, float>();
 
-    private readonly Dictionary<SoldierController, float> formationReserveSideStepTimers =
+    private readonly Dictionary<SoldierController, float> formedReserveSideStepTimers =
         new Dictionary<SoldierController, float>();
 
-    private readonly Dictionary<SoldierController, float> formationReserveBlockedSitTimers =
+    private readonly Dictionary<SoldierController, float> formedReserveBlockedSitTimers =
         new Dictionary<SoldierController, float>();
 
-    private readonly HashSet<SoldierController> formationReserveBlockedSoldiers =
+    private readonly HashSet<SoldierController> formedReserveBlockedSoldiers =
         new HashSet<SoldierController>();
 
-    private readonly Dictionary<SoldierController, Vector3> formationReserveSideStepDestinations =
+    private readonly Dictionary<SoldierController, Vector3> formedReserveSideStepDestinations =
         new Dictionary<SoldierController, Vector3>();
 
-    private readonly Dictionary<SoldierController, float> formationReserveBehindFriendlySearchTimers =
+    private readonly Dictionary<SoldierController, float> formedReserveBehindFriendlySearchTimers =
         new Dictionary<SoldierController, float>();
 
-    private readonly Dictionary<SoldierController, Vector3> formationReserveBehindFriendlyDestinations =
+    private readonly Dictionary<SoldierController, Vector3> formedReserveBehindFriendlyDestinations =
         new Dictionary<SoldierController, Vector3>();
 
-    private readonly Dictionary<SoldierController, SoldierController> formationActiveAttackerCombatLockTargets =
+    private readonly Dictionary<SoldierController, SoldierController> meleeActiveAttackerCombatLockTargets =
         new Dictionary<SoldierController, SoldierController>();
 
-    private readonly Dictionary<SoldierController, float> formationAttackerCombatLockTimers =
+    private readonly Dictionary<SoldierController, float> meleeAttackerCombatLockTimers =
         new Dictionary<SoldierController, float>();
 
-    private readonly Dictionary<SoldierController, SoldierController> formationAttackerCombatLockTargets =
+    private readonly Dictionary<SoldierController, SoldierController> meleeAttackerCombatLockTargets =
         new Dictionary<SoldierController, SoldierController>();
 
-    private NavMeshPath formationReserveBehindFriendlyPath; // Must be initialized inside of Awake/Start, cannot be initialized in Constructor
+    private NavMeshPath formedReserveBehindFriendlyPath; // Must be initialized inside of Awake/Start, cannot be initialized in Constructor
 
     // Target committed when a melee attack begins.
     // The AttackImpact animation event consumes this target so target refreshes
     // during the animation cannot redirect the completed swing.
-    private readonly Dictionary<SoldierController, SoldierController> formationPendingMeleeTargets =
+    private readonly Dictionary<SoldierController, SoldierController> meleePendingTargets =
         new Dictionary<SoldierController, SoldierController>();
 
-    void TickFormationCombat()
+    void TickMeleeCombat()
+    {
+        switch (currentCombatExecutionMode)
+        {
+            case SquadCombatExecutionMode.Formed:
+                TickFormedCombat();
+                return;
+
+            // Loose is intentionally a real authored mode already, but its own
+            // executor is not implemented yet. Preserve current gameplay by
+            // falling back to the stable Formed path until that pass is built.
+            case SquadCombatExecutionMode.Loose:
+            default:
+                TickFormedCombat();
+                return;
+        }
+    }
+
+    void TickFormedCombat()
     {
         if (!HasCombatProfile())
             return;
@@ -84,12 +103,12 @@ public partial class SquadCombat
 
         // Avoidance gets first refusal while the squad still has ammunition. This is
         // intentionally a simple one-step retreat, not full skirmisher AI.
-        if (TryBeginFormationRangedAvoidance())
+        if (TryBeginRangedAvoidance())
             return;
 
         // Ranged/melee fallback is a squad decision, not a per-soldier decision.
         // Update it before range/break checks so the correct combat mode owns them.
-        UpdateFormationSquadCombatMode();
+        UpdateRangedCombatMode();
 
         if (!CanAttack(targetSquad))
         {
@@ -99,7 +118,7 @@ public partial class SquadCombat
                 return;
             }
 
-            UpdateFormationSquadCombatMode();
+            UpdateRangedCombatMode();
         }
         else if (!IsWithinCombatBreakRange(targetSquad))
         {
@@ -118,14 +137,14 @@ public partial class SquadCombat
                 return;
             }
 
-            UpdateFormationSquadCombatMode();
+            UpdateRangedCombatMode();
         }
 
         // Ranged squads pursue their current squad target as a formation.
         // If the target leaves the normal ranged engagement distance, reuse the
         // existing approach/preferred-range behavior instead of letting individual
         // soldiers chase or waiting until the larger combat break range is exceeded.
-        if (IsRangedCombatStyle() &&
+        if (IsRangedCombat() &&
             !IsCloseEnoughToStartEngagement(targetSquad))
         {
             BeginApproachingCombat();
@@ -136,8 +155,8 @@ public partial class SquadCombat
 
         // Ranged combat is formation-owned. The whole squad turns and settles
         // before individual soldiers are allowed to fire.
-        if (IsRangedCombatStyle() &&
-            !TickFormationRangedSetup())
+        if (IsRangedCombat() &&
+            !TickFormedRangedSetup())
         {
             return;
         }
@@ -146,21 +165,21 @@ public partial class SquadCombat
         bool waitToAttack = false;
         bool shouldSynchronizeRangedVolley =
             rangedVolleyEnabled &&
-            IsRangedCombatStyle() &&
-            !formationRangedSquadUsingMeleeFallback;
+            IsRangedCombat() &&
+            !rangedUsingMeleeFallback;
 
         if (shouldSynchronizeRangedVolley &&
-            !IsAllSoldierAttackTimersReady())
+            !AreAllFormedAttackTimersReady())
         {
             waitToAttack = true;
         }
         
         foreach (SoldierController soldier in roster.Soldiers)
         {
-            TickFormationSoldier(soldier, waitToAttack);
+            TickFormedCombatSoldier(soldier, waitToAttack);
         }
     }
-    void TickFormationSoldier(SoldierController soldier, bool waitToAttack = false)
+    void TickFormedCombatSoldier(SoldierController soldier, bool waitToAttack = false)
     {
         if (soldier == null || !soldier.IsAlive)
             return;
@@ -168,18 +187,18 @@ public partial class SquadCombat
         // -------------------------------------------------------------------------
         // Shared Soldier Combat Setup
         // -------------------------------------------------------------------------
-        EnsureFormationTimers(soldier);
-        TickFormationTimers(soldier);
+        EnsureFormedCombatTimers(soldier);
+        TickFormedCombatTimers(soldier);
 
         SoldierController currentTarget =
-            RefreshFormationSoldierTargetIfNeeded(soldier);
+            RefreshFormedSoldierTargetIfNeeded(soldier);
 
         if (currentTarget == null)
         {
             soldier.Stop();
             soldier.SetCombatRole(SoldierRole.None);
             soldier.ClearCombatTarget();
-            ClearFormationReserveBlockedState(soldier);
+            ClearFormedReserveBlockedState(soldier);
             return;
         }
 
@@ -194,7 +213,7 @@ public partial class SquadCombat
 
         bool isRangedWeapon = IsRangedWeapon(weaponProfile);
 
-        GetFormationAttackValues(
+        GetCombatAttackValues(
             soldier,
             weaponProfile,
             isRangedWeapon,
@@ -218,16 +237,16 @@ public partial class SquadCombat
         }
 
         if (!isRangedWeapon &&
-            TryFindImmediateFormationContactTarget(
+            TryFindImmediateMeleeContactTarget(
                 soldier,
                 currentTarget,
                 attackRange,
                 out SoldierController immediateContactTarget))
         {
             currentTarget = immediateContactTarget;
-            formationTargets[soldier] = currentTarget;
+            formedTargets[soldier] = currentTarget;
             soldier.SetCombatTarget(currentTarget);
-            ClearFormationReserveBlockedState(soldier);
+            ClearFormedReserveBlockedState(soldier);
         }
 
         Vector3 toTarget = currentTarget.transform.position - soldier.transform.position;
@@ -249,20 +268,20 @@ public partial class SquadCombat
         // Active means this soldier is currently in its personal 1v1 / attack range
         // and can directly fight its assigned target. Later this can become a real
         // soldier combat state. For now, it is only a clear branch in the tick.
-        if (IsFormationActiveSoldier(distanceToTarget, attackRange))
+        if (IsFormedActiveSoldier(distanceToTarget, attackRange))
         {
-            ClearFormationReserveBlockedState(soldier);
+            ClearFormedReserveBlockedState(soldier);
 
             if (!isRangedWeapon)
-                MarkFormationActiveAttackerCombatLockCandidate(soldier, currentTarget);
+                MarkMeleeActiveAttackerCombatLockCandidate(soldier, currentTarget);
             else
-                ClearFormationActiveAttackerCombatLockCandidate(soldier);
+                ClearMeleeActiveAttackerCombatLockCandidate(soldier);
 
             // Ranged Volley (Attack Sync) MVP
             if (waitToAttack)
                 return;
             
-            TickFormationActiveSoldier(
+            TickFormedActiveSoldier(
                 soldier,
                 currentTarget,
                 weaponProfile,
@@ -280,42 +299,42 @@ public partial class SquadCombat
         // Reserve means this soldier has a valid combat target, but is not currently
         // in direct active combat / 1v1 range. For now reserves simply try to move
         // toward a useful combat point, or wait when a friendly body blocks the lane.
-        TickFormationReserveSoldier(
+        TickFormedReserveSoldier(
             soldier,
             currentTarget,
             isRangedWeapon,
             attackRange,
             stoppingDistance);
     }
-    SoldierController RefreshFormationSoldierTargetIfNeeded(SoldierController soldier)
+    SoldierController RefreshFormedSoldierTargetIfNeeded(SoldierController soldier)
     {
-        formationTargets.TryGetValue(
+        formedTargets.TryGetValue(
             soldier,
             out SoldierController currentTarget);
 
         bool shouldRefreshTarget =
-            formationTargetRefreshTimers[soldier] <= 0f ||
-            !IsValidFormationTarget(currentTarget);
+            formedTargetRefreshTimers[soldier] <= 0f ||
+            !IsValidFormedTarget(currentTarget);
 
         if (!shouldRefreshTarget)
             return currentTarget;
 
-        formationTargetRefreshTimers[soldier] = Mathf.Max(
+        formedTargetRefreshTimers[soldier] = Mathf.Max(
             0.01f,
-            squadCombatProfile.formationTargetRefreshInterval);
+            squadCombatProfile.meleeTargetRefreshInterval);
 
-        currentTarget = FindBestFormationTarget(soldier, currentTarget);
+        currentTarget = FindBestFormedTarget(soldier, currentTarget);
 
-        formationTargets[soldier] = currentTarget;
+        formedTargets[soldier] = currentTarget;
         soldier.SetCombatTarget(currentTarget);
 
         return currentTarget;
     }
-    bool IsFormationActiveSoldier(float distanceToTarget, float attackRange)
+    bool IsFormedActiveSoldier(float distanceToTarget, float attackRange)
     {
         return distanceToTarget <= attackRange;
     }
-    void TickFormationActiveSoldier(
+    void TickFormedActiveSoldier(
         SoldierController soldier,
         SoldierController currentTarget,
         WeaponProfile weaponProfile,
@@ -327,10 +346,10 @@ public partial class SquadCombat
         soldier.SetCombatRole(isRangedWeapon ? SoldierRole.Ranged : SoldierRole.Frontline);
         soldier.Stop();
 
-        if (formationAttackTimers[soldier] > 0f)
+        if (formedAttackTimers[soldier] > 0f)
             return;
 
-        TryFormationAttack(
+        TryFormedAttack(
             soldier,
             currentTarget,
             weaponProfile,
@@ -339,7 +358,7 @@ public partial class SquadCombat
             isRangedWeapon,
             attackInterval);
     }
-    void TickFormationReserveSoldier(
+    void TickFormedReserveSoldier(
         SoldierController soldier,
         SoldierController currentTarget,
         bool isRangedWeapon,
@@ -347,7 +366,7 @@ public partial class SquadCombat
         float stoppingDistance)
     {
         soldier.SetCombatRole(SoldierRole.Reserve);
-        ClearFormationActiveAttackerCombatLockCandidate(soldier);
+        ClearMeleeActiveAttackerCombatLockCandidate(soldier);
 
         if (currentTarget == null)
         {
@@ -389,20 +408,20 @@ public partial class SquadCombat
             bool hasForwardGap = contactSensor.IsForwardFriendlyGapOpen(
                 soldier,
                 desiredMoveDirection,
-                squadCombatProfile.formationReserveForwardGapDistance,
-                squadCombatProfile.formationReserveForwardGapRadius);
+                squadCombatProfile.reserveForwardGapDistance,
+                squadCombatProfile.reserveForwardGapRadius);
 
             if (!hasForwardGap)
             {
-                MarkFormationReserveBlocked(soldier);
+                MarkFormedReserveBlocked(soldier);
 
-                if (formationReserveBlockedSitTimers[soldier] > 0f)
+                if (formedReserveBlockedSitTimers[soldier] > 0f)
                 {
                     soldier.Stop();
                     return;
                 }
 
-                if (TryTickFormationReserveBehindFriendlyReposition(
+                if (TryTickFormedReserveBehindFriendlyReposition(
                         soldier,
                         contactSensor,
                         currentTarget,
@@ -411,7 +430,7 @@ public partial class SquadCombat
                     return;
                 }
 
-                if (TryTickFormationReserveSideStep(
+                if (TryTickFormedReserveSideStep(
                         soldier,
                         contactSensor,
                         desiredMoveDirection,
@@ -424,25 +443,25 @@ public partial class SquadCombat
                 return;
             }
 
-            if (IsFormationReserveStillSitting(soldier))
+            if (IsFormedReserveStillSitting(soldier))
             {
                 soldier.Stop();
                 return;
             }
         }
 
-        ClearFormationReserveBlockedState(soldier);
+        ClearFormedReserveBlockedState(soldier);
 
         soldier.MoveToCombatPoint(
             moveDestination,
             stoppingDistance,
-            squadCombatProfile.formationCombatMoveSpeedMultiplier);
+            squadCombatProfile.meleeCombatMoveSpeedMultiplier);
     }
-    void MarkFormationActiveAttackerCombatLockCandidate(
+    void MarkMeleeActiveAttackerCombatLockCandidate(
         SoldierController soldier,
         SoldierController currentTarget)
     {
-        if (!squadCombatProfile.formationAttackerCombatLockEnabled)
+        if (!squadCombatProfile.attackerCombatLockEnabled)
             return;
 
         if (soldier == null || !soldier.IsAlive)
@@ -451,24 +470,24 @@ public partial class SquadCombat
         if (currentTarget == null || !currentTarget.IsAlive)
             return;
 
-        formationActiveAttackerCombatLockTargets[soldier] = currentTarget;
+        meleeActiveAttackerCombatLockTargets[soldier] = currentTarget;
     }
-    void ClearFormationActiveAttackerCombatLockCandidate(SoldierController soldier)
+    void ClearMeleeActiveAttackerCombatLockCandidate(SoldierController soldier)
     {
         if (soldier == null)
             return;
 
-        formationActiveAttackerCombatLockTargets.Remove(soldier);
+        meleeActiveAttackerCombatLockTargets.Remove(soldier);
     }
     public void BeginCombatLockedMoveOrder()
     {
-        if (!squadCombatProfile.formationAttackerCombatLockEnabled)
+        if (!squadCombatProfile.attackerCombatLockEnabled)
         {
             ClearTargets();
             return;
         }
 
-        BuildFormationAttackerCombatLocksFromActiveAttackers();
+        BuildMeleeAttackerCombatLocksFromActiveAttackers();
 
         targetSquad = null;
         currentEngagementType = SquadEngagementReason.None;
@@ -485,13 +504,13 @@ public partial class SquadCombat
         formationChargeShockDamagedTargets.Clear();
         formationChargeNotifiedSquads.Clear();
 
-        ClearFormationRuntimeState(
+        ClearFormedCombatRuntimeState(
             clearAttackTimers: false,
             clearCombatLocks: false);
 
         ClearSoldierCombatStates(preserveCombatLockedSoldiers: true);
     }
-    void BuildFormationAttackerCombatLocksFromActiveAttackers()
+    void BuildMeleeAttackerCombatLocksFromActiveAttackers()
     {
         if (roster == null)
             return;
@@ -501,7 +520,7 @@ public partial class SquadCombat
             if (soldier == null || !soldier.IsAlive)
                 continue;
 
-            if (!formationActiveAttackerCombatLockTargets.TryGetValue(
+            if (!meleeActiveAttackerCombatLockTargets.TryGetValue(
                     soldier,
                     out SoldierController lockTarget))
             {
@@ -511,15 +530,15 @@ public partial class SquadCombat
             if (lockTarget == null || !lockTarget.IsAlive)
                 continue;
 
-            formationAttackerCombatLockTargets[soldier] = lockTarget;
-            formationAttackerCombatLockTimers[soldier] = Random.Range(
-                squadCombatProfile.formationAttackerCombatLockTimeMin,
-                squadCombatProfile.formationAttackerCombatLockTimeMax);
+            meleeAttackerCombatLockTargets[soldier] = lockTarget;
+            meleeAttackerCombatLockTimers[soldier] = Random.Range(
+                squadCombatProfile.attackerCombatLockTimeMin,
+                squadCombatProfile.attackerCombatLockTimeMax);
         }
     }
     public void TickCombatLocks()
     {
-        if (!squadCombatProfile.formationAttackerCombatLockEnabled)
+        if (!squadCombatProfile.attackerCombatLockEnabled)
             return;
 
         if (roster == null)
@@ -527,35 +546,35 @@ public partial class SquadCombat
 
         foreach (SoldierController soldier in roster.Soldiers)
         {
-            TickFormationAttackerCombatLock(soldier);
+            TickMeleeAttackerCombatLock(soldier);
         }
     }
-    void TickFormationAttackerCombatLock(SoldierController soldier)
+    void TickMeleeAttackerCombatLock(SoldierController soldier)
     {
         if (soldier == null)
             return;
 
-        if (!formationAttackerCombatLockTimers.ContainsKey(soldier) &&
-            !formationAttackerCombatLockTargets.ContainsKey(soldier))
+        if (!meleeAttackerCombatLockTimers.ContainsKey(soldier) &&
+            !meleeAttackerCombatLockTargets.ContainsKey(soldier))
         {
             return;
         }
 
         if (!IsSoldierCombatLocked(soldier))
         {
-            ClearFormationAttackerCombatLock(soldier);
+            ClearMeleeAttackerCombatLock(soldier);
             return;
         }
 
-        formationAttackerCombatLockTimers[soldier] -= Time.deltaTime;
+        meleeAttackerCombatLockTimers[soldier] -= Time.deltaTime;
 
         if (!IsSoldierCombatLocked(soldier))
         {
-            ClearFormationAttackerCombatLock(soldier);
+            ClearMeleeAttackerCombatLock(soldier);
             return;
         }
 
-        SoldierController lockTarget = formationAttackerCombatLockTargets[soldier];
+        SoldierController lockTarget = meleeAttackerCombatLockTargets[soldier];
 
         soldier.SetCombatRole(SoldierRole.Frontline);
         soldier.SetCombatTarget(lockTarget);
@@ -564,13 +583,13 @@ public partial class SquadCombat
     }
     public bool IsSoldierCombatLocked(SoldierController soldier)
     {
-        if (!squadCombatProfile.formationAttackerCombatLockEnabled)
+        if (!squadCombatProfile.attackerCombatLockEnabled)
             return false;
 
         if (soldier == null || !soldier.IsAlive) // PERFORMANCE
             return false;
 
-        if (!formationAttackerCombatLockTimers.TryGetValue(
+        if (!meleeAttackerCombatLockTimers.TryGetValue(
                 soldier,
                 out float lockTimer) ||
             lockTimer <= 0f)
@@ -578,19 +597,19 @@ public partial class SquadCombat
             return false;
         }
 
-        return formationAttackerCombatLockTargets.TryGetValue(
+        return meleeAttackerCombatLockTargets.TryGetValue(
                    soldier,
                    out SoldierController lockTarget) &&
                lockTarget != null &&
                lockTarget.IsAlive; // PERFORMANCE
     }
-    void ClearFormationAttackerCombatLock(SoldierController soldier)
+    void ClearMeleeAttackerCombatLock(SoldierController soldier)
     {
         if (soldier == null)
             return;
 
-        formationAttackerCombatLockTimers.Remove(soldier);
-        formationAttackerCombatLockTargets.Remove(soldier);
+        meleeAttackerCombatLockTimers.Remove(soldier);
+        meleeAttackerCombatLockTargets.Remove(soldier);
 
         if (soldier.IsAlive)
         {
@@ -598,19 +617,19 @@ public partial class SquadCombat
             soldier.ClearCombatTarget();
         }
     }
-    bool TryTickFormationReserveBehindFriendlyReposition(
+    bool TryTickFormedReserveBehindFriendlyReposition(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         SoldierController currentTarget,
         float attackRange)
     {
-        if (!squadCombatProfile.formationReserveBehindFriendlyRepositionEnabled)
+        if (!squadCombatProfile.reserveBehindFriendlyRepositionEnabled)
             return false;
 
         if (soldier == null || contactSensor == null || currentTarget == null)
             return false;
 
-        if (TryUseCachedFormationReserveBehindFriendlyPoint(
+        if (TryUseCachedFormedReserveBehindFriendlyPoint(
                 soldier,
                 contactSensor,
                 currentTarget,
@@ -619,7 +638,7 @@ public partial class SquadCombat
             return true;
         }
 
-        if (formationReserveBehindFriendlySearchTimers.TryGetValue(
+        if (formedReserveBehindFriendlySearchTimers.TryGetValue(
                 soldier,
                 out float searchTimer) &&
             searchTimer > 0f)
@@ -627,10 +646,10 @@ public partial class SquadCombat
             return false;
         }
 
-        formationReserveBehindFriendlySearchTimers[soldier] =
-            squadCombatProfile.formationReserveBehindFriendlySearchInterval;
+        formedReserveBehindFriendlySearchTimers[soldier] =
+            squadCombatProfile.reserveBehindFriendlySearchInterval;
 
-        if (!TryFindFormationReserveBehindFriendlyPoint(
+        if (!TryFindFormedReserveBehindFriendlyPoint(
                 soldier,
                 contactSensor,
                 currentTarget,
@@ -640,58 +659,58 @@ public partial class SquadCombat
             return false;
         }
 
-        formationReserveBehindFriendlyDestinations[soldier] = reservePoint;
+        formedReserveBehindFriendlyDestinations[soldier] = reservePoint;
 
         soldier.MoveToCombatPoint(
             reservePoint,
-            squadCombatProfile.formationReserveBehindFriendlyReachDistance,
-            squadCombatProfile.formationReserveBehindFriendlySpeedMultiplier);
+            squadCombatProfile.reserveBehindFriendlyReachDistance,
+            squadCombatProfile.reserveBehindFriendlySpeedMultiplier);
 
         return true;
     }
-    bool TryUseCachedFormationReserveBehindFriendlyPoint(
+    bool TryUseCachedFormedReserveBehindFriendlyPoint(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         SoldierController currentTarget,
         float attackRange)
     {
-        if (!formationReserveBehindFriendlyDestinations.TryGetValue(
+        if (!formedReserveBehindFriendlyDestinations.TryGetValue(
                 soldier,
                 out Vector3 reservePoint))
         {
             return false;
         }
 
-        if (!IsFormationReserveBehindFriendlyPointStillUseful(
+        if (!IsFormedReserveBehindFriendlyPointStillUseful(
                 soldier,
                 contactSensor,
                 currentTarget,
                 reservePoint,
                 attackRange))
         {
-            formationReserveBehindFriendlyDestinations.Remove(soldier);
+            formedReserveBehindFriendlyDestinations.Remove(soldier);
             return false;
         }
 
         if (!Calc.OutOfRange(
                 soldier.transform.position,
                 reservePoint,
-                squadCombatProfile.formationReserveBehindFriendlyReachDistance))
+                squadCombatProfile.reserveBehindFriendlyReachDistance))
         {
-            formationReserveBehindFriendlyDestinations.Remove(soldier);
-            formationTargetRefreshTimers[soldier] = 0f;
+            formedReserveBehindFriendlyDestinations.Remove(soldier);
+            formedTargetRefreshTimers[soldier] = 0f;
             soldier.Stop();
             return true;
         }
 
         soldier.MoveToCombatPoint(
             reservePoint,
-            squadCombatProfile.formationReserveBehindFriendlyReachDistance,
-            squadCombatProfile.formationReserveBehindFriendlySpeedMultiplier);
+            squadCombatProfile.reserveBehindFriendlyReachDistance,
+            squadCombatProfile.reserveBehindFriendlySpeedMultiplier);
 
         return true;
     }
-    bool TryFindFormationReserveBehindFriendlyPoint(
+    bool TryFindFormedReserveBehindFriendlyPoint(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         SoldierController currentTarget,
@@ -708,7 +727,7 @@ public partial class SquadCombat
 
         foreach (SoldierController friendly in roster.Soldiers)
         {
-            if (!IsValidFormationReserveBehindFriendlyAnchor(
+            if (!IsValidFormedReserveBehindFriendlyAnchor(
                     soldier,
                     currentTarget,
                     friendly))
@@ -716,7 +735,7 @@ public partial class SquadCombat
                 continue;
             }
 
-            if (!TryEvaluateFormationReserveBehindFriendlyAnchor(
+            if (!TryEvaluateFormedReserveBehindFriendlyAnchor(
                     soldier,
                     contactSensor,
                     currentTarget,
@@ -738,7 +757,7 @@ public partial class SquadCombat
 
         return foundPoint;
     }
-    bool IsValidFormationReserveBehindFriendlyAnchor(
+    bool IsValidFormedReserveBehindFriendlyAnchor(
         SoldierController soldier,
         SoldierController currentTarget,
         SoldierController friendly)
@@ -759,7 +778,7 @@ public partial class SquadCombat
             Flatten(soldier.transform.position),
             Flatten(friendly.transform.position));
 
-        if (anchorDistance > squadCombatProfile.formationReserveBehindFriendlyAnchorSearchRadius)
+        if (anchorDistance > squadCombatProfile.reserveBehindFriendlyAnchorSearchRadius)
             return false;
 
         float soldierTargetDistance = Vector3.Distance(
@@ -771,9 +790,9 @@ public partial class SquadCombat
             Flatten(currentTarget.transform.position));
 
         return friendlyTargetDistance <=
-               soldierTargetDistance - squadCombatProfile.formationReserveBehindFriendlyMinAnchorForwardGain;
+               soldierTargetDistance - squadCombatProfile.reserveBehindFriendlyMinAnchorForwardGain;
     }
-    bool TryEvaluateFormationReserveBehindFriendlyAnchor(
+    bool TryEvaluateFormedReserveBehindFriendlyAnchor(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         SoldierController currentTarget,
@@ -810,11 +829,11 @@ public partial class SquadCombat
 
         Vector3 centerPoint =
             friendlyAnchor.transform.position +
-            awayFromTarget * squadCombatProfile.formationReserveBehindFriendlyBackOffset;
+            awayFromTarget * squadCombatProfile.reserveBehindFriendlyBackOffset;
 
         bool foundPoint = false;
 
-        TryReplaceBestFormationReserveBehindFriendlyCandidate(
+        TryReplaceBestFormedReserveBehindFriendlyCandidate(
             soldier,
             contactSensor,
             currentTarget,
@@ -824,23 +843,23 @@ public partial class SquadCombat
             ref bestScore,
             ref foundPoint);
 
-        if (squadCombatProfile.formationReserveBehindFriendlySideOffset > 0f)
+        if (squadCombatProfile.reserveBehindFriendlySideOffset > 0f)
         {
-            TryReplaceBestFormationReserveBehindFriendlyCandidate(
+            TryReplaceBestFormedReserveBehindFriendlyCandidate(
                 soldier,
                 contactSensor,
                 currentTarget,
-                centerPoint + side * squadCombatProfile.formationReserveBehindFriendlySideOffset,
+                centerPoint + side * squadCombatProfile.reserveBehindFriendlySideOffset,
                 attackRange,
                 ref bestPoint,
                 ref bestScore,
                 ref foundPoint);
 
-            TryReplaceBestFormationReserveBehindFriendlyCandidate(
+            TryReplaceBestFormedReserveBehindFriendlyCandidate(
                 soldier,
                 contactSensor,
                 currentTarget,
-                centerPoint - side * squadCombatProfile.formationReserveBehindFriendlySideOffset,
+                centerPoint - side * squadCombatProfile.reserveBehindFriendlySideOffset,
                 attackRange,
                 ref bestPoint,
                 ref bestScore,
@@ -849,7 +868,7 @@ public partial class SquadCombat
 
         return foundPoint;
     }
-    void TryReplaceBestFormationReserveBehindFriendlyCandidate(
+    void TryReplaceBestFormedReserveBehindFriendlyCandidate(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         SoldierController currentTarget,
@@ -859,7 +878,7 @@ public partial class SquadCombat
         ref float bestScore,
         ref bool foundPoint)
     {
-        if (!TryScoreFormationReserveBehindFriendlyCandidate(
+        if (!TryScoreFormedReserveBehindFriendlyCandidate(
                 soldier,
                 contactSensor,
                 currentTarget,
@@ -878,7 +897,7 @@ public partial class SquadCombat
         bestScore = score;
         foundPoint = true;
     }
-    bool TryScoreFormationReserveBehindFriendlyCandidate(
+    bool TryScoreFormedReserveBehindFriendlyCandidate(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         SoldierController currentTarget,
@@ -896,7 +915,7 @@ public partial class SquadCombat
         if (!NavMesh.SamplePosition(
                 rawPoint,
                 out NavMeshHit navHit,
-                squadCombatProfile.formationReserveBehindFriendlyNavMeshProjectionRadius,
+                squadCombatProfile.reserveBehindFriendlyNavMeshProjectionRadius,
                 NavMesh.AllAreas))
         {
             return false;
@@ -908,7 +927,7 @@ public partial class SquadCombat
             Flatten(soldier.transform.position),
             Flatten(projectedPoint));
 
-        if (moveDistance > squadCombatProfile.formationReserveBehindFriendlyMaxMoveDistance)
+        if (moveDistance > squadCombatProfile.reserveBehindFriendlyMaxMoveDistance)
             return false;
 
         float currentTargetDistance = Vector3.Distance(
@@ -921,7 +940,7 @@ public partial class SquadCombat
 
         float targetProgress = currentTargetDistance - candidateTargetDistance;
 
-        if (targetProgress < squadCombatProfile.formationReserveBehindFriendlyMinTargetProgress)
+        if (targetProgress < squadCombatProfile.reserveBehindFriendlyMinTargetProgress)
             return false;
 
         // Do not step into attack range through a reserve reposition. Once the
@@ -934,20 +953,20 @@ public partial class SquadCombat
         if (contactSensor.IsPointOccupiedByLivingSoldier(
                 soldier,
                 projectedPoint,
-                squadCombatProfile.formationReserveBehindFriendlyOccupancyRadius))
+                squadCombatProfile.reserveBehindFriendlyOccupancyRadius))
         {
             return false;
         }
 
-        int nearbyBodies = CountLivingSoldiersNearFormationPoint(
+        int nearbyBodies = CountLivingSoldiersNearFormedPoint(
             soldier,
             projectedPoint,
-            squadCombatProfile.formationReserveBehindFriendlyCrowdRadius);
+            squadCombatProfile.reserveBehindFriendlyCrowdRadius);
 
-        if (nearbyBodies > squadCombatProfile.formationReserveBehindFriendlyMaxNearbyBodies)
+        if (nearbyBodies > squadCombatProfile.reserveBehindFriendlyMaxNearbyBodies)
             return false;
 
-        if (!HasCompleteFormationReserveBehindFriendlyPath(
+        if (!HasCompleteFormedReserveBehindFriendlyPath(
                 soldier.transform.position,
                 projectedPoint))
         {
@@ -956,12 +975,12 @@ public partial class SquadCombat
 
         score =
             moveDistance +
-            nearbyBodies * squadCombatProfile.formationReserveBehindFriendlyCrowdScoreWeight -
-            targetProgress * squadCombatProfile.formationReserveBehindFriendlyProgressScoreWeight;
+            nearbyBodies * squadCombatProfile.reserveBehindFriendlyCrowdScoreWeight -
+            targetProgress * squadCombatProfile.reserveBehindFriendlyProgressScoreWeight;
 
         return true;
     }
-    bool IsFormationReserveBehindFriendlyPointStillUseful(
+    bool IsFormedReserveBehindFriendlyPointStillUseful(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         SoldierController currentTarget,
@@ -995,19 +1014,19 @@ public partial class SquadCombat
         if (contactSensor.IsPointOccupiedByLivingSoldier(
                 soldier,
                 reservePoint,
-                squadCombatProfile.formationReserveBehindFriendlyOccupancyRadius))
+                squadCombatProfile.reserveBehindFriendlyOccupancyRadius))
         {
             return false;
         }
 
-        int nearbyBodies = CountLivingSoldiersNearFormationPoint(
+        int nearbyBodies = CountLivingSoldiersNearFormedPoint(
             soldier,
             reservePoint,
-            squadCombatProfile.formationReserveBehindFriendlyCrowdRadius);
+            squadCombatProfile.reserveBehindFriendlyCrowdRadius);
 
-        return nearbyBodies <= squadCombatProfile.formationReserveBehindFriendlyMaxNearbyBodies;
+        return nearbyBodies <= squadCombatProfile.reserveBehindFriendlyMaxNearbyBodies;
     }
-    int CountLivingSoldiersNearFormationPoint(
+    int CountLivingSoldiersNearFormedPoint(
         SoldierController ignoredSoldier,
         Vector3 point,
         float radius)
@@ -1023,7 +1042,7 @@ public partial class SquadCombat
                 if (candidateSquad == null || candidateSquad.Roster == null)
                     continue;
 
-                count += CountLivingSoldiersNearFormationPointFromRoster(
+                count += CountLivingSoldiersNearFormedPointFromRoster(
                     ignoredSoldier,
                     candidateSquad.Roster,
                     point,
@@ -1033,7 +1052,7 @@ public partial class SquadCombat
             return count;
         }
 
-        count += CountLivingSoldiersNearFormationPointFromRoster(
+        count += CountLivingSoldiersNearFormedPointFromRoster(
             ignoredSoldier,
             roster,
             point,
@@ -1041,7 +1060,7 @@ public partial class SquadCombat
 
         if (targetSquad != null)
         {
-            count += CountLivingSoldiersNearFormationPointFromRoster(
+            count += CountLivingSoldiersNearFormedPointFromRoster(
                 ignoredSoldier,
                 targetSquad.Roster,
                 point,
@@ -1050,7 +1069,7 @@ public partial class SquadCombat
 
         return count;
     }
-    int CountLivingSoldiersNearFormationPointFromRoster(
+    int CountLivingSoldiersNearFormedPointFromRoster(
         SoldierController ignoredSoldier,
         SquadRoster sourceRoster,
         Vector3 point,
@@ -1076,7 +1095,7 @@ public partial class SquadCombat
 
         return count;
     }
-    bool HasCompleteFormationReserveBehindFriendlyPath(
+    bool HasCompleteFormedReserveBehindFriendlyPath(
         Vector3 startPoint,
         Vector3 endPoint)
     {
@@ -1084,26 +1103,26 @@ public partial class SquadCombat
                 startPoint,
                 endPoint,
                 NavMesh.AllAreas,
-                formationReserveBehindFriendlyPath))
+                formedReserveBehindFriendlyPath))
         {
             return false;
         }
 
-        return formationReserveBehindFriendlyPath.status == NavMeshPathStatus.PathComplete;
+        return formedReserveBehindFriendlyPath.status == NavMeshPathStatus.PathComplete;
     }
-    bool TryTickFormationReserveSideStep(
+    bool TryTickFormedReserveSideStep(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         Vector3 desiredMoveDirection,
         float stoppingDistance)
     {
-        if (!squadCombatProfile.formationReserveSideStepEnabled)
+        if (!squadCombatProfile.reserveSideStepEnabled)
             return false;
 
         if (soldier == null || contactSensor == null)
             return false;
 
-        if (formationReserveSideStepDestinations.TryGetValue(
+        if (formedReserveSideStepDestinations.TryGetValue(
                 soldier,
                 out Vector3 sideStepDestination))
         {
@@ -1112,27 +1131,27 @@ public partial class SquadCombat
                     sideStepDestination,
                     0.18f))
             {
-                formationReserveSideStepDestinations.Remove(soldier);
-                formationTargetRefreshTimers[soldier] = 0f;
+                formedReserveSideStepDestinations.Remove(soldier);
+                formedTargetRefreshTimers[soldier] = 0f;
                 return false;
             }
 
             soldier.MoveToCombatPoint(
                 sideStepDestination,
                 Mathf.Min(stoppingDistance, 0.12f),
-                squadCombatProfile.formationReserveSideStepSpeedMultiplier);
+                squadCombatProfile.reserveSideStepSpeedMultiplier);
 
             return true;
         }
 
-        if (formationReserveSideStepTimers[soldier] > 0f)
+        if (formedReserveSideStepTimers[soldier] > 0f)
             return false;
 
-        formationReserveSideStepTimers[soldier] = Random.Range(
-            squadCombatProfile.formationReserveSideStepIntervalMin,
-            squadCombatProfile.formationReserveSideStepIntervalMax);
+        formedReserveSideStepTimers[soldier] = Random.Range(
+            squadCombatProfile.reserveSideStepIntervalMin,
+            squadCombatProfile.reserveSideStepIntervalMax);
 
-        if (!TryFindFormationReserveSideStepPoint(
+        if (!TryFindFormedReserveSideStepPoint(
                 soldier,
                 contactSensor,
                 desiredMoveDirection,
@@ -1141,16 +1160,16 @@ public partial class SquadCombat
             return false;
         }
 
-        formationReserveSideStepDestinations[soldier] = sideStepDestination;
+        formedReserveSideStepDestinations[soldier] = sideStepDestination;
 
         soldier.MoveToCombatPoint(
             sideStepDestination,
             Mathf.Min(stoppingDistance, 0.12f),
-            squadCombatProfile.formationReserveSideStepSpeedMultiplier);
+            squadCombatProfile.reserveSideStepSpeedMultiplier);
 
         return true;
     }
-    bool TryFindFormationReserveSideStepPoint(
+    bool TryFindFormedReserveSideStepPoint(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         Vector3 desiredMoveDirection,
@@ -1188,7 +1207,7 @@ public partial class SquadCombat
             firstSide = !rightBlocked ? right : -right;
         }
 
-        if (TryBuildFormationReserveSideStepPoint(
+        if (TryBuildFormedReserveSideStepPoint(
                 soldier,
                 contactSensor,
                 firstSide,
@@ -1198,13 +1217,13 @@ public partial class SquadCombat
         }
 
         return hasSecondSide &&
-               TryBuildFormationReserveSideStepPoint(
+               TryBuildFormedReserveSideStepPoint(
                    soldier,
                    contactSensor,
                    secondSide,
                    out sideStepPoint);
     }
-    bool TryBuildFormationReserveSideStepPoint(
+    bool TryBuildFormedReserveSideStepPoint(
         SoldierController soldier,
         SoldierContactSensor contactSensor,
         Vector3 sideDirection,
@@ -1214,12 +1233,12 @@ public partial class SquadCombat
 
         Vector3 rawPoint =
             soldier.transform.position +
-            sideDirection.normalized * squadCombatProfile.formationReserveSideStepDistance;
+            sideDirection.normalized * squadCombatProfile.reserveSideStepDistance;
 
         if (!NavMesh.SamplePosition(
                 rawPoint,
                 out NavMeshHit navHit,
-                squadCombatProfile.formationReserveSideStepDistance,
+                squadCombatProfile.reserveSideStepDistance,
                 NavMesh.AllAreas))
         {
             return false;
@@ -1228,7 +1247,7 @@ public partial class SquadCombat
         if (contactSensor.IsPointOccupiedByLivingSoldier(
                 soldier,
                 navHit.position,
-                squadCombatProfile.formationReserveSideStepOccupancyRadius))
+                squadCombatProfile.reserveSideStepOccupancyRadius))
         {
             return false;
         }
@@ -1236,76 +1255,76 @@ public partial class SquadCombat
         sideStepPoint = navHit.position;
         return true;
     }
-    void MarkFormationReserveBlocked(SoldierController soldier)
+    void MarkFormedReserveBlocked(SoldierController soldier)
     {
         if (soldier == null)
             return;
 
-        if (!formationReserveBlockedSoldiers.Add(soldier))
+        if (!formedReserveBlockedSoldiers.Add(soldier))
             return;
 
-        formationReserveBlockedSitTimers[soldier] = Random.Range(squadCombatProfile.formationReserveMinimumBlockedSitTimeMin, squadCombatProfile.formationReserveMinimumBlockedSitTimeMax); // chcek
-        formationReserveSideStepDestinations.Remove(soldier);
-        formationReserveBehindFriendlyDestinations.Remove(soldier);
+        formedReserveBlockedSitTimers[soldier] = Random.Range(squadCombatProfile.reserveMinimumBlockedSitTimeMin, squadCombatProfile.reserveMinimumBlockedSitTimeMax); // chcek
+        formedReserveSideStepDestinations.Remove(soldier);
+        formedReserveBehindFriendlyDestinations.Remove(soldier);
     }
-    bool IsFormationReserveStillSitting(SoldierController soldier)
+    bool IsFormedReserveStillSitting(SoldierController soldier)
     {
         return soldier != null &&
-               formationReserveBlockedSoldiers.Contains(soldier) &&
-               formationReserveBlockedSitTimers.TryGetValue(
+               formedReserveBlockedSoldiers.Contains(soldier) &&
+               formedReserveBlockedSitTimers.TryGetValue(
                    soldier,
                    out float sitTimer) &&
                sitTimer > 0f;
     }
-    void ClearFormationReserveBlockedState(SoldierController soldier)
+    void ClearFormedReserveBlockedState(SoldierController soldier)
     {
         if (soldier == null)
             return;
 
-        formationReserveBlockedSoldiers.Remove(soldier);
+        formedReserveBlockedSoldiers.Remove(soldier);
 
-        if (formationReserveBlockedSitTimers.ContainsKey(soldier))
-            formationReserveBlockedSitTimers[soldier] = 0f;
+        if (formedReserveBlockedSitTimers.ContainsKey(soldier))
+            formedReserveBlockedSitTimers[soldier] = 0f;
 
-        formationReserveSideStepDestinations.Remove(soldier);
-        formationReserveBehindFriendlyDestinations.Remove(soldier);
+        formedReserveSideStepDestinations.Remove(soldier);
+        formedReserveBehindFriendlyDestinations.Remove(soldier);
 
-        if (formationReserveBehindFriendlySearchTimers.ContainsKey(soldier))
-            formationReserveBehindFriendlySearchTimers[soldier] = 0f;
+        if (formedReserveBehindFriendlySearchTimers.ContainsKey(soldier))
+            formedReserveBehindFriendlySearchTimers[soldier] = 0f;
     }
-    void EnsureFormationTimers(SoldierController soldier)
+    void EnsureFormedCombatTimers(SoldierController soldier)
     {
-        if (!formationTargetRefreshTimers.ContainsKey(soldier))
-            formationTargetRefreshTimers[soldier] = 0f;
+        if (!formedTargetRefreshTimers.ContainsKey(soldier))
+            formedTargetRefreshTimers[soldier] = 0f;
 
-        if (!formationAttackTimers.ContainsKey(soldier))
-            formationAttackTimers[soldier] = 0f;
+        if (!formedAttackTimers.ContainsKey(soldier))
+            formedAttackTimers[soldier] = 0f;
 
-        if (!formationReserveSideStepTimers.ContainsKey(soldier))
+        if (!formedReserveSideStepTimers.ContainsKey(soldier))
         {
-            formationReserveSideStepTimers[soldier] = Random.Range(
-                squadCombatProfile.formationReserveSideStepIntervalMin,
-                squadCombatProfile.formationReserveSideStepIntervalMax);
+            formedReserveSideStepTimers[soldier] = Random.Range(
+                squadCombatProfile.reserveSideStepIntervalMin,
+                squadCombatProfile.reserveSideStepIntervalMax);
         }
 
-        if (!formationReserveBlockedSitTimers.ContainsKey(soldier))
-            formationReserveBlockedSitTimers[soldier] = 0f;
+        if (!formedReserveBlockedSitTimers.ContainsKey(soldier))
+            formedReserveBlockedSitTimers[soldier] = 0f;
 
-        if (!formationReserveBehindFriendlySearchTimers.ContainsKey(soldier))
-            formationReserveBehindFriendlySearchTimers[soldier] = 0f;
+        if (!formedReserveBehindFriendlySearchTimers.ContainsKey(soldier))
+            formedReserveBehindFriendlySearchTimers[soldier] = 0f;
 
     }
-    void TickFormationTimers(SoldierController soldier)
+    void TickFormedCombatTimers(SoldierController soldier)
     {
-        formationTargetRefreshTimers[soldier] -= Time.deltaTime;
-        formationAttackTimers[soldier] -= Time.deltaTime;
-        formationReserveSideStepTimers[soldier] -= Time.deltaTime;
-        formationReserveBlockedSitTimers[soldier] -= Time.deltaTime;
-        formationReserveBehindFriendlySearchTimers[soldier] -= Time.deltaTime;
+        formedTargetRefreshTimers[soldier] -= Time.deltaTime;
+        formedAttackTimers[soldier] -= Time.deltaTime;
+        formedReserveSideStepTimers[soldier] -= Time.deltaTime;
+        formedReserveBlockedSitTimers[soldier] -= Time.deltaTime;
+        formedReserveBehindFriendlySearchTimers[soldier] -= Time.deltaTime;
 
-        TickFormationRangedReleaseTimer(soldier);
+        TickRangedReleaseTimer(soldier);
     }
-    bool TryFindImmediateFormationContactTarget(
+    bool TryFindImmediateMeleeContactTarget(
         SoldierController soldier,
         SoldierController currentTarget,
         float attackRange,
@@ -1313,7 +1332,7 @@ public partial class SquadCombat
     {
         contactTarget = null;
 
-        if (!squadCombatProfile.formationImmediateContactOverrideEnabled)
+        if (!squadCombatProfile.immediateContactOverrideEnabled)
             return false;
 
         if (soldier == null || !soldier.IsAlive)
@@ -1321,18 +1340,18 @@ public partial class SquadCombat
 
         float contactRange = Mathf.Max(
             0.1f,
-            attackRange + squadCombatProfile.formationImmediateContactRangePadding);
+            attackRange + squadCombatProfile.immediateContactRangePadding);
 
         float bestDistanceSqr = contactRange * contactRange;
 
-        if (squadCombatProfile.formationMultiSquadLocalTargetingEnabled && SquadManager.Instance != null)
+        if (squadCombatProfile.multiSquadLocalTargetingEnabled && SquadManager.Instance != null)
         {
             foreach (SquadController candidateSquad in SquadManager.Instance.Squads)
             {
                 if (!CanAttack(candidateSquad))
                     continue;
 
-                FindImmediateFormationContactTargetFromSquad(
+                FindImmediateMeleeContactTargetFromSquad(
                     soldier,
                     candidateSquad,
                     ref contactTarget,
@@ -1341,7 +1360,7 @@ public partial class SquadCombat
         }
         else
         {
-            FindImmediateFormationContactTargetFromSquad(
+            FindImmediateMeleeContactTargetFromSquad(
                 soldier,
                 targetSquad,
                 ref contactTarget,
@@ -1350,7 +1369,7 @@ public partial class SquadCombat
 
         return contactTarget != null;
     }
-    void FindImmediateFormationContactTargetFromSquad(
+    void FindImmediateMeleeContactTargetFromSquad(
         SoldierController soldier,
         SquadController candidateSquad,
         ref SoldierController contactTarget,
@@ -1363,7 +1382,7 @@ public partial class SquadCombat
 
         foreach (SoldierController enemy in candidateSquad.Roster.Soldiers)
         {
-            if (!IsValidFormationTarget(enemy))
+            if (!IsValidFormedTarget(enemy))
                 continue;
 
             float distanceSqr = Vector3.SqrMagnitude(
@@ -1376,7 +1395,7 @@ public partial class SquadCombat
             contactTarget = enemy;
         }
     }
-    SoldierController FindBestFormationTarget(
+    SoldierController FindBestFormedTarget(
         SoldierController soldier,
         SoldierController currentTarget)
     {
@@ -1386,14 +1405,14 @@ public partial class SquadCombat
         SoldierController bestTarget = null;
         float bestScore = float.PositiveInfinity;
 
-        if (squadCombatProfile.formationMultiSquadLocalTargetingEnabled && SquadManager.Instance != null)
+        if (squadCombatProfile.multiSquadLocalTargetingEnabled && SquadManager.Instance != null)
         {
             foreach (SquadController candidateSquad in SquadManager.Instance.Squads)
             {
                 if (!CanAttack(candidateSquad))
                     continue;
 
-                ScoreFormationTargetsFromSquad(
+                ScoreFormedTargetsFromSquad(
                     soldier,
                     currentTarget,
                     candidateSquad,
@@ -1404,7 +1423,7 @@ public partial class SquadCombat
         }
         else
         {
-            ScoreFormationTargetsFromSquad(
+            ScoreFormedTargetsFromSquad(
                 soldier,
                 currentTarget,
                 targetSquad,
@@ -1415,7 +1434,7 @@ public partial class SquadCombat
 
         return bestTarget;
     }
-    void ScoreFormationTargetsFromSquad(
+    void ScoreFormedTargetsFromSquad(
         SoldierController soldier,
         SoldierController currentTarget,
         SquadController candidateSquad,
@@ -1428,7 +1447,7 @@ public partial class SquadCombat
 
         foreach (SoldierController enemy in candidateSquad.Roster.Soldiers)
         {
-            if (!IsValidFormationTarget(enemy))
+            if (!IsValidFormedTarget(enemy))
                 continue;
 
             float distance = Vector3.Distance(
@@ -1437,20 +1456,20 @@ public partial class SquadCombat
 
             // Non-primary enemies are local reactions only. This lets soldiers turn
             // into flankers without turning the whole squad into global free-chase.
-            if (!isPrimaryTargetSquad && distance > squadCombatProfile.formationLocalEnemyTargetSearchRadius)
+            if (!isPrimaryTargetSquad && distance > squadCombatProfile.localEnemyTargetSearchRadius)
                 continue;
 
-            int currentAttackers = CountFormationAttackers(enemy, soldier);
+            int currentAttackers = CountFormedAttackers(enemy, soldier);
 
             float score =
                 distance +
-                currentAttackers * squadCombatProfile.formationTargetCrowdingPenalty;
+                currentAttackers * squadCombatProfile.meleeTargetCrowdingPenalty;
 
             if (!isPrimaryTargetSquad)
-                score += squadCombatProfile.formationNonPrimaryTargetPenalty;
+                score += squadCombatProfile.nonPrimaryTargetPenalty;
 
             if (enemy == currentTarget)
-                score -= squadCombatProfile.formationCurrentTargetStickinessBonus;
+                score -= squadCombatProfile.meleeCurrentTargetStickinessBonus;
 
             if (score < bestScore)
             {
@@ -1459,7 +1478,7 @@ public partial class SquadCombat
             }
         }
     }
-    int CountFormationAttackers(
+    int CountFormedAttackers(
         SoldierController target,
         SoldierController ignoredSoldier)
     {
@@ -1468,7 +1487,7 @@ public partial class SquadCombat
 
         int count = 0;
 
-        foreach (KeyValuePair<SoldierController, SoldierController> pair in formationTargets)
+        foreach (KeyValuePair<SoldierController, SoldierController> pair in formedTargets)
         {
             SoldierController attacker = pair.Key;
             SoldierController assignedTarget = pair.Value;
@@ -1482,14 +1501,14 @@ public partial class SquadCombat
 
         return count;
     }
-    bool IsValidFormationTarget(SoldierController target)
+    bool IsValidFormedTarget(SoldierController target)
     {
         return target != null &&
                target.IsAlive &&
                target.Squad != null &&
                CanAttack(target.Squad);
     }
-    void GetFormationAttackValues(
+    void GetCombatAttackValues(
         SoldierController soldier,
         WeaponProfile weaponProfile,
         bool isRangedWeapon,
@@ -1517,7 +1536,7 @@ public partial class SquadCombat
             attackInterval = Mathf.Max(0.05f, rangedStats.attackInterval);
             stoppingDistance = Mathf.Max(
                 0.05f,
-                attackRange * squadCombatProfile.formationRangedStoppingDistanceMultiplier);
+                attackRange * squadCombatProfile.rangedStoppingDistanceMultiplier);
             return;
         }
 
@@ -1525,19 +1544,19 @@ public partial class SquadCombat
             0.1f,
             weaponProfile != null
                 ? meleeStats.attackRange
-                : squadCombatProfile.formationFallbackMeleeAttackRange);
+                : squadCombatProfile.fallbackMeleeAttackRange);
 
         attackInterval = Mathf.Max(
             0.05f,
             weaponProfile != null
                 ? meleeStats.attackInterval
-                : squadCombatProfile.formationFallbackMeleeAttackInterval);
+                : squadCombatProfile.fallbackMeleeAttackInterval);
 
         stoppingDistance = Mathf.Max(
             0.05f,
-            attackRange * squadCombatProfile.formationMeleeStoppingDistanceMultiplier);
+            attackRange * squadCombatProfile.meleeStoppingDistanceMultiplier);
     }
-    bool IsAllSoldierAttackTimersReady()
+    bool AreAllFormedAttackTimersReady()
     {
         if (roster == null)
             return false;
@@ -1551,7 +1570,7 @@ public partial class SquadCombat
                 continue;
             }
 
-            if (formationAttackTimers.TryGetValue(
+            if (formedAttackTimers.TryGetValue(
                     soldier,
                     out float timer) &&
                 timer > 0f)
@@ -1562,7 +1581,7 @@ public partial class SquadCombat
 
         return true;
     }
-    void TryFormationAttack(
+    void TryFormedAttack(
         SoldierController attacker,
         SoldierController target,
         WeaponProfile weaponProfile,
@@ -1589,14 +1608,14 @@ public partial class SquadCombat
         if (!beganAttack)
             return;
 
-        float randInterval = Random.Range(squadCombatProfile.formationAttackIntervalRandomMin, squadCombatProfile.formationAttackIntervalRandomMax);
+        float randInterval = Random.Range(squadCombatProfile.attackIntervalRandomMin, squadCombatProfile.attackIntervalRandomMax);
         
-        formationAttackTimers[attacker] =
+        formedAttackTimers[attacker] =
             Mathf.Max(0.05f, attackInterval + randInterval); // NEW: added randomized attack interval
 
         if (isRangedWeapon)
         {
-            BeginFormationRangedAttack(
+            BeginRangedAttack(
                 attacker,
                 target,
                 weaponProfile,
@@ -1607,9 +1626,9 @@ public partial class SquadCombat
 
         // Melee damage is not resolved here.
         // Snapshot the committed target and wait for AttackImpact.
-        formationPendingMeleeTargets[attacker] = target;
+        meleePendingTargets[attacker] = target;
     }
-    void ResolveFormationCombatHit(
+    void ResolveMeleeHit(
         SoldierController attacker,
         SoldierController target,
         MeleeCombatStats meleeStats)
@@ -1635,16 +1654,16 @@ public partial class SquadCombat
         if (appliedDamage > 0)
             GameEvents.CombatDamageDealt(attacker, target, appliedDamage);
 
-        ApplyFormationCombatHitImpulse(attacker, target);
+        ApplyMeleeHitImpulse(attacker, target);
 
         if (target.IsAlive)
             target.TryBeginAction(SoldierActionState.HitReact);
     }
-    void ApplyFormationCombatHitImpulse(
+    void ApplyMeleeHitImpulse(
         SoldierController attacker,
         SoldierController target)
     {
-        if (!squadCombatProfile.formationMeleeHitImpulseEnabled)
+        if (!squadCombatProfile.meleeHitImpulseEnabled)
             return;
 
         if (attacker == null || target == null || target.Motor == null)
@@ -1660,8 +1679,8 @@ public partial class SquadCombat
 
         target.Motor.ApplyExternalImpulse(
             impactDirection,
-            squadCombatProfile.formationMeleeHitImpulseMagnitude,
-            squadCombatProfile.formationMeleeHitImpulseDuration);
+            squadCombatProfile.meleeHitImpulseMagnitude,
+            squadCombatProfile.meleeHitImpulseDuration);
     }
     public void ResolveSoldierAttackImpact(SoldierController attacker)
     {
@@ -1674,7 +1693,7 @@ public partial class SquadCombat
             return;
         }
 
-        if (!formationPendingMeleeTargets.TryGetValue(
+        if (!meleePendingTargets.TryGetValue(
                 attacker,
                 out SoldierController target))
         {
@@ -1695,7 +1714,7 @@ public partial class SquadCombat
                 ? weaponProfile.melee
                 : MeleeCombatStats.Default;
 
-        ResolveFormationCombatHit(
+        ResolveMeleeHit(
             attacker,
             target,
             meleeStats);
@@ -1705,7 +1724,7 @@ public partial class SquadCombat
         if (soldier == null)
             return;
 
-        formationPendingMeleeTargets.Remove(soldier);
+        meleePendingTargets.Remove(soldier);
     }
     public void HandleSoldierActionCompleted(
         SoldierController soldier,
@@ -1732,35 +1751,35 @@ public partial class SquadCombat
         // Leave your existing projectile cleanup here unchanged.
         ClearPendingProjectile(soldier);
     }
-    void ClearFormationRuntimeState(
+    void ClearFormedCombatRuntimeState(
         bool clearAttackTimers,
         bool clearCombatLocks = true)
     {
-        formationTargets.Clear();
-        formationTargetRefreshTimers.Clear();
-        formationReserveSideStepTimers.Clear();
-        formationReserveBlockedSitTimers.Clear();
-        formationReserveBlockedSoldiers.Clear();
-        formationReserveSideStepDestinations.Clear();
-        formationReserveBehindFriendlySearchTimers.Clear();
-        formationReserveBehindFriendlyDestinations.Clear();
+        formedTargets.Clear();
+        formedTargetRefreshTimers.Clear();
+        formedReserveSideStepTimers.Clear();
+        formedReserveBlockedSitTimers.Clear();
+        formedReserveBlockedSoldiers.Clear();
+        formedReserveSideStepDestinations.Clear();
+        formedReserveBehindFriendlySearchTimers.Clear();
+        formedReserveBehindFriendlyDestinations.Clear();
 
-        formationActiveAttackerCombatLockTargets.Clear();
+        meleeActiveAttackerCombatLockTargets.Clear();
 
         if (clearCombatLocks)
         {
-            formationAttackerCombatLockTimers.Clear();
-            formationAttackerCombatLockTargets.Clear();
+            meleeAttackerCombatLockTimers.Clear();
+            meleeAttackerCombatLockTargets.Clear();
         }
 
-        formationPendingMeleeTargets.Clear();
+        meleePendingTargets.Clear();
         
-        formationPendingProjectileTargets.Clear();
-        formationPendingProjectileWeapons.Clear();
-        formationRangedReleaseTimers.Clear();
+        rangedPendingProjectileTargets.Clear();
+        rangedPendingProjectileWeapons.Clear();
+        rangedReleaseTimers.Clear();
 
         if (clearAttackTimers)
-            formationAttackTimers.Clear();
+            formedAttackTimers.Clear();
     }
     WeaponProfile GetWeaponProfile(SoldierController soldier)
     {
@@ -1781,3 +1800,5 @@ public partial class SquadCombat
 
     #endregion
 }
+
+

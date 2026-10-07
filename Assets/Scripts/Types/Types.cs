@@ -77,8 +77,23 @@ public enum UnitTrait
 
 public enum SquadCombatStyle
 {
-    FormationCombat = 0,
-    RangedLine = 2,
+    // What family of combat logic owns the squad while fighting.
+    // Numeric values are preserved from the previous FormationCombat / RangedLine
+    // names so existing serialized SquadData assets keep the same behavior.
+    Melee = 0,
+    Ranged = 2,
+    Siege = 3
+}
+
+public enum SquadCombatExecutionMode
+{
+    // How the selected combat family organizes itself spatially.
+    // Only Formed is implemented today; the remaining values establish the
+    // second axis for future loose melee, skirmishing, and siege deployment.
+    Formed = 0,
+    Loose = 1,
+    Skirmish = 2,
+    Deployed = 3
 }
 
 public enum SquadEngagementReason
@@ -91,7 +106,7 @@ public enum SquadEngagementReason
     RangedDuel
 }
 
-public enum FormationChargeMode
+public enum ChargeMode
 {
     // Lightweight final run-up used by ordinary melee troops.
     // Contact immediately hands ownership to normal melee combat.
@@ -1004,6 +1019,8 @@ public struct FormationBounds
 //--------------------------------------------------------
 // END OF Types.cs
 //--------------------------------------------------------
+
+
 
 
 

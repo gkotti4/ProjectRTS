@@ -11,9 +11,10 @@ using UnityEngine.Serialization;
 /// stance/formation, movement profile, squad combat profile, morale data, and
 /// available command set.
 ///
-/// FormationCombat cleanup:
-/// SoldierCombatProfile is no longer required because the old formation-combat /
-/// old loose-combat soldier rhythm system has been removed.
+/// Combat behavior is authored on two independent axes:
+/// - SquadCombatStyle chooses the combat family: Melee, Ranged, or Siege.
+/// - SquadCombatExecutionMode chooses the spatial execution: Formed, Loose,
+///   Skirmish, or Deployed. Only Formed execution is implemented currently.
 ///
 [CreateAssetMenu(
     fileName = "SquadData_",
@@ -36,7 +37,11 @@ public class SquadData : ScriptableObject
     [FormerlySerializedAs("defaultCombatBehavior")]
     [FormerlySerializedAs("combatStyle")]
     [Header("Combat Behavior")]
-    public SquadCombatStyle defaultCombatStyle = SquadCombatStyle.FormationCombat;
+    [Tooltip("Primary combat family used by this squad. This is separate from how tightly the squad maintains formation while fighting.")]
+    public SquadCombatStyle defaultCombatStyle = SquadCombatStyle.Melee;
+
+    [Tooltip("Spatial execution mode used inside the selected combat family. Formed is the current implemented baseline; Loose, Skirmish, and Deployed are reserved for later behavior passes.")]
+    public SquadCombatExecutionMode defaultCombatExecutionMode = SquadCombatExecutionMode.Formed;
 
     [Header("Profiles")]
     public SquadMovementProfile movementProfile;
@@ -124,4 +129,6 @@ public class SquadCommandSet : ScriptableObject
         return result;
     }
 }
+
+
 

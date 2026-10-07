@@ -516,7 +516,7 @@ public class SquadController : MonoBehaviour,
 
                 // Ranged avoidance can chain another retreat just before arrival
                 // without briefly dropping back into combat between retreats.
-                if (!Combat.TryChainFormationRangedAvoidanceWithdrawal())
+                if (!Combat.TryChainRangedAvoidanceWithdrawal())
                     Movement.TickMoving();
                 break;
 
@@ -628,7 +628,7 @@ public class SquadController : MonoBehaviour,
     }
 
     /// Orders this squad to attack another squad.
-    /// SquadCombat decides whether to approach first or enter melee immediately.
+    /// SquadCombat decides how the authored combat family approaches and engages.
     public void OrderAttack(
         SquadController target,
         bool queueCommand = false)
@@ -837,3 +837,5 @@ public class SquadController : MonoBehaviour,
 
     #endregion
 }
+
+

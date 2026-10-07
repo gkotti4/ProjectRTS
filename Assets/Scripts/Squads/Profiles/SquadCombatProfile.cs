@@ -5,8 +5,9 @@ using UnityEngine.Serialization;
 /// SquadCombatProfile
 /// -----------------------------------------------------------------------------
 ///
-/// Designer-facing tuning for squad-level combat and the current FormationCombat
-/// base. Old old melee pressure, combat-home, old row-scoring, and
+/// Designer-facing tuning for squad-level combat. Formation-prefixed values in
+/// this profile now specifically describe the current Formed execution baseline.
+/// Old melee pressure, combat-home, old row-scoring, and
 /// soft-engagement-budget values have been removed.
 ///
 [CreateAssetMenu(
@@ -42,39 +43,48 @@ public class SquadCombatProfile : ScriptableObject
     [Min(0f)] public float defaultApproachStopDistance = 3f;
 
 
-    [Header("Formation Melee Targeting")]
-    [Tooltip("How often each soldier refreshes its local enemy target while in FormationCombat.")]
-    [Min(0.01f)] [FormerlySerializedAs("prototypeTargetRefreshInterval")]
-    public float formationTargetRefreshInterval = 0.65f;
+    [FormerlySerializedAs("formationTargetRefreshInterval")]
+    [Header("Melee - Formed Targeting")]
+    [Tooltip("How often each soldier refreshes its local enemy target while using Formed combat execution.")]
+    [Min(0.01f)] 
+    public float meleeTargetRefreshInterval = 0.65f;
 
+    [FormerlySerializedAs("formationTargetCrowdingPenalty")]
     [Tooltip("Distance-like score penalty for choosing an enemy already targeted by friendly soldiers.")]
-    [Min(0f)] [FormerlySerializedAs("prototypeTargetCrowdingPenalty")]
-    public float formationTargetCrowdingPenalty = 2.75f;
+    [Min(0f)] 
+    public float meleeTargetCrowdingPenalty = 2.75f;
 
+    [FormerlySerializedAs("formationCurrentTargetStickinessBonus")]
     [Tooltip("Score bonus for keeping the current target so soldiers do not flip targets too often.")]
-    [Min(0f)] [FormerlySerializedAs("prototypeCurrentTargetStickinessBonus")]
-    public float formationCurrentTargetStickinessBonus = 0.75f;
+    [Min(0f)]
+    public float meleeCurrentTargetStickinessBonus = 0.75f;
 
 
-    [Header("Formation Melee Movement / Attacks")]
+    [FormerlySerializedAs("meleeFallbackMeleeAttackRange")]
+    [FormerlySerializedAs("formationFallbackMeleeAttackRange")]
+    [Header("Melee - Formed Movement / Attacks")]
     [Tooltip("Fallback melee attack range used when a soldier has no WeaponProfile.")]
-    [Min(0.1f)] [FormerlySerializedAs("prototypeFallbackMeleeAttackRange")]
-    public float formationFallbackMeleeAttackRange = 1.85f;
+    [Min(0.1f)] 
+    public float fallbackMeleeAttackRange = 1.85f;
 
+    [FormerlySerializedAs("meleeFallbackMeleeAttackInterval")]
+    [FormerlySerializedAs("formationFallbackMeleeAttackInterval")]
     [Tooltip("Fallback melee attack interval used when a soldier has no WeaponProfile.")]
-    [Min(0.05f)] [FormerlySerializedAs("prototypeFallbackMeleeAttackInterval")]
-    public float formationFallbackMeleeAttackInterval = 2.5f;
+    [Min(0.05f)] 
+    public float fallbackMeleeAttackInterval = 2.5f;
 
+    [FormerlySerializedAs("formationMeleeStoppingDistanceMultiplier")]
     [Tooltip("Melee movement stopping distance as a multiplier of melee attack range.")]
-    [Min(0.01f)] [FormerlySerializedAs("prototypeMeleeStoppingDistanceMultiplier")]
-    public float formationMeleeStoppingDistanceMultiplier = 0.95f;
+    [Min(0.01f)] 
+    public float meleeStoppingDistanceMultiplier = 0.95f;
 
-    [Tooltip("Combat movement speed multiplier used by FormationCombat soldiers.")]
-    [Min(0.1f)] [FormerlySerializedAs("prototypeCombatMoveSpeedMultiplier")]
-    public float formationCombatMoveSpeedMultiplier = 0.85f;
+    [FormerlySerializedAs("formationCombatMoveSpeedMultiplier")]
+    [Tooltip("Combat movement speed multiplier used by soldiers in Formed combat execution.")]
+    [Min(0.1f)] 
+    public float meleeCombatMoveSpeedMultiplier = 0.85f;
 
 
-    [Header("Formation Ranged")]
+    [Header("Ranged")]
     [Tooltip("Default runtime state for synchronized ranged volleys.")]
     public bool rangedVolleyEnabledByDefault = false;
 
@@ -94,335 +104,409 @@ public class SquadCombatProfile : ScriptableObject
     [Tooltip("Combat break padding added beyond ranged weapon range.")]
     [Min(0f)] public float rangedCombatBreakRangePadding = 4f;
 
+    [FormerlySerializedAs("formationRangedStoppingDistanceMultiplier")]
     [Tooltip("Ranged movement stopping distance as a multiplier of ranged attack range.")]
     [Range(0.1f, 1f)] [FormerlySerializedAs("prototypeRangedStoppingDistanceMultiplier")]
-    public float formationRangedStoppingDistanceMultiplier = 0.82f;
+    public float rangedStoppingDistanceMultiplier = 0.82f;
 
 
-    [Header("Formation Ranged Setup")]
+    [FormerlySerializedAs("meleeRangedSetupRequiredRatio")]
+    [FormerlySerializedAs("formationRangedSetupRequiredRatio")]
+    [Header("Ranged - Formed Setup")]
     [Tooltip("Living-soldier ratio that must be reasonably close to formation slots before a ranged squad begins firing.")]
-    [Range(0f, 1f)] public float formationRangedSetupRequiredRatio = 0.70f;
+    [Range(0f, 1f)] public float rangedSetupRequiredRatio = 0.70f;
 
+    [FormerlySerializedAs("formationRangedSetupSlotDistance")]
     [Tooltip("Maximum distance from an assigned formation slot for a soldier to count as ready to fire.")]
-    [Min(0.05f)] public float formationRangedSetupSlotDistance = 1.25f;
+    [Min(0.05f)] public float rangedSetupSlotDistance = 1.25f;
 
+    [FormerlySerializedAs("formationRangedSetupMoveSpeedMultiplier")]
     [Tooltip("Movement speed multiplier used while ranged soldiers settle into their firing formation.")]
-    [Min(0.1f)] public float formationRangedSetupMoveSpeedMultiplier = 1.0f;
+    [Min(0.1f)] public float rangedSetupMoveSpeedMultiplier = 1.0f;
 
+    [FormerlySerializedAs("formationRangedInitialFireSettleTime")]
     [Tooltip("Short pause after the ranged formation becomes ready before soldiers may begin firing.")]
-    [Min(0f)] public float formationRangedInitialFireSettleTime = 0.25f;
+    [Min(0f)] public float rangedInitialFireSettleTime = 0.25f;
 
 
-    [Header("Formation Ranged Avoidance")]
+    [FormerlySerializedAs("formationRangedAvoidanceEnterDistance")]
+    [Header("Ranged - Avoidance")]
     [Tooltip("Enemy squad-center distance that triggers a simple retreat while ranged avoidance is enabled and ammunition remains.")]
-    [Min(0.1f)] public float formationRangedAvoidanceEnterDistance = 10f;
+    [Min(0.1f)] public float rangedAvoidanceEnterDistance = 10f;
 
+    [FormerlySerializedAs("formationRangedAvoidanceRetreatDistance")]
     [Tooltip("How far the squad tries to move directly away from the enemy when avoidance triggers.")]
-    [Min(0.1f)] public float formationRangedAvoidanceRetreatDistance = 10f;
+    [Min(0.1f)] public float rangedAvoidanceRetreatDistance = 10f;
 
+    [FormerlySerializedAs("formationRangedAvoidanceRecheckDistance")]
     [Tooltip("When this close to the current avoidance destination, recheck the original threat and immediately chain another retreat if it is still inside avoidance range.")]
-    [Min(0.1f)] public float formationRangedAvoidanceRecheckDistance = 2f;
+    [Min(0.1f)] public float rangedAvoidanceRecheckDistance = 2f;
 
-    [Header("Formation Ranged Melee Fallback")]
+    [FormerlySerializedAs("formationRangedMeleeFallbackEnabled")]
+    [Header("Ranged - Melee Fallback")]
     [Tooltip("Allows a ranged squad with melee sidearms to switch the entire squad into melee mode when enemies breach close range.")]
-    public bool formationRangedMeleeFallbackEnabled = true;
+    public bool rangedMeleeFallbackEnabled = true;
 
+    [FormerlySerializedAs("formationRangedMeleeFallbackEnterDistance")]
     [Tooltip("If any living enemy reaches this distance from any living squad member, the entire ranged squad switches to melee mode.")]
-    [Min(0.1f)] public float formationRangedMeleeFallbackEnterDistance = 5.0f;
+    [Min(0.1f)] public float rangedMeleeFallbackEnterDistance = 5.0f;
 
+    [FormerlySerializedAs("formationRangedMeleeFallbackExitDistance")]
     [Tooltip("The squad returns to ranged mode only after no living enemy remains within this distance and the squad still has ranged ammunition. Keep this above enter distance to prevent flicker.")]
-    [Min(0.1f)] public float formationRangedMeleeFallbackExitDistance = 7.5f;
+    [Min(0.1f)] public float rangedMeleeFallbackExitDistance = 7.5f;
 
     
     
 
+   [FormerlySerializedAs("formationAttackIntervalRandomMin")]
    [Header("Attack Timing")]
 
     [Tooltip("Minimum random value added to the attack interval.")]
     [Min(0f)]
-    public float formationAttackIntervalRandomMin = 0f;
+    public float attackIntervalRandomMin = 0f;
 
+    [FormerlySerializedAs("formationAttackIntervalRandomMax")]
     [Tooltip("Maximum random value added to the attack interval.")]
     [Min(0f)]
-    public float formationAttackIntervalRandomMax = 1.0f;
+    public float attackIntervalRandomMax = 1.0f;
 
 
+    [FormerlySerializedAs("formationReserveForwardGapDistance")]
     [Header("Reserve Settle / Side-Step")]
 
     [Tooltip("How far ahead a reserve checks for a friendly-body gap before moving forward.")]
     [Min(0f)]
-    public float formationReserveForwardGapDistance = 1.35f;
+    public float reserveForwardGapDistance = 1.35f;
 
+    [FormerlySerializedAs("formationReserveForwardGapRadius")]
     [Tooltip("Width/radius of the forward gap check. Higher values require reserves to find a wider lane.")]
     [Min(0f)]
-    public float formationReserveForwardGapRadius = 0.60f;
+    public float reserveForwardGapRadius = 0.60f;
 
+    [FormerlySerializedAs("formationReserveMinimumBlockedSitTimeMin")]
     [Tooltip("Shortest randomized time a newly blocked reserve must wait before repositioning.")]
     [Min(0f)]
-    public float formationReserveMinimumBlockedSitTimeMin = 0.35f;
+    public float reserveMinimumBlockedSitTimeMin = 0.35f;
 
+    [FormerlySerializedAs("formationReserveMinimumBlockedSitTimeMax")]
     [Tooltip("Longest randomized time a newly blocked reserve must wait before repositioning.")]
     [Min(0f)]
-    public float formationReserveMinimumBlockedSitTimeMax = 1.40f;
+    public float reserveMinimumBlockedSitTimeMax = 1.40f;
 
-    [Tooltip("Enables the small local side-step fallback for blocked reserve soldiers.")]
-    public bool formationReserveSideStepEnabled = false;
+    [FormerlySerializedAs("formationReserveSideStepEnabled")] [Tooltip("Enables the small local side-step fallback for blocked reserve soldiers.")]
+    public bool reserveSideStepEnabled = false;
 
+    [FormerlySerializedAs("formationReserveSideStepIntervalMin")]
     [Tooltip("Shortest randomized cooldown before a reserve can attempt another side-step.")]
     [Min(0f)]
-    public float formationReserveSideStepIntervalMin = 5.0f;
+    public float reserveSideStepIntervalMin = 5.0f;
 
+    [FormerlySerializedAs("formationReserveSideStepIntervalMax")]
     [Tooltip("Longest randomized cooldown before a reserve can attempt another side-step.")]
     [Min(0f)]
-    public float formationReserveSideStepIntervalMax = 10.0f;
+    public float reserveSideStepIntervalMax = 10.0f;
 
+    [FormerlySerializedAs("formationReserveSideStepDistance")]
     [Tooltip("How far sideways a reserve tries to step when using the side-step fallback.")]
     [Min(0f)]
-    public float formationReserveSideStepDistance = 0.65f;
+    public float reserveSideStepDistance = 0.65f;
 
+    [FormerlySerializedAs("formationReserveSideStepOccupancyRadius")]
     [Tooltip("Radius used to reject side-step points already occupied by living soldiers.")]
     [Min(0f)]
-    public float formationReserveSideStepOccupancyRadius = 0.85f;
+    public float reserveSideStepOccupancyRadius = 0.85f;
 
+    [FormerlySerializedAs("formationReserveSideStepSpeedMultiplier")]
     [Tooltip("Movement speed multiplier used while performing a reserve side-step.")]
     [Min(0f)]
-    public float formationReserveSideStepSpeedMultiplier = 0.50f;
+    public float reserveSideStepSpeedMultiplier = 0.50f;
 
 
+    [FormerlySerializedAs("formationMultiSquadLocalTargetingEnabled")]
     [Header("Local Enemy Targeting")]
 
     [Tooltip("Allows soldiers to locally target nearby enemies from non-primary hostile squads.")]
-    public bool formationMultiSquadLocalTargetingEnabled = true;
+    public bool multiSquadLocalTargetingEnabled = true;
 
+    [FormerlySerializedAs("formationLocalEnemyTargetSearchRadius")]
     [Tooltip("Maximum distance for considering non-primary enemy soldiers as local reaction targets.")]
     [Min(0f)]
-    public float formationLocalEnemyTargetSearchRadius = 7.5f;
+    public float localEnemyTargetSearchRadius = 7.5f;
 
+    [FormerlySerializedAs("formationNonPrimaryTargetPenalty")]
     [Tooltip("Score penalty for non-primary enemies so soldiers still prefer the ordered target squad.")]
     [Min(0f)]
-    public float formationNonPrimaryTargetPenalty = 1.25f;
+    public float nonPrimaryTargetPenalty = 1.25f;
 
-    [Tooltip("Forces melee soldiers to prefer obvious nearby enemies over farther assigned targets.")]
-    public bool formationImmediateContactOverrideEnabled = true;
+    [FormerlySerializedAs("formationImmediateContactOverrideEnabled")] [Tooltip("Forces melee soldiers to prefer obvious nearby enemies over farther assigned targets.")]
+    public bool immediateContactOverrideEnabled = true;
 
+    [FormerlySerializedAs("formationImmediateContactRangePadding")]
     [Tooltip("Extra range added to attack range when checking for immediate-contact enemies.")]
     [Min(0f)]
-    public float formationImmediateContactRangePadding = 0.55f;
+    public float immediateContactRangePadding = 0.55f;
 
 
+    [FormerlySerializedAs("formationApproachSettleGateEnabled")]
     [Header("Approach Settle Gate")]
 
     [Tooltip("Enables the short initial delay before full melee release when only a few soldiers arrive.")]
-    public bool formationApproachSettleGateEnabled = true;
+    public bool approachSettleGateEnabled = true;
 
+    [FormerlySerializedAs("formationApproachSettleDuration")]
     [Tooltip("How long the squad may wait at first contact for more soldiers to arrive.")]
     [Min(0f)]
-    public float formationApproachSettleDuration = 0.75f;
+    public float approachSettleDuration = 0.75f;
 
+    [FormerlySerializedAs("formationApproachSettleReadyRatio")]
     [Tooltip("Fraction of living soldiers that must be near the enemy to skip or finish the settle gate.")]
     [Min(0f)]
-    public float formationApproachSettleReadyRatio = 0.45f;
+    public float approachSettleReadyRatio = 0.45f;
 
+    [FormerlySerializedAs("formationApproachSettleReadyRangePadding")]
     [Tooltip("Extra range added to combat start range when counting soldiers as approach-ready.")]
     [Min(0f)]
-    public float formationApproachSettleReadyRangePadding = 0.95f;
+    public float approachSettleReadyRangePadding = 0.95f;
 
+    [FormerlySerializedAs("formationApproachSettleMinimumReadyRange")]
     [Tooltip("Minimum ready-check radius so very small combat start ranges still count nearby soldiers.")]
     [Min(0f)]
-    public float formationApproachSettleMinimumReadyRange = 2.75f;
+    public float approachSettleMinimumReadyRange = 2.75f;
 
 
+    [FormerlySerializedAs("formationChargeEnabled")]
     [Header("Charge")]
 
     [Tooltip("Master capability toggle for the ordered melee charge phase.")]
-    public bool formationChargeEnabled = true;
+    public bool chargeEnabled = true;
 
-    [Tooltip("Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack.")]
-    public bool formationChargeEnabledByDefault = true;
+    [FormerlySerializedAs("formationChargeEnabledByDefault")] [Tooltip("Initial runtime charge toggle state for squads using this profile. Charge still requires an OrderedAttack.")]
+    public bool chargeEnabledByDefault = true;
 
-    [Tooltip("Selects the behavior used inside SquadState.Charging. RunUp performs a lightweight infantry-style final rush and immediately settles on contact. FullCharge enables momentum, shock damage, penetration, and follow-through.")]
-    public FormationChargeMode formationChargeMode = FormationChargeMode.RunUp;
+    [FormerlySerializedAs("formationChargeMode")] [Tooltip("Selects the behavior used inside SquadState.Charging. RunUp performs a lightweight infantry-style final rush and immediately settles on contact. FullCharge enables momentum, shock damage, penetration, and follow-through.")]
+    public ChargeMode chargeMode = ChargeMode.RunUp;
 
+    [FormerlySerializedAs("formationChargeStartDistance")]
     [Tooltip("Farthest closest-soldier distance that allows this squad to enter Charging from ApproachingCombat.")]
     [Min(0f)]
-    public float formationChargeStartDistance = 12.0f; // much higher for cav (~25)
+    public float chargeStartDistance = 12.0f; // much higher for cav (~25)
 
+    [FormerlySerializedAs("formationChargeMinimumStartDistance")]
     [Tooltip("Minimum run-up space required to begin a NEW charge. Attack orders issued inside this distance enter normal engagement instead of manufacturing a point-blank charge. Tune this per squad: ordinary infantry can use a shorter window, while cavalry should require substantial run-up space.")]
     [Min(0f)]
-    public float formationChargeMinimumStartDistance = 10.0f; // much higher for cav (~20)
+    public float chargeMinimumStartDistance = 10.0f; // much higher for cav (~20)
 
+    [FormerlySerializedAs("formationChargeSpeedMultiplier")]
     [Tooltip("Formation-wide movement speed multiplier while charging.")]
     [Min(0f)]
-    public float formationChargeSpeedMultiplier = 1.20f;
+    public float chargeSpeedMultiplier = 1.20f;
 
+    [FormerlySerializedAs("formationChargeMaximumDuration")]
     [Tooltip("Safety time limit before the squad enters combat even if charge contact detection is imperfect.")]
     [Min(0f)]
-    public float formationChargeMaximumDuration = 3.0f;
+    public float chargeMaximumDuration = 3.0f;
 
+    [FormerlySerializedAs("formationChargeContactReadyRatio")]
     [Tooltip("Fraction of living melee soldiers that must reach personal attack range before the charge resolves contact. RunUp settles directly into melee; FullCharge begins follow-through.")]
     [Min(0f)]
-    public float formationChargeContactReadyRatio = 0.15f;
+    public float chargeContactReadyRatio = 0.15f;
 
 
+    [FormerlySerializedAs("formationChargeMoraleShock")]
     [Tooltip("One-time morale loss applied to the ordered target squad when meaningful charge contact is first reached. Applies to both RunUp and FullCharge; tune ordinary infantry much lower than shock units if desired.")]
     [Min(0f)]
-    public float formationChargeMoraleShock = 8.0f;
+    public float chargeMoraleShock = 8.0f;
 
-    [Tooltip("Enables an additional speed advantage for the soldiers currently closest to the enemy during either RunUp or FullCharge.")]
-    public bool formationChargeLeadSpeedEnabled = true;
+    [FormerlySerializedAs("formationChargeLeadSpeedEnabled")] [Tooltip("Enables an additional speed advantage for the soldiers currently closest to the enemy during either RunUp or FullCharge.")]
+    public bool chargeLeadSpeedEnabled = true;
 
+    [FormerlySerializedAs("formationChargeLeadSoldierRatio")]
     [Tooltip("Fraction of living melee soldiers treated as the leading edge. Rounded up to at least one soldier.")]
     [Min(0f)]
-    public float formationChargeLeadSoldierRatio = 0.15f;
+    public float chargeLeadSoldierRatio = 0.15f;
 
+    [FormerlySerializedAs("formationChargeLeadSpeedMultiplier")]
     [Tooltip("Additional per-soldier movement multiplier applied to soldiers on the current leading edge while charging.")]
     [Min(0f)]
-    public float formationChargeLeadSpeedMultiplier = 1.25f;
+    public float chargeLeadSpeedMultiplier = 1.25f;
 
 
+    [FormerlySerializedAs("formationFullChargeMinimumImpactSpeedRatio")]
     [Header("Charge - Full Charge")]
 
     [Tooltip("Minimum fraction of authored charge speed required before FullCharge contact produces shock damage or the momentum-scaled charge impulse. Below this threshold the body may still make contact, but it has not built meaningful shock power.")]
     [Range(0f, 1f)]
-    public float formationFullChargeMinimumImpactSpeedRatio = 0.45f;
+    public float fullChargeMinimumImpactSpeedRatio = 0.45f;
 
+    [FormerlySerializedAs("formationFullChargeImpactDamage")]
     [Tooltip("Maximum normal shock damage applied once per enemy soldier per FullCharge. Actual damage scales from current forward charge speed and the charger/receiver body-mass relationship. This is separate from the rider's normal targeted charge attack.")]
     [Min(0)]
-    public int formationFullChargeImpactDamage = 6;
+    public int fullChargeImpactDamage = 6;
 
+    [FormerlySerializedAs("formationFullChargeImpactArmorPiercingDamage")]
     [Tooltip("Maximum armor-piercing portion of FullCharge shock damage. Scales with the same speed/mass impact factor as normal shock damage.")]
     [Min(0)]
-    public int formationFullChargeImpactArmorPiercingDamage = 1;
+    public int fullChargeImpactArmorPiercingDamage = 1;
 
+    [FormerlySerializedAs("formationChargePenetrationMultiplier")]
     [Tooltip("Multiplier applied to each charging soldier's BodyStats mass to create its per-charge penetration budget. Enemy body mass consumes this budget once per unique charger/enemy contact. FullCharge only.")]
     [Min(0f)]
-    public float formationChargePenetrationMultiplier = 1.0f;
+    public float chargePenetrationMultiplier = 1.0f;
 
+    [FormerlySerializedAs("formationChargeEndSpentRatio")]
     [Tooltip("Fraction of living charging soldiers that must exhaust their penetration before the squad leaves the charge and enters normal melee.")]
     [Range(0f, 1f)]
-    public float formationChargeEndSpentRatio = 0.65f;
+    public float chargeEndSpentRatio = 0.65f;
 
+    [FormerlySerializedAs("formationChargeFollowThroughMaximumDistance")]
     [FormerlySerializedAs("formationChargeFollowThroughDistance")]
     [Tooltip("Maximum forward distance the formation may travel after meaningful contact. The post-contact direction is locked, so this is a hard penetration ceiling rather than a target-relative destination.")]
     [Min(0f)]
-    public float formationChargeFollowThroughMaximumDistance = 1.75f;
+    public float chargeFollowThroughMaximumDistance = 1.75f;
 
-    [Tooltip("Enables the momentum-scaled directional contact impulse emitted by FullCharge soldiers. RunUp relies on its normal weapon-hit impulse instead.")]
-    public bool formationChargeImpulseEnabled = true;
+    [FormerlySerializedAs("formationChargeImpulseEnabled")] [Tooltip("Enables the momentum-scaled directional contact impulse emitted by FullCharge soldiers. RunUp relies on its normal weapon-hit impulse instead.")]
+    public bool chargeImpulseEnabled = true;
 
+    [FormerlySerializedAs("formationChargeImpulseMagnitude")]
     [Tooltip("FullCharge impulse scale. Final impulse is derived from this value, the charger's body mass, and its current forward charge-speed ratio.")]
     [Min(0f)]
-    public float formationChargeImpulseMagnitude = 4.0f;
+    public float chargeImpulseMagnitude = 4.0f;
 
+    [FormerlySerializedAs("formationChargeImpulseDuration")]
     [Tooltip("Impulse decay duration. Short values make the effect feel like contact weight rather than sustained knockback.")]
     [Min(0f)]
-    public float formationChargeImpulseDuration = 0.09f;
+    public float chargeImpulseDuration = 0.09f;
 
+    [FormerlySerializedAs("formationChargeImpulseForwardDistance")]
     [Tooltip("Length of the charge-contact capsule projected in front of each charging soldier.")]
     [Min(0f)]
-    public float formationChargeImpulseForwardDistance = 0.95f;
+    public float chargeImpulseForwardDistance = 0.95f;
 
+    [FormerlySerializedAs("formationChargeImpulseRadius")]
     [Tooltip("Radius of each charging soldier's forward contact capsule.")]
     [Min(0f)]
-    public float formationChargeImpulseRadius = 0.65f;
+    public float chargeImpulseRadius = 0.65f;
 
+    [FormerlySerializedAs("formationChargeImpulseRadialBlend")]
     [Tooltip("Blend between forward and radial impulse direction. Lower values keep the force mostly forward; higher values add more outward spread.")]
     [Min(0f)]
-    public float formationChargeImpulseRadialBlend = 0.12f;
+    public float chargeImpulseRadialBlend = 0.12f;
 
 
+    [FormerlySerializedAs("formationMeleeHitImpulseEnabled")]
     [Header("Melee Impact")]
 
     [Tooltip("Enables physical movement feedback on successful melee damage.")]
-    public bool formationMeleeHitImpulseEnabled = true;
+    public bool meleeHitImpulseEnabled = true;
 
+    [FormerlySerializedAs("formationMeleeHitImpulseMagnitude")]
     [Tooltip("Baseline successful-hit impulse magnitude before receiver body mass is applied.")]
     [Min(0f)]
-    public float formationMeleeHitImpulseMagnitude = 3.0f;
+    public float meleeHitImpulseMagnitude = 3.0f;
 
+    [FormerlySerializedAs("formationMeleeHitImpulseDuration")]
     [Tooltip("Impulse decay duration for successful melee hits. Short values produce a visible strike response without sustained sliding.")]
     [Min(0f)]
-    public float formationMeleeHitImpulseDuration = 0.15f;
+    public float meleeHitImpulseDuration = 0.15f;
 
 
+    [FormerlySerializedAs("formationAttackerCombatLockEnabled")]
     [Header("Attacker Combat Lock")]
 
     [Tooltip("Enables temporary movement lock for active melee attackers after a move or withdraw order.")]
-    public bool formationAttackerCombatLockEnabled = true;
+    public bool attackerCombatLockEnabled = true;
 
+    [FormerlySerializedAs("formationAttackerCombatLockTimeMin")]
     [Tooltip("Shortest time an active melee attacker stays committed after the squad receives a move order.")]
     [Min(0f)]
-    public float formationAttackerCombatLockTimeMin = 0.75f;
+    public float attackerCombatLockTimeMin = 0.75f;
 
+    [FormerlySerializedAs("formationAttackerCombatLockTimeMax")]
     [Tooltip("Longest time an active melee attacker stays committed after the squad receives a move order.")]
     [Min(0f)]
-    public float formationAttackerCombatLockTimeMax = 1.75f;
+    public float attackerCombatLockTimeMax = 1.75f;
 
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyRepositionEnabled")]
     [Header("Reserve Behind-Friendly Reposition")]
 
     [Tooltip("Enables blocked reserves to move into an open pocket behind a better-positioned friendly.")]
-    public bool formationReserveBehindFriendlyRepositionEnabled = true;
+    public bool reserveBehindFriendlyRepositionEnabled = true;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlySearchInterval")]
     [Tooltip("Cooldown between behind-friendly reposition searches for each reserve soldier.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlySearchInterval = 3.5f;
+    public float reserveBehindFriendlySearchInterval = 3.5f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyAnchorSearchRadius")]
     [Tooltip("Maximum distance for finding friendly anchors that the reserve can queue behind.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyAnchorSearchRadius = 5.5f;
+    public float reserveBehindFriendlyAnchorSearchRadius = 5.5f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyBackOffset")]
     [Tooltip("Distance behind the chosen friendly anchor where the reserve tries to move.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyBackOffset = 1.45f;
+    public float reserveBehindFriendlyBackOffset = 1.45f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlySideOffset")]
     [Tooltip("Optional left/right offset from the behind point when side probes are enabled.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlySideOffset = 0f;
+    public float reserveBehindFriendlySideOffset = 0f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyNavMeshProjectionRadius")]
     [Tooltip("Maximum distance allowed when projecting a candidate behind-friendly pocket onto the NavMesh.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyNavMeshProjectionRadius = 1.15f;
+    public float reserveBehindFriendlyNavMeshProjectionRadius = 1.15f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyOccupancyRadius")]
     [Tooltip("Radius used to reject candidate pockets already occupied by a living soldier.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyOccupancyRadius = 1.15f;
+    public float reserveBehindFriendlyOccupancyRadius = 1.15f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyCrowdRadius")]
     [Tooltip("Radius used to count nearby bodies around a candidate pocket.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyCrowdRadius = 1.65f;
+    public float reserveBehindFriendlyCrowdRadius = 1.65f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyMaxNearbyBodies")]
     [Tooltip("Maximum number of nearby living bodies allowed before a candidate pocket is considered crowded.")]
     [Min(0)]
-    public int formationReserveBehindFriendlyMaxNearbyBodies = 1;
+    public int reserveBehindFriendlyMaxNearbyBodies = 1;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyReachDistance")]
     [Tooltip("Distance from the target pocket at which the reserve considers the reposition complete.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyReachDistance = 0.18f;
+    public float reserveBehindFriendlyReachDistance = 0.18f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyMaxMoveDistance")]
     [Tooltip("Maximum distance a reserve is allowed to travel for a behind-friendly reposition.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyMaxMoveDistance = 10.0f;
+    public float reserveBehindFriendlyMaxMoveDistance = 10.0f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyMinAnchorForwardGain")]
     [Tooltip("Required amount the friendly anchor must be closer to the target than the reserve.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyMinAnchorForwardGain = 0.85f;
+    public float reserveBehindFriendlyMinAnchorForwardGain = 0.85f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyMinTargetProgress")]
     [Tooltip("Required amount the candidate point must move the reserve closer to its target.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyMinTargetProgress = 0.05f;
+    public float reserveBehindFriendlyMinTargetProgress = 0.05f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlySpeedMultiplier")]
     [Tooltip("Movement speed multiplier used while moving to a behind-friendly pocket.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlySpeedMultiplier = 0.60f;
+    public float reserveBehindFriendlySpeedMultiplier = 0.60f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyCrowdScoreWeight")]
     [Tooltip("Score penalty applied per nearby body when ranking behind-friendly candidate pockets.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyCrowdScoreWeight = 1.25f;
+    public float reserveBehindFriendlyCrowdScoreWeight = 1.25f;
 
+    [FormerlySerializedAs("formationReserveBehindFriendlyProgressScoreWeight")]
     [Tooltip("Score bonus for candidate pockets that make better progress toward the target.")]
     [Min(0f)]
-    public float formationReserveBehindFriendlyProgressScoreWeight = 0.75f;
+    public float reserveBehindFriendlyProgressScoreWeight = 0.75f;
 
     void OnValidate()
     {
@@ -435,91 +519,93 @@ public class SquadCombatProfile : ScriptableObject
         combatApproachRefreshInterval = Mathf.Max(0.01f, combatApproachRefreshInterval);
         defaultApproachStopDistance = Mathf.Max(0f, defaultApproachStopDistance);
 
-        formationTargetRefreshInterval = Mathf.Max(0.01f, formationTargetRefreshInterval);
-        formationTargetCrowdingPenalty = Mathf.Max(0f, formationTargetCrowdingPenalty);
-        formationCurrentTargetStickinessBonus = Mathf.Max(0f, formationCurrentTargetStickinessBonus);
+        meleeTargetRefreshInterval = Mathf.Max(0.01f, meleeTargetRefreshInterval);
+        meleeTargetCrowdingPenalty = Mathf.Max(0f, meleeTargetCrowdingPenalty);
+        meleeCurrentTargetStickinessBonus = Mathf.Max(0f, meleeCurrentTargetStickinessBonus);
 
-        formationFallbackMeleeAttackRange = Mathf.Max(0.1f, formationFallbackMeleeAttackRange);
-        formationFallbackMeleeAttackInterval = Mathf.Max(0.05f, formationFallbackMeleeAttackInterval);
-        formationMeleeStoppingDistanceMultiplier = Mathf.Max(0.01f, formationMeleeStoppingDistanceMultiplier);
-        formationCombatMoveSpeedMultiplier = Mathf.Max(0.1f, formationCombatMoveSpeedMultiplier);
+        fallbackMeleeAttackRange = Mathf.Max(0.1f, fallbackMeleeAttackRange);
+        fallbackMeleeAttackInterval = Mathf.Max(0.05f, fallbackMeleeAttackInterval);
+        meleeStoppingDistanceMultiplier = Mathf.Max(0.01f, meleeStoppingDistanceMultiplier);
+        meleeCombatMoveSpeedMultiplier = Mathf.Max(0.1f, meleeCombatMoveSpeedMultiplier);
 
         rangedScanRangePadding = Mathf.Max(0f, rangedScanRangePadding);
         rangedCombatStartRangeMultiplier = Mathf.Max(0.1f, rangedCombatStartRangeMultiplier);
         rangedCombatBreakRangePadding = Mathf.Max(0f, rangedCombatBreakRangePadding);
-        formationRangedStoppingDistanceMultiplier = Mathf.Clamp(formationRangedStoppingDistanceMultiplier, 0.1f, 1f);
-        formationRangedSetupRequiredRatio = Mathf.Clamp01(formationRangedSetupRequiredRatio);
-        formationRangedSetupSlotDistance = Mathf.Max(0.05f, formationRangedSetupSlotDistance);
-        formationRangedSetupMoveSpeedMultiplier = Mathf.Max(0.1f, formationRangedSetupMoveSpeedMultiplier);
-        formationRangedInitialFireSettleTime = Mathf.Max(0f, formationRangedInitialFireSettleTime);
-        formationRangedAvoidanceEnterDistance = Mathf.Max(0.1f, formationRangedAvoidanceEnterDistance);
-        formationRangedAvoidanceRetreatDistance = Mathf.Max(0.1f, formationRangedAvoidanceRetreatDistance);
-        formationRangedAvoidanceRecheckDistance = Mathf.Max(0.1f, formationRangedAvoidanceRecheckDistance);
-        formationRangedMeleeFallbackEnterDistance = Mathf.Max(0.1f, formationRangedMeleeFallbackEnterDistance);
-        formationRangedMeleeFallbackExitDistance = Mathf.Max(
-            formationRangedMeleeFallbackEnterDistance + 0.1f,
-            formationRangedMeleeFallbackExitDistance);
+        rangedStoppingDistanceMultiplier = Mathf.Clamp(rangedStoppingDistanceMultiplier, 0.1f, 1f);
+        rangedSetupRequiredRatio = Mathf.Clamp01(rangedSetupRequiredRatio);
+        rangedSetupSlotDistance = Mathf.Max(0.05f, rangedSetupSlotDistance);
+        rangedSetupMoveSpeedMultiplier = Mathf.Max(0.1f, rangedSetupMoveSpeedMultiplier);
+        rangedInitialFireSettleTime = Mathf.Max(0f, rangedInitialFireSettleTime);
+        rangedAvoidanceEnterDistance = Mathf.Max(0.1f, rangedAvoidanceEnterDistance);
+        rangedAvoidanceRetreatDistance = Mathf.Max(0.1f, rangedAvoidanceRetreatDistance);
+        rangedAvoidanceRecheckDistance = Mathf.Max(0.1f, rangedAvoidanceRecheckDistance);
+        rangedMeleeFallbackEnterDistance = Mathf.Max(0.1f, rangedMeleeFallbackEnterDistance);
+        rangedMeleeFallbackExitDistance = Mathf.Max(
+            rangedMeleeFallbackEnterDistance + 0.1f,
+            rangedMeleeFallbackExitDistance);
 
-        formationAttackIntervalRandomMin = Mathf.Max(0f, formationAttackIntervalRandomMin);
-        formationAttackIntervalRandomMax = Mathf.Max(0f, formationAttackIntervalRandomMax);
-        formationReserveForwardGapDistance = Mathf.Max(0f, formationReserveForwardGapDistance);
-        formationReserveForwardGapRadius = Mathf.Max(0f, formationReserveForwardGapRadius);
-        formationReserveMinimumBlockedSitTimeMin = Mathf.Max(0f, formationReserveMinimumBlockedSitTimeMin);
-        formationReserveMinimumBlockedSitTimeMax = Mathf.Max(0f, formationReserveMinimumBlockedSitTimeMax);
-        formationReserveSideStepIntervalMin = Mathf.Max(0f, formationReserveSideStepIntervalMin);
-        formationReserveSideStepIntervalMax = Mathf.Max(0f, formationReserveSideStepIntervalMax);
-        formationReserveSideStepDistance = Mathf.Max(0f, formationReserveSideStepDistance);
-        formationReserveSideStepOccupancyRadius = Mathf.Max(0f, formationReserveSideStepOccupancyRadius);
-        formationReserveSideStepSpeedMultiplier = Mathf.Max(0f, formationReserveSideStepSpeedMultiplier);
-        formationLocalEnemyTargetSearchRadius = Mathf.Max(0f, formationLocalEnemyTargetSearchRadius);
-        formationNonPrimaryTargetPenalty = Mathf.Max(0f, formationNonPrimaryTargetPenalty);
-        formationImmediateContactRangePadding = Mathf.Max(0f, formationImmediateContactRangePadding);
-        formationApproachSettleDuration = Mathf.Max(0f, formationApproachSettleDuration);
-        formationApproachSettleReadyRatio = Mathf.Clamp01(formationApproachSettleReadyRatio);
-        formationApproachSettleReadyRangePadding = Mathf.Max(0f, formationApproachSettleReadyRangePadding);
-        formationApproachSettleMinimumReadyRange = Mathf.Max(0f, formationApproachSettleMinimumReadyRange);
-        formationChargeStartDistance = Mathf.Max(0f, formationChargeStartDistance);
-        formationChargeMinimumStartDistance = Mathf.Clamp(formationChargeMinimumStartDistance, 0f, formationChargeStartDistance);
-        formationChargeSpeedMultiplier = Mathf.Max(0f, formationChargeSpeedMultiplier);
-        formationChargeMaximumDuration = Mathf.Max(0f, formationChargeMaximumDuration);
-        formationChargeContactReadyRatio = Mathf.Clamp01(formationChargeContactReadyRatio);
-        formationFullChargeMinimumImpactSpeedRatio = Mathf.Clamp01(formationFullChargeMinimumImpactSpeedRatio);
-        formationFullChargeImpactDamage = Mathf.Max(0, formationFullChargeImpactDamage);
-        formationFullChargeImpactArmorPiercingDamage = Mathf.Max(0, formationFullChargeImpactArmorPiercingDamage);
-        formationChargePenetrationMultiplier = Mathf.Max(0f, formationChargePenetrationMultiplier);
-        formationChargeEndSpentRatio = Mathf.Clamp01(formationChargeEndSpentRatio);
-        formationChargeFollowThroughMaximumDistance = Mathf.Max(0f, formationChargeFollowThroughMaximumDistance);
-        formationChargeMoraleShock = Mathf.Max(0f, formationChargeMoraleShock);
-        formationChargeImpulseMagnitude = Mathf.Max(0f, formationChargeImpulseMagnitude);
-        formationChargeImpulseDuration = Mathf.Max(0f, formationChargeImpulseDuration);
-        formationChargeImpulseForwardDistance = Mathf.Max(0f, formationChargeImpulseForwardDistance);
-        formationChargeImpulseRadius = Mathf.Max(0f, formationChargeImpulseRadius);
-        formationChargeImpulseRadialBlend = Mathf.Clamp01(formationChargeImpulseRadialBlend);
-        formationChargeLeadSoldierRatio = Mathf.Clamp01(formationChargeLeadSoldierRatio);
-        formationChargeLeadSpeedMultiplier = Mathf.Max(0f, formationChargeLeadSpeedMultiplier);
-        formationMeleeHitImpulseMagnitude = Mathf.Max(0f, formationMeleeHitImpulseMagnitude);
-        formationMeleeHitImpulseDuration = Mathf.Max(0f, formationMeleeHitImpulseDuration);
-        formationAttackerCombatLockTimeMin = Mathf.Max(0f, formationAttackerCombatLockTimeMin);
-        formationAttackerCombatLockTimeMax = Mathf.Max(0f, formationAttackerCombatLockTimeMax);
-        formationReserveBehindFriendlySearchInterval = Mathf.Max(0f, formationReserveBehindFriendlySearchInterval);
-        formationReserveBehindFriendlyAnchorSearchRadius = Mathf.Max(0f, formationReserveBehindFriendlyAnchorSearchRadius);
-        formationReserveBehindFriendlyBackOffset = Mathf.Max(0f, formationReserveBehindFriendlyBackOffset);
-        formationReserveBehindFriendlySideOffset = Mathf.Max(0f, formationReserveBehindFriendlySideOffset);
-        formationReserveBehindFriendlyNavMeshProjectionRadius = Mathf.Max(0f, formationReserveBehindFriendlyNavMeshProjectionRadius);
-        formationReserveBehindFriendlyOccupancyRadius = Mathf.Max(0f, formationReserveBehindFriendlyOccupancyRadius);
-        formationReserveBehindFriendlyCrowdRadius = Mathf.Max(0f, formationReserveBehindFriendlyCrowdRadius);
-        formationReserveBehindFriendlyMaxNearbyBodies = Mathf.Max(0, formationReserveBehindFriendlyMaxNearbyBodies);
-        formationReserveBehindFriendlyReachDistance = Mathf.Max(0f, formationReserveBehindFriendlyReachDistance);
-        formationReserveBehindFriendlyMaxMoveDistance = Mathf.Max(0f, formationReserveBehindFriendlyMaxMoveDistance);
-        formationReserveBehindFriendlyMinAnchorForwardGain = Mathf.Max(0f, formationReserveBehindFriendlyMinAnchorForwardGain);
-        formationReserveBehindFriendlyMinTargetProgress = Mathf.Max(0f, formationReserveBehindFriendlyMinTargetProgress);
-        formationReserveBehindFriendlySpeedMultiplier = Mathf.Max(0f, formationReserveBehindFriendlySpeedMultiplier);
-        formationReserveBehindFriendlyCrowdScoreWeight = Mathf.Max(0f, formationReserveBehindFriendlyCrowdScoreWeight);
-        formationReserveBehindFriendlyProgressScoreWeight = Mathf.Max(0f, formationReserveBehindFriendlyProgressScoreWeight);
-        formationAttackIntervalRandomMax = Mathf.Max(formationAttackIntervalRandomMin, formationAttackIntervalRandomMax);
-        formationReserveMinimumBlockedSitTimeMax = Mathf.Max(formationReserveMinimumBlockedSitTimeMin, formationReserveMinimumBlockedSitTimeMax);
-        formationReserveSideStepIntervalMax = Mathf.Max(formationReserveSideStepIntervalMin, formationReserveSideStepIntervalMax);
-        formationAttackerCombatLockTimeMax = Mathf.Max(formationAttackerCombatLockTimeMin, formationAttackerCombatLockTimeMax);
+        attackIntervalRandomMin = Mathf.Max(0f, attackIntervalRandomMin);
+        attackIntervalRandomMax = Mathf.Max(0f, attackIntervalRandomMax);
+        reserveForwardGapDistance = Mathf.Max(0f, reserveForwardGapDistance);
+        reserveForwardGapRadius = Mathf.Max(0f, reserveForwardGapRadius);
+        reserveMinimumBlockedSitTimeMin = Mathf.Max(0f, reserveMinimumBlockedSitTimeMin);
+        reserveMinimumBlockedSitTimeMax = Mathf.Max(0f, reserveMinimumBlockedSitTimeMax);
+        reserveSideStepIntervalMin = Mathf.Max(0f, reserveSideStepIntervalMin);
+        reserveSideStepIntervalMax = Mathf.Max(0f, reserveSideStepIntervalMax);
+        reserveSideStepDistance = Mathf.Max(0f, reserveSideStepDistance);
+        reserveSideStepOccupancyRadius = Mathf.Max(0f, reserveSideStepOccupancyRadius);
+        reserveSideStepSpeedMultiplier = Mathf.Max(0f, reserveSideStepSpeedMultiplier);
+        localEnemyTargetSearchRadius = Mathf.Max(0f, localEnemyTargetSearchRadius);
+        nonPrimaryTargetPenalty = Mathf.Max(0f, nonPrimaryTargetPenalty);
+        immediateContactRangePadding = Mathf.Max(0f, immediateContactRangePadding);
+        approachSettleDuration = Mathf.Max(0f, approachSettleDuration);
+        approachSettleReadyRatio = Mathf.Clamp01(approachSettleReadyRatio);
+        approachSettleReadyRangePadding = Mathf.Max(0f, approachSettleReadyRangePadding);
+        approachSettleMinimumReadyRange = Mathf.Max(0f, approachSettleMinimumReadyRange);
+        chargeStartDistance = Mathf.Max(0f, chargeStartDistance);
+        chargeMinimumStartDistance = Mathf.Clamp(chargeMinimumStartDistance, 0f, chargeStartDistance);
+        chargeSpeedMultiplier = Mathf.Max(0f, chargeSpeedMultiplier);
+        chargeMaximumDuration = Mathf.Max(0f, chargeMaximumDuration);
+        chargeContactReadyRatio = Mathf.Clamp01(chargeContactReadyRatio);
+        fullChargeMinimumImpactSpeedRatio = Mathf.Clamp01(fullChargeMinimumImpactSpeedRatio);
+        fullChargeImpactDamage = Mathf.Max(0, fullChargeImpactDamage);
+        fullChargeImpactArmorPiercingDamage = Mathf.Max(0, fullChargeImpactArmorPiercingDamage);
+        chargePenetrationMultiplier = Mathf.Max(0f, chargePenetrationMultiplier);
+        chargeEndSpentRatio = Mathf.Clamp01(chargeEndSpentRatio);
+        chargeFollowThroughMaximumDistance = Mathf.Max(0f, chargeFollowThroughMaximumDistance);
+        chargeMoraleShock = Mathf.Max(0f, chargeMoraleShock);
+        chargeImpulseMagnitude = Mathf.Max(0f, chargeImpulseMagnitude);
+        chargeImpulseDuration = Mathf.Max(0f, chargeImpulseDuration);
+        chargeImpulseForwardDistance = Mathf.Max(0f, chargeImpulseForwardDistance);
+        chargeImpulseRadius = Mathf.Max(0f, chargeImpulseRadius);
+        chargeImpulseRadialBlend = Mathf.Clamp01(chargeImpulseRadialBlend);
+        chargeLeadSoldierRatio = Mathf.Clamp01(chargeLeadSoldierRatio);
+        chargeLeadSpeedMultiplier = Mathf.Max(0f, chargeLeadSpeedMultiplier);
+        meleeHitImpulseMagnitude = Mathf.Max(0f, meleeHitImpulseMagnitude);
+        meleeHitImpulseDuration = Mathf.Max(0f, meleeHitImpulseDuration);
+        attackerCombatLockTimeMin = Mathf.Max(0f, attackerCombatLockTimeMin);
+        attackerCombatLockTimeMax = Mathf.Max(0f, attackerCombatLockTimeMax);
+        reserveBehindFriendlySearchInterval = Mathf.Max(0f, reserveBehindFriendlySearchInterval);
+        reserveBehindFriendlyAnchorSearchRadius = Mathf.Max(0f, reserveBehindFriendlyAnchorSearchRadius);
+        reserveBehindFriendlyBackOffset = Mathf.Max(0f, reserveBehindFriendlyBackOffset);
+        reserveBehindFriendlySideOffset = Mathf.Max(0f, reserveBehindFriendlySideOffset);
+        reserveBehindFriendlyNavMeshProjectionRadius = Mathf.Max(0f, reserveBehindFriendlyNavMeshProjectionRadius);
+        reserveBehindFriendlyOccupancyRadius = Mathf.Max(0f, reserveBehindFriendlyOccupancyRadius);
+        reserveBehindFriendlyCrowdRadius = Mathf.Max(0f, reserveBehindFriendlyCrowdRadius);
+        reserveBehindFriendlyMaxNearbyBodies = Mathf.Max(0, reserveBehindFriendlyMaxNearbyBodies);
+        reserveBehindFriendlyReachDistance = Mathf.Max(0f, reserveBehindFriendlyReachDistance);
+        reserveBehindFriendlyMaxMoveDistance = Mathf.Max(0f, reserveBehindFriendlyMaxMoveDistance);
+        reserveBehindFriendlyMinAnchorForwardGain = Mathf.Max(0f, reserveBehindFriendlyMinAnchorForwardGain);
+        reserveBehindFriendlyMinTargetProgress = Mathf.Max(0f, reserveBehindFriendlyMinTargetProgress);
+        reserveBehindFriendlySpeedMultiplier = Mathf.Max(0f, reserveBehindFriendlySpeedMultiplier);
+        reserveBehindFriendlyCrowdScoreWeight = Mathf.Max(0f, reserveBehindFriendlyCrowdScoreWeight);
+        reserveBehindFriendlyProgressScoreWeight = Mathf.Max(0f, reserveBehindFriendlyProgressScoreWeight);
+        attackIntervalRandomMax = Mathf.Max(attackIntervalRandomMin, attackIntervalRandomMax);
+        reserveMinimumBlockedSitTimeMax = Mathf.Max(reserveMinimumBlockedSitTimeMin, reserveMinimumBlockedSitTimeMax);
+        reserveSideStepIntervalMax = Mathf.Max(reserveSideStepIntervalMin, reserveSideStepIntervalMax);
+        attackerCombatLockTimeMax = Mathf.Max(attackerCombatLockTimeMin, attackerCombatLockTimeMax);
     }
 }
+
+
 
